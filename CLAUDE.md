@@ -32,23 +32,37 @@ arch -x86_64 ~/jzintv/bin/as1600 -o game.rom -l game.lst game.asm
 ./build.sh voice    # Build and run with Intellivoice
 ```
 
-## Project Structure
+## Project Structure (IDE Layout)
+
+This project is structured as an IntyBASIC "IDE" with shared libraries and individual game projects.
 
 ```
-project/
-├── CLAUDE.md
-├── src/
-│   └── main.bas          # Main game source
+intv-game-builder/
+├── CLAUDE.md                 # Development reference (this file)
+├── lib/                      # Shared libraries
+│   └── zmus_engine.bas       # ZMUS microprogrammed music engine
 ├── assets/
-│   ├── graphics.bmp      # Source graphics (use IntyColor to convert)
-│   └── sounds/           # Sound data
-├── build/
-│   ├── game.asm          # Generated assembly
-│   ├── game.rom          # Compiled ROM
-│   └── game.lst          # Listing file (for debugging)
-├── lib/                  # Shared libraries/includes
-└── build.sh              # Build script
+│   └── music/                # Shared music data files
+│       ├── greensleeves_music.bas
+│       ├── canon_music.bas
+│       └── nutcracker_intybasic.bas
+├── docs/                     # Documentation
+├── games/                    # Individual game projects
+│   └── orchestra-demo/
+│       ├── src/main.bas      # Game source
+│       ├── assets/           # Game-specific assets
+│       ├── build/            # Compiled output
+│       │   ├── game.asm
+│       │   ├── game.rom
+│       │   └── game.lst
+│       └── build.sh          # Game build script
+└── build.sh                  # Root build script (if any)
 ```
+
+**Adding a new game:**
+1. Create `games/your-game/src/`, `games/your-game/assets/`, `games/your-game/build/`
+2. Copy `games/orchestra-demo/build.sh` as a template
+3. Use `INCLUDE` with paths relative to project root for shared libraries
 
 ## IntyBASIC Language Reference
 
@@ -182,16 +196,74 @@ PLAY music_label
 PLAY OFF
 ```
 
-**Music Data Format:**
+**Music Data Format (Native IntyBASIC):**
 ```basic
 music_label:
-    MUSIC S1, -, -  ' Note on channel 1
-    MUSIC -, S2, -  ' Note on channel 2
-    MUSIC STOP      ' End marker
+    DATA 7              ' Tempo (1-15, higher = faster)
+    MUSIC A4,C4,G3,-    ' Three tone channels + drum
+    MUSIC S,S,S,-       ' S = sustain (hold note)
+    MUSIC -,-,-,-       ' - = silence
+    MUSIC STOP          ' End marker
 
-' Notes: C2-B6, use # for sharp (C#4)
-' S = staccato, M = medium, - = silence
+' Notes: C2-B6, use # for sharp (C#4), W for whole note
+' Modifiers: S = sustain, M = medium, W = whole
 ```
+
+### Music Systems Comparison
+
+IntyBASIC supports two distinct music approaches:
+
+| Feature | Native MUSIC/PLAY | ZMUS Engine |
+|---------|-------------------|-------------|
+| Setup | `PLAY SIMPLE` or `PLAY FULL` | `USR ZMUS_INIT` |
+| Start | `PLAY song_label` | `USR ZMUS_PLAY(label)` |
+| Update | Automatic (handled by ISR) | Manual `USR ZMUS_UPDATE` each frame |
+| Stop | `PLAY OFF` | `USR ZMUS_STOP` |
+| Data format | `MUSIC` statements | `DECLE` microprogrammed data |
+| Channels | 2 (SIMPLE) or 3 (FULL) | 3 tone channels |
+| Voice compat | SIMPLE leaves ch3 for voice | Full control |
+
+**When to use which:**
+- **Native MUSIC/PLAY**: Simpler, good for most games, integrates with Intellivoice
+- **ZMUS Engine**: Direct PSG control, custom timing, microprogrammed sequences
+
+## Library: ZMUS Music Engine
+
+The ZMUS engine (`lib/zmus_engine.bas`) provides assembly-level music playback with direct PSG (AY-3-8914) control.
+
+**Usage:**
+```basic
+' Include at top of your program
+INCLUDE "lib/zmus_engine.bas"
+INCLUDE "assets/music/your_song_zmus.bas"
+
+' Initialize once at startup
+USR ZMUS_INIT
+
+' Start playing
+USR ZMUS_PLAY(NUTMARCH)  ' Pass label of DECLE data
+
+' Call every frame in game loop
+main_loop:
+    WAIT
+    USR ZMUS_UPDATE
+    ' ... game logic ...
+    GOTO main_loop
+
+' Stop playback
+USR ZMUS_STOP
+
+' Debug: play test tone (A4, 440Hz)
+USR ZMUS_TEST
+```
+
+**Memory Layout:**
+- Engine code: `$D000` (extra ROM segment)
+- Stream record: `$360-$363` (4 words in RAM)
+- PSG registers: `$1F0-$1FF`
+
+**Creating ZMUS song data:**
+Song data uses microprogrammed DECLE format. See existing songs in `assets/music/` for examples.
 
 ### Intellivoice
 
@@ -309,6 +381,75 @@ label:
 ASM DECLE data1, data2
 ```
 
+## Assembly Programming Patterns
+
+### Critical: R4 Preservation
+
+**R4 is IntyBASIC's stack pointer.** Any assembly routine called via `USR` MUST preserve R4 or IntyBASIC will crash.
+
+```basic
+ASM MY_ROUTINE: PROC
+ASM         PSHR    R5              ' Save return address
+ASM         PSHR    R4              ' CRITICAL: Save IntyBASIC stack pointer
+ASM         ; ... your code here ...
+ASM         PULR    R4              ' Restore R4 before returning
+ASM         PULR    PC              ' Return
+ASM         ENDP
+```
+
+**Symptom of R4 corruption:** Random crashes, "CPU off in the weeds", corrupted variables.
+
+### PSG (AY-3-8914) Direct Access
+
+The Intellivision's PSG is memory-mapped at `$1F0-$1FF`:
+
+| Address | Description |
+|---------|-------------|
+| `$1F0` | Channel A period (low 8 bits) |
+| `$1F1` | Channel B period (low 8 bits) |
+| `$1F2` | Channel C period (low 8 bits) |
+| `$1F4` | Channel A period (high 4 bits) |
+| `$1F5` | Channel B period (high 4 bits) |
+| `$1F6` | Channel C period (high 4 bits) |
+| `$1F7` | Noise period |
+| `$1F8` | Channel enable (bits 0-2=tone, 3-5=noise, 0=on) |
+| `$1FB` | Channel A volume (0-15, bit 4=envelope) |
+| `$1FC` | Channel B volume |
+| `$1FD` | Channel C volume |
+| `$1FE` | Envelope period low |
+| `$1FF` | Envelope period high + shape |
+
+**Example - Play A4 (440Hz) on channel A:**
+```basic
+ASM         MVII    #$FE,   R0      ' Period for 440Hz (NTSC)
+ASM         MVO     R0,     $1F0    ' Channel A period low
+ASM         CLRR    R0
+ASM         MVO     R0,     $1F4    ' Channel A period high
+ASM         MVII    #$3E,   R0      ' Enable tone A only
+ASM         MVO     R0,     $1F8    ' Channel enable register
+ASM         MVII    #$0F,   R0      ' Max volume
+ASM         MVO     R0,     $1FB    ' Channel A volume
+```
+
+**Frequency calculation:** Period = 3579545 / (16 × frequency) for NTSC
+
+### Assembly Pitfalls
+
+1. **PLAY system conflict**: IntyBASIC's `PLAY SIMPLE`/`PLAY FULL` uses an ISR that writes PSG registers every frame. Direct PSG writes will be overwritten unless you use `PLAY OFF` first.
+
+2. **R4 auto-increment**: R4 is used as auto-incrementing pointer. Using `MVI@` or `MVO@` with R4 will corrupt IntyBASIC's stack.
+
+3. **ROM segment placement**: Use `ASM ORG $D000` with `ASM ROMW 16` for assembly routines to avoid conflicts with IntyBASIC-generated code.
+
+4. **Register conventions**:
+   - R0-R3: General purpose (freely usable)
+   - R4: IntyBASIC stack pointer (PRESERVE!)
+   - R5: Return address for `PSHR`/`PULR PC`
+   - R6: Stack pointer (hardware)
+   - R7: PC
+
+5. **USR parameter passing**: First parameter to `USR routine(x)` is in R0.
+
 ### Common Patterns
 
 **Game Loop:**
@@ -351,6 +492,39 @@ wait_start:
 - Manual: https://github.com/nanochess/IntyBASIC/blob/master/manual.txt
 - AtariAge Forums: https://atariage.com/forums/forum/144-intellivision-programming/
 - Book: "Programming Games for Intellivision" by Oscar Toledo G.
+- **Local**: `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` - Community best practices from AtariAge
+
+## Best Practices (from AtariAge Community)
+
+See `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` for full details.
+
+**Code Structure:**
+- **Plan ahead** - Write game loop logic on paper before coding
+- **Use PROCEDURES** - `GOSUB ProcName` keeps code organized, avoids spaghetti
+- **Avoid GOTOs** - Use `WHILE/WEND`, `FOR/NEXT`, `ON GOSUB` instead
+- **Don't jump out of procedures** - Always exit via `RETURN`/`END` or stack overflow
+- **Use descriptive variable names** - `PlayerX` not `x`, `LoopCounter` not `i`
+
+**Performance:**
+- **Use `ON GOTO`/`ON GOSUB`** instead of chains of `IF level = 1 THEN...`
+- **Use lookup tables** instead of IF chains for data:
+  ```basic
+  Color = LevelColors(Level)  ' Instead of IF Level=1 THEN Color=RED...
+  LevelColors: DATA CS_RED, CS_BLUE, CS_GREEN
+  ```
+- **Use `RANDOM(n)`** not `RAND` - RAND doesn't advance between WAITs
+
+**Memory:**
+- **Use `OPTION MAP 2`** - Don't limit yourself to 8K, modern carts support 42K+
+- **Use `--CC3` or `--JLP`** flags for extra RAM if needed
+- **Arrays are ZERO indexed** - `DIM arr(5)` gives indices 0-4
+
+**Intellivoice:**
+- **Call `VOICE INIT` only ONCE** at program start - Multiple calls can lock up real hardware (works in emulator but fails on console)
+
+**Testing:**
+- **Test on real hardware** - Emulator behavior differs from actual consoles
+- **Get diverse testers** - Different ages find different issues
 
 ## Claude Code Guidelines
 

@@ -7,6 +7,17 @@ build/*.bin
 build/*.sym
 build/*.map
 
+# Game build directories
+games/*/build/*.asm
+games/*/build/*.rom
+games/*/build/*.lst
+games/*/build/*.cfg
+games/*/build/*.bin
+
+# Inty-MIDI tool (download separately - see README.txt in folder)
+inty-midi-0.1.0.0-bin/*
+!inty-midi-0.1.0.0-bin/README.txt
+
 # macOS
 .DS_Store
 ._*
