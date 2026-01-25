@@ -1,0 +1,25 @@
+# Build artifacts
+build/*.asm
+build/*.rom
+build/*.lst
+build/*.cfg
+build/*.bin
+build/*.sym
+build/*.map
+
+# macOS
+.DS_Store
+._*
+
+# Editor/IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Archives
+*.zip
