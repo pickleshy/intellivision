@@ -23,11 +23,13 @@ intybasic game.bas game.asm
 # Assemble to ROM
 arch -x86_64 ~/jzintv/bin/as1600 -o game.rom -l game.lst game.asm
 
-# Run in emulator
-arch -x86_64 ~/jzintv/bin/jzintv \
-    --execimg=~/jzintv/bin/exec.bin \
-    --gromimg=~/jzintv/bin/grom.bin \
-    game.rom
+# Run in emulator (use jzintv_run wrapper - includes voice/ECS support)
+~/jzintv/bin/jzintv_run game.rom
+
+# Or use the project build script
+./build.sh          # Just build
+./build.sh run      # Build and run
+./build.sh voice    # Build and run with Intellivoice
 ```
 
 ## Project Structure
@@ -191,6 +193,29 @@ music_label:
 ' S = staccato, M = medium, - = silence
 ```
 
+### Intellivoice
+
+```basic
+VOICE INIT              ' Initialize/reset Intellivoice
+VOICE PLAY label        ' Play speech phrase
+VOICE PLAY WAIT label   ' Play and wait for completion
+VOICE NUMBER expr       ' Speak a number (0-999)
+VOICE WAIT              ' Wait for speech to finish
+
+' Check status
+IF VOICE.AVAILABLE THEN ' Intellivoice detected
+IF VOICE.PLAYING THEN   ' Currently speaking
+
+' Define speech phrases (end with 0)
+my_phrase:
+    VOICE HH1,EH,LL,AO,PA2,0    ' "Hello"
+
+' Phonemes: PA1-PA5, AA, AE, AO, AR, AW, AX, AY, BB1, BB2, CH, DD1, DD2,
+' DH1, DH2, EH, EL, ER1, ER2, EY, FF, GG1, GG2, GG3, HH1, HH2, IH, IY,
+' JH, KK1, KK2, KK3, LL, MM, NG, NN1, NN2, OR, OW, OY, PP, RR1, RR2,
+' SH, SS, TH, TT1, TT2, UH, UW1, UW2, VV, WH, WW, XR, YR, YY1, YY2, ZH, ZZ
+```
+
 ### Controllers
 
 ```basic
@@ -217,6 +242,43 @@ $5000-$6FFF  Default program ROM (8K)
 $D000-$DFFF  Extra ROM (with ORG $D000)
 $F000-$FFFF  Extra ROM (with ORG $F000)
 ```
+
+### ROM Size and OPTION MAP (CRITICAL)
+
+**Default 8K limit:** Without `OPTION MAP`, code must fit in $5000-$6FFF (8192 words).
+
+**Symptom of overflow:** jzintv shows "CPU off in the weeds!" with a PC address outside ROM space (e.g., `$B203`). This means code overflowed into unmapped memory.
+
+**Solution - Use OPTION MAP 2 for larger programs:**
+```basic
+    OPTION MAP 2    ' 42K static memory map (put at top of file!)
+
+    ' ... main code in Segment 0 ($5000-$6FFF, 8K) ...
+
+    SEGMENT 1       ' Switch to Segment 1 ($A000-$BFFF, 8K)
+
+    ' ... additional procedures and data ...
+```
+
+**OPTION MAP 2 segments:**
+| Segment | Address Range | Size |
+|---------|---------------|------|
+| 0 | $5000-$6FFF | 8K |
+| 1 | $A000-$BFFF | 8K |
+| 2 | $C040-$FFFF | 16K |
+| 3 | $2100-$2FFF | 4K |
+| 4 | $7100-$7FFF | 4K |
+| 5 | $4810-$4FFF | 2K |
+
+**Build output shows usage:** After successful compile with OPTION MAP, you'll see:
+```
+ROM USAGE (MAP #2):
+    Static Seg #0        8K        7841       351 words
+    Static Seg #1        8K         843      7349 words
+    ...
+```
+
+**If Segment #0 shows negative available words**, move procedures/data to `SEGMENT 1`.
 
 ### Useful Statements
 
@@ -307,3 +369,7 @@ When helping with IntyBASIC development:
 6. **Use the listing file** - `game.lst` shows memory addresses and helps debug.
 
 7. **Comments are free** - Use `'` or `REM` liberally; they don't affect ROM size.
+
+8. **Watch ROM size** - Default 8K limit is easy to exceed with Intellivoice + music. If jzintv shows "CPU off in the weeds!", add `OPTION MAP 2` and use `SEGMENT 1` for overflow code/data.
+
+9. **Run with voice** - Use `jzintv_run` or `./build.sh voice` for Intellivoice programs. Missing `--voice=1` causes silent failures.

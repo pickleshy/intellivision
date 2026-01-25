@@ -14,6 +14,7 @@ AS1600="${AS1600:-$HOME/jzintv/bin/as1600}"
 JZINTV="${JZINTV:-$HOME/jzintv/bin/jzintv}"
 EXEC_BIN="${EXEC_BIN:-$HOME/jzintv/bin/exec.bin}"
 GROM_BIN="${GROM_BIN:-$HOME/jzintv/bin/grom.bin}"
+IVOICE_BIN="${IVOICE_BIN:-$HOME/jzintv/bin/ivoice.bin}"
 
 # Create build directory
 mkdir -p "$BUILD_DIR"
@@ -37,11 +38,16 @@ fi
 echo "=== Build complete: $BUILD_DIR/$PROJECT_NAME.rom ==="
 
 # Run if requested
-if [[ "$1" == "run" ]]; then
+if [[ "$1" == "run" || "$1" == "voice" ]]; then
     echo "=== Launching emulator ==="
+    VOICE_FLAG=""
+    if [[ "$1" == "voice" ]]; then
+        VOICE_FLAG="--voice=1"
+        echo "(Intellivoice enabled)"
+    fi
     if [[ $(uname -m) == "arm64" ]]; then
-        arch -x86_64 "$JZINTV" --execimg="$EXEC_BIN" --gromimg="$GROM_BIN" "$BUILD_DIR/$PROJECT_NAME.rom"
+        arch -x86_64 "$JZINTV" --execimg="$EXEC_BIN" --gromimg="$GROM_BIN" $VOICE_FLAG "$BUILD_DIR/$PROJECT_NAME.rom"
     else
-        "$JZINTV" --execimg="$EXEC_BIN" --gromimg="$GROM_BIN" "$BUILD_DIR/$PROJECT_NAME.rom"
+        "$JZINTV" --execimg="$EXEC_BIN" --gromimg="$GROM_BIN" $VOICE_FLAG "$BUILD_DIR/$PROJECT_NAME.rom"
     fi
 fi
