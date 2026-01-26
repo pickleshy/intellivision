@@ -489,10 +489,53 @@ wait_start:
 
 ## Documentation Links
 
-- Manual: https://github.com/nanochess/IntyBASIC/blob/master/manual.txt
-- AtariAge Forums: https://atariage.com/forums/forum/144-intellivision-programming/
-- Book: "Programming Games for Intellivision" by Oscar Toledo G.
-- **Local**: `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` - Community best practices from AtariAge
+### Official Resources
+
+- **IntyBASIC v1.5.1** (Latest): https://forums.atariage.com/topic/381333-intybasic-compiler-v151-bank-switching-integrated/
+- **Manual**: https://github.com/nanochess/IntyBASIC/blob/master/manual.txt
+- **Official Thread**: https://forums.atariage.com/topic/248209-the-intybasic-compiler-official-thread/
+- **Source Code**: http://atariage.com/forums/topic/245278-intybasic-source-code-released/
+
+### Books by Oscar Toledo G.
+
+| Book | Description | Links |
+|------|-------------|-------|
+| Programming Games for Intellivision | Beginner - 4 games tutorial | [Amazon](https://www.amazon.com/Programming-Games-Intellivision-Toledo-Gutierrez/dp/1387929089/) / [Ebook](https://nanochess.org/store.html) |
+| Advanced Game Programming for Intellivision | Music, sound FX, voice via PSG, graphics | [Amazon](https://www.amazon.com/-/es/dp/1716485630/) / [Ebook](https://nanochess.org/store.html) |
+
+### Community Tools
+
+| Tool | Purpose | Link |
+|------|---------|------|
+| IntyWorkshop | Online BITMAP statement generator | [AtariAge](http://atariage.com/forums/topic/243713-inty-workshop-updated/) |
+| SpriteAid/IntyMapper | Sprite and map editing | [AtariAge](http://atariage.com/forums/topic/230758-a-couple-useful-tools/) |
+| Sound Effect Editor | PSG sound design | [AtariAge](https://atariage.com/forums/topic/320358-sound-effect-editor/) |
+| psg2bas | Convert CoolCV PSG logs to music | [AtariAge](http://atariage.com/forums/topic/275934-psg2bas-utility-to-convert-musicsounds/) |
+| IntyMusic | Music viewer | [AtariAge](http://atariage.com/forums/topic/255530-intymusic-music-viewer/) |
+| IntelliTool | Windows IDE | [AtariAge](http://atariage.com/forums/topic/266703-intellitool-ide-for-intybasic/) |
+| Drawing Sheet | Graphics planning template | [AtariAge](http://atariage.com/forums/topic/271297-intellivision-drawing-sheet/) |
+
+### Tutorials
+
+- **Tips & Tricks**: http://atariage.com/forums/topic/257212-intybasic-tipstricks-and-dos-and-donts/
+- **Voice without Intellivoice**: http://atariage.com/forums/topic/253650-voice-without-intellivoice/
+- **SOUND 3 Envelopes**: http://atariage.com/forums/topic/248228-intybasic-sound3-example/
+- **Coloured Squares Mode**: http://atariage.com/forums/topic/247948-intybasic-using-coloured-squares-mode/
+- **Sprite Demos**: http://atariage.com/forums/topic/223031-intybasic-sprite-demos/
+
+### Music Examples (by First Spear)
+
+Great references for music composition:
+- [Bach Fugue in D minor](https://atariage.com/forums/topic/304160-intybasic-rough-song-bach-fugue-in-d-minor/)
+- [Flight of the Bumblebee](http://atariage.com/forums/topic/242617-intybasic-rough-song-flight-of-the-bumblebee/)
+- [Maple Leaf Rag](http://atariage.com/forums/topic/242795-intybasic-rough-song-maple-leaf-rag/)
+- [Fur Elise](http://atariage.com/forums/topic/241666-intybasic-rough-song-fur-elise/)
+- [Full song list](https://forums.atariage.com/topic/248209-the-intybasic-compiler-official-thread/) (see "Songs made with IntyBASIC" section)
+
+### Local Documentation
+
+- `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` - Community best practices
+- `docs/The IntyBASIC compiler official thread.pdf` - Official thread archive with all resources
 
 ## Best Practices (from AtariAge Community)
 
