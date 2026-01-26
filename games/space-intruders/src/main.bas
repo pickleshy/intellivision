@@ -17,6 +17,7 @@ CONST PLAYER_SPEED  = 2         ' Pixels per frame
 CONST SPR_PLAYER    = 0         ' Player ship sprite
 CONST SPR_PBULLET   = 1         ' Player bullet sprite
 CONST SPR_ABULLET   = 2         ' Alien bullet sprite
+CONST SPR_EXPLOSION = 3         ' Explosion effect sprite
 
 ' GRAM card assignments
 CONST GRAM_SHIP     = 0         ' Player ship graphic (2 cards)
@@ -30,6 +31,13 @@ CONST GRAM_BAND2    = 10        ' Rows 3-4 of alien
 CONST GRAM_BAND3    = 11        ' Rows 5-6 of alien
 CONST GRAM_BAND4    = 12        ' Rows 7-8 of alien
 CONST GRAM_INV_TEST = 13        ' Inverted alien for testing
+CONST GRAM_EXPLOSION = 14       ' Explosion frame 1 (tight pop)
+CONST GRAM_EXPLOSION2 = 15      ' Explosion frame 2 (expanding scatter)
+CONST GRAM_EXPLOSION3 = 16      ' Explosion frame 3 (dissipate)
+CONST GRAM_SHIP_ACCENT = 17     ' Ship accent overlay (2 cards for animation)
+
+' Additional sprite slots
+CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
 
 ' Alien grid constants
 CONST ALIEN_COLS    = 11        ' 11 aliens per row
@@ -42,7 +50,7 @@ CONST MARCH_SPEED_START = 60   ' Starting frames between march steps
 CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
 
 ' Bullet constants
-CONST BULLET_SPEED  = 2         ' Player bullet speed (slower)
+CONST BULLET_SPEED  = 1         ' Player bullet speed (slower)
 CONST BULLET_TOP    = 8         ' Top of screen
 CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed
 CONST ALIEN_SHOOT_RATE = 90     ' Frames between alien shots
@@ -53,6 +61,7 @@ CONST COL_GREEN     = 5
 CONST COL_YELLOW    = 6
 CONST COL_BLACK     = 0
 CONST COL_RED       = 2
+CONST COL_TAN       = 3
 CONST COL_CYAN      = 9
 CONST COL_PINK      = 12
 CONST COL_LTBLUE    = 13
@@ -82,6 +91,8 @@ MarchCount  = 0                 ' Frame counter for march timing
 BulletX     = 0                 ' Bullet X position
 BulletY     = 0                 ' Bullet Y position
 BulletActive = 0                ' 1 = bullet flying, 0 = ready to fire
+BulletColor = 0                 ' Bullet color phase (0-2 for color cycling)
+LaserColor  = 0                 ' Current laser color (calculated each frame)
 ABulletX    = 0                 ' Alien bullet X position
 ABulletY    = 0                 ' Alien bullet Y position
 ABulletActive = 0               ' 1 = alien bullet flying
@@ -117,6 +128,9 @@ ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
 TitleMarchX = 0                 ' Title screen alien X offset
 TitleMarchDir = 1               ' Title march direction (1=right, 0=left)
 TitleMarchCount = 0             ' Title march timing counter
+ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
+#ExplosionPos  = 0              ' Explosion BACKTAB position (screen address)
+ExplosionColor = 0              ' Explosion color (matches destroyed alien)
 
 ' --------------------------------------------
 ' Main Program
@@ -151,6 +165,14 @@ TitleMarchCount = 0             ' Title march timing counter
     DEFINE GRAM_BAND4, 1, Band4Gfx
     WAIT
     DEFINE GRAM_INV_TEST, 1, InvertedAlienGfx
+    WAIT
+    DEFINE GRAM_EXPLOSION, 1, ExplosionGfx
+    WAIT
+    DEFINE GRAM_EXPLOSION2, 1, ExplosionGfx2
+    WAIT
+    DEFINE GRAM_EXPLOSION3, 1, ExplosionGfx3
+    WAIT
+    DEFINE GRAM_SHIP_ACCENT, 2, ShipAccentGfx
     WAIT
 
     ' Initialize row colors (0-7 only for MODE 1)
@@ -400,6 +422,45 @@ GameLoop:
         GOSUB MoveAlienBullet
     END IF
 
+    ' Update explosion effect (BACKTAB tile with 3-frame animation)
+    ' 15 total frames: 5 per animation frame (~83ms each, ~250ms total)
+    IF ExplosionTimer > 0 THEN
+        ExplosionTimer = ExplosionTimer - 1
+        IF ExplosionTimer = 0 THEN
+            PRINT AT #ExplosionPos, 0  ' Clear explosion from screen
+        ELSEIF ExplosionTimer > 10 THEN
+            ' Frame 1: tight pop (frames 15-11)
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + ExplosionColor + $0800
+        ELSEIF ExplosionTimer > 5 THEN
+            ' Frame 2: expanding scatter (frames 10-6)
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION2 * 8 + ExplosionColor + $0800
+        ELSE
+            ' Frame 3: dissipate (frames 5-1)
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + ExplosionColor + $0800
+        END IF
+    END IF
+
+    ' Check bullet-vs-bullet collision
+    IF BulletActive THEN
+        IF ABulletActive THEN
+            ' Check if bullets are close enough to collide
+            ' X within 6 pixels, Y within 8 pixels
+            IF BulletX >= ABulletX - 6 THEN
+                IF BulletX <= ABulletX + 6 THEN
+                    IF BulletY >= ABulletY - 8 THEN
+                        IF BulletY <= ABulletY + 8 THEN
+                            ' Bullets collide! Destroy both
+                            BulletActive = 0
+                            ABulletActive = 0
+                            ' Small score bonus for the skillful shot
+                            #Score = #Score + 5
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
     ' Check if player was hit (only if not already dying or invincible)
     IF PlayerHit THEN
         IF DeathTimer = 0 THEN
@@ -625,8 +686,19 @@ CheckOneColumn: PROCEDURE
                 ' Update score
                 #Score = #Score + 10
 
-                ' Clear the alien from screen
-                PRINT AT HitRow * 20 + HitCol, 0
+                ' Match explosion color to alien type
+                IF AlienGridRow = 0 THEN
+                    ExplosionColor = COL_WHITE   ' Squid
+                ELSEIF AlienGridRow < 3 THEN
+                    ExplosionColor = COL_RED     ' Crab
+                ELSE
+                    ExplosionColor = COL_GREEN   ' Octopus
+                END IF
+
+                ' Show explosion on BACKTAB (replaces alien, stays in place)
+                #ExplosionPos = HitRow * 20 + HitCol
+                ExplosionTimer = 15  ' Show for 15 frames (~250ms total)
+                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + ExplosionColor + $0800
             END IF
         END IF
     END IF
@@ -640,29 +712,45 @@ DrawPlayer: PROCEDURE
     ' SPRITE n, x + flags, y + flags, card*8 + color
     ' X: position + $200 (visible)
     ' A: card*8 + color + $800 (GRAM)
+    ' Two stacked sprites for 2-color ship: body (green) + accent (cyan)
     IF DeathTimer > 0 THEN
-        ' Player is dead - hide sprite
+        ' Player is dead - hide both sprites
         SPRITE SPR_PLAYER, 0, 0, 0
+        SPRITE SPR_SHIP_ACCENT, 0, 0, 0
     ELSEIF Invincible > 0 THEN
         ' Flash during invincibility (show every other frame)
         IF Invincible AND 4 THEN
             SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_GREEN + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + COL_CYAN + $0800
         ELSE
             SPRITE SPR_PLAYER, 0, 0, 0
+            SPRITE SPR_SHIP_ACCENT, 0, 0, 0
         END IF
     ELSE
-        ' Normal display
+        ' Normal display - body + accent stacked at same position
         SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_GREEN + $0800
+        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + COL_CYAN + $0800
     END IF
     RETURN
 END
 
 ' --------------------------------------------
-' DrawBullet - Update bullet sprite
+' DrawBullet - Update bullet sprite with color cycling
 ' --------------------------------------------
 DrawBullet: PROCEDURE
     IF BulletActive THEN
-        SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + COL_WHITE + $0800
+        ' Increment color timer, switch color every 4 frames
+        BulletColor = BulletColor + 1
+        IF BulletColor >= 8 THEN BulletColor = 0
+
+        ' Solid red for frames 0-3, solid white for frames 4-7
+        IF BulletColor < 4 THEN
+            LaserColor = COL_RED
+        ELSE
+            LaserColor = COL_WHITE
+        END IF
+
+        SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + LaserColor + $0800
     ELSE
         ' Hide bullet sprite
         SPRITE SPR_PBULLET, 0, 0, 0
@@ -803,13 +891,13 @@ DrawAliens: PROCEDURE
             #Mask = #Mask * 2
         NEXT Col
 
-        ' Clear trail on left edge (when moving right)
-        IF AlienDir = 1 THEN
-            IF AlienOffsetX > 0 THEN
-                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX - 1, 0
-            END IF
-        ELSE
-            ' Clear trail on right edge (when moving left)
+        ' Clear trail on BOTH edges to handle direction reversals cleanly
+        ' Left edge: clear if we're not at leftmost position
+        IF AlienOffsetX > 0 THEN
+            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX - 1, 0
+        END IF
+        ' Right edge: clear if we're not at rightmost position
+        IF AlienOffsetX < ALIEN_MAX_X THEN
             PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
         END IF
     NEXT Row
@@ -903,25 +991,47 @@ END
 ' Graphics Data
 ' --------------------------------------------
 ShipGfx:
-    ' Player ship - 8x8 cannon shape
-    BITMAP "...XX..."
+    ' Player ship body - Frame 0
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
     BITMAP ".XXXXXX."
     BITMAP "XXXXXXXX"
-    BITMAP "X.XXXX.X"
+    BITMAP "XXXXXXXX"
+    BITMAP ".XXXXXX."
+    BITMAP "..X..X.."
+    BITMAP ".X....X."
 
-    ' Second frame (same for now, can animate later)
-    BITMAP "...XX..."
+    ' Frame 1 (subtle wing/engine flicker)
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
     BITMAP ".XXXXXX."
     BITMAP "XXXXXXXX"
-    BITMAP "X.XXXX.X"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "..X..X.."
+    BITMAP "X......X"
+
+' Ship accent overlay (stacked MOB for 2-color effect)
+ShipAccentGfx:
+    ' Frame 0 (cockpit + small engine dots)
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "..X..X.."
+    BITMAP "........"
+    BITMAP "........"
+
+    ' Frame 1 (engine flicker)
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".X....X."
+    BITMAP "........"
+    BITMAP "........"
 
 ' Alien Type 1 - Top row (small squid) - 1px gap right & bottom
 Alien1Gfx:
@@ -1058,3 +1168,37 @@ InvertedAlienGfx:
     BITMAP "X....XXX"
     BITMAP ".XXXX.XX"
     BITMAP "XXXXXXXX"
+
+' Explosion graphics - 3 frame animation
+' Frame 1 - tight pop (dense core)
+ExplosionGfx:
+    BITMAP "...X...."
+    BITMAP "..XXX..."
+    BITMAP ".XX.XX.."
+    BITMAP "..XXX..."
+    BITMAP "...X...."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+' Frame 2 - expanding scatter (classic "pop")
+ExplosionGfx2:
+    BITMAP "..X.X..."
+    BITMAP ".X...X.."
+    BITMAP "X..X..X."
+    BITMAP "...X...."
+    BITMAP "X..X..X."
+    BITMAP ".X...X.."
+    BITMAP "..X.X..."
+    BITMAP "........"
+
+' Frame 3 - wide sparse particles (dissipate)
+ExplosionGfx3:
+    BITMAP "X......."
+    BITMAP "..X..X.."
+    BITMAP "....X..."
+    BITMAP ".X....X."
+    BITMAP "...X...."
+    BITMAP "..X..X.."
+    BITMAP "X......."
+    BITMAP "........"
