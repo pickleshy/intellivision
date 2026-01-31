@@ -25,19 +25,22 @@ CONST GRAM_ALIEN1   = 2         ' Top row alien (2 cards for animation)
 CONST GRAM_ALIEN2   = 4         ' Middle rows alien
 CONST GRAM_ALIEN3   = 6         ' Bottom rows alien
 CONST GRAM_BULLET   = 8         ' Bullet graphic
-' Title screen color banding test - 4 cards, each with 2 rows of alien
-CONST GRAM_BAND1    = 9         ' Rows 1-2 of alien
-CONST GRAM_BAND2    = 10        ' Rows 3-4 of alien
-CONST GRAM_BAND3    = 11        ' Rows 5-6 of alien
-CONST GRAM_BAND4    = 12        ' Rows 7-8 of alien
+' Title screen big alien - 2 side-by-side 8x8 sprites (16x8)
+CONST GRAM_BAND1    = 9         ' Alien left half
+CONST GRAM_BAND2    = 10        ' Alien right half
+CONST GRAM_BAND1_F1 = 11        ' Alien left half - Frame 2
+CONST GRAM_BAND2_F1 = 12        ' Alien right half - Frame 2
 CONST GRAM_INV_TEST = 13        ' Inverted alien for testing
 CONST GRAM_EXPLOSION = 14       ' Explosion frame 1 (tight pop)
 CONST GRAM_EXPLOSION2 = 15      ' Explosion frame 2 (expanding scatter)
 CONST GRAM_EXPLOSION3 = 16      ' Explosion frame 3 (dissipate)
 CONST GRAM_SHIP_ACCENT = 17     ' Ship accent overlay (2 cards for animation)
+CONST GRAM_CRAB_F1  = 19        ' Small crab frame 1 (title screen flyer)
+CONST GRAM_CRAB_F2  = 20        ' Small crab frame 2
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
+CONST SPR_FLYER     = 5         ' Title screen flying alien
 
 ' Alien grid constants
 CONST ALIEN_COLS    = 11        ' 11 aliens per row
@@ -57,6 +60,7 @@ CONST ALIEN_SHOOT_RATE = 90     ' Frames between alien shots
 
 ' Colors
 CONST COL_WHITE     = 7
+CONST COL_BLUE      = 1
 CONST COL_GREEN     = 5
 CONST COL_YELLOW    = 6
 CONST COL_BLACK     = 0
@@ -79,6 +83,10 @@ CONST SPR_HIT       = $0100     ' Enable collision detection
 ' --------------------------------------------
 DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, needs 16-bit)
 DIM RowColors(5)                ' 5-color cycle for row shimmer (colors 1-6 only)
+DIM FlyPathX(64)               ' Figure-8 X positions (64 points, indices 0-63)
+DIM FlyPathY(64)               ' Figure-8 Y positions (64 points, indices 0-63)
+DIM FlyColors(6)               ' Color cycle (6 entries, indices 0-5)
+DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
 PlayerX     = 80                ' Player X position (center)
 AnimFrame   = 0                 ' Animation frame (0 or 1)
 FrameCount  = 0                 ' Frame counter for animation timing
@@ -128,9 +136,19 @@ ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
 TitleMarchX = 0                 ' Title screen alien X offset
 TitleMarchDir = 1               ' Title march direction (1=right, 0=left)
 TitleMarchCount = 0             ' Title march timing counter
+TitleJitter = 0                 ' Title screen jitter phase (0-7)
+WavePhase   = 0                 ' Color wave phase for big alien (0-3)
 ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
 #ExplosionPos  = 0              ' Explosion BACKTAB position (screen address)
 ExplosionColor = 0              ' Explosion color (matches destroyed alien)
+FlyX        = 0                 ' Flying sprite X position (from path table)
+FlyY        = 0                 ' Flying sprite Y position (from path table)
+FlyPhase    = 0                 ' Path position index (0-31)
+FlySpeed    = 0                 ' Frame counter for path advance
+FlyFrame    = 0                 ' Flying sprite animation frame
+FlyColorIdx = 0                 ' Color cycle index (0-5)
+FlyColorTimer = 0               ' Frame counter for color change
+FlyColor    = 7                 ' Current sprite color
 
 ' --------------------------------------------
 ' Main Program
@@ -155,14 +173,14 @@ ExplosionColor = 0              ' Explosion color (matches destroyed alien)
     WAIT
     DEFINE GRAM_BULLET, 1, BulletGfx
     WAIT
-    ' Color banding test cards (each has 2 rows of the alien)
+    ' Title screen big alien (2 side-by-side 8x8 sprites)
     DEFINE GRAM_BAND1, 1, Band1Gfx
     WAIT
     DEFINE GRAM_BAND2, 1, Band2Gfx
     WAIT
-    DEFINE GRAM_BAND3, 1, Band3Gfx
+    DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx
     WAIT
-    DEFINE GRAM_BAND4, 1, Band4Gfx
+    DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx
     WAIT
     DEFINE GRAM_INV_TEST, 1, InvertedAlienGfx
     WAIT
@@ -174,6 +192,10 @@ ExplosionColor = 0              ' Explosion color (matches destroyed alien)
     WAIT
     DEFINE GRAM_SHIP_ACCENT, 2, ShipAccentGfx
     WAIT
+    DEFINE GRAM_CRAB_F1, 1, SmallCrabF1Gfx
+    WAIT
+    DEFINE GRAM_CRAB_F2, 1, SmallCrabF2Gfx
+    WAIT
 
     ' Initialize row colors (0-7 only for MODE 1)
     ' Blue, Red, Tan, Green, Yellow - rainbow wave
@@ -183,118 +205,224 @@ ExplosionColor = 0              ' Explosion color (matches destroyed alien)
     RowColors(3) = 5   ' Green
     RowColors(4) = 6   ' Yellow
 
+    ' Initialize wave colors for title screen big alien
+    WaveColors(0) = COL_WHITE
+    WaveColors(1) = COL_YELLOW
+    WaveColors(2) = COL_GREEN
+    WaveColors(3) = COL_BLUE
+
 ' ============================================
 ' TITLE SCREEN
 ' ============================================
 TitleScreen:
     CLS
     GameState = 0
-    TitleColor = 0
     TitleFrame = 0
-    ShimmerCount = 0
-    TitleMarchX = 0
-    TitleMarchDir = 1
-    TitleMarchCount = 0
+    TitleMarchDir = 1      ' 1=right, 0=left
+    TitleMarchCount = 0    ' Frame counter for march steps
+    TitleGridCol = 4       ' BACKTAB column of grid left edge
 
-    ' Display title text (top half of screen)
-    ' Screen is 20 columns wide, "SPACE INTRUDERS" is 15 chars
-    ' Center at column 2 (position 42 = row 2 * 20 + col 2)
-    PRINT AT 42, "SPACE INTRUDERS"
+    ' Display title text - row 1
+    PRINT AT 22 COLOR COL_GREEN, "SPACE INTRUDERS"
 
-    ' Vertical "PRESS" and "FIRE" side by side (columns 2 and 5)
-    ' Row 4
-    PRINT AT 82, "P"
-    PRINT AT 85, "F"
-    ' Row 5
-    PRINT AT 102, "R"
-    PRINT AT 105, "I"
-    ' Row 6
-    PRINT AT 122, "E"
-    PRINT AT 125, "R"
-    ' Row 7
-    PRINT AT 142, "S"
-    PRINT AT 145, "E"
-    ' Row 8
-    PRINT AT 162, "S"
+    ' "PRESS FIRE" - bottom of screen (row 10)
+    PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
+    WavePhase = 0          ' Color cycle index for PRESS FIRE
+    TitleColor = 0         ' Frame counter for color change
+    TitleJitter = 0        ' Bolt position (0-14 = char, 15-19 = gap between sweeps)
+    TitleMarchX = 0        ' Bolt frame counter
+
+    ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at TitleGridCol)
+    GOSUB DrawAlienGrid
+
+    ' Initialize flying crab sprite (64-point figure-8 Lissajous path)
+    ' X = 84 + 50*sin(θ), Y = 56 + 18*sin(2θ) — tighter Y to stay between text
+    FlyPathX(0) = 84 : FlyPathX(1) = 89 : FlyPathX(2) = 94 : FlyPathX(3) = 99
+    FlyPathX(4) = 103 : FlyPathX(5) = 108 : FlyPathX(6) = 112 : FlyPathX(7) = 116
+    FlyPathX(8) = 119 : FlyPathX(9) = 123 : FlyPathX(10) = 126 : FlyPathX(11) = 128
+    FlyPathX(12) = 130 : FlyPathX(13) = 132 : FlyPathX(14) = 133 : FlyPathX(15) = 134
+    FlyPathX(16) = 134 : FlyPathX(17) = 134 : FlyPathX(18) = 133 : FlyPathX(19) = 132
+    FlyPathX(20) = 130 : FlyPathX(21) = 128 : FlyPathX(22) = 126 : FlyPathX(23) = 123
+    FlyPathX(24) = 119 : FlyPathX(25) = 116 : FlyPathX(26) = 112 : FlyPathX(27) = 108
+    FlyPathX(28) = 103 : FlyPathX(29) = 99 : FlyPathX(30) = 94 : FlyPathX(31) = 89
+    FlyPathX(32) = 84 : FlyPathX(33) = 79 : FlyPathX(34) = 74 : FlyPathX(35) = 69
+    FlyPathX(36) = 65 : FlyPathX(37) = 60 : FlyPathX(38) = 56 : FlyPathX(39) = 52
+    FlyPathX(40) = 49 : FlyPathX(41) = 45 : FlyPathX(42) = 42 : FlyPathX(43) = 40
+    FlyPathX(44) = 38 : FlyPathX(45) = 36 : FlyPathX(46) = 35 : FlyPathX(47) = 34
+    FlyPathX(48) = 34 : FlyPathX(49) = 34 : FlyPathX(50) = 35 : FlyPathX(51) = 36
+    FlyPathX(52) = 38 : FlyPathX(53) = 40 : FlyPathX(54) = 42 : FlyPathX(55) = 45
+    FlyPathX(56) = 49 : FlyPathX(57) = 52 : FlyPathX(58) = 56 : FlyPathX(59) = 60
+    FlyPathX(60) = 65 : FlyPathX(61) = 69 : FlyPathX(62) = 74 : FlyPathX(63) = 79
+    FlyPathY(0) = 56 : FlyPathY(1) = 60 : FlyPathY(2) = 63 : FlyPathY(3) = 66
+    FlyPathY(4) = 69 : FlyPathY(5) = 71 : FlyPathY(6) = 73 : FlyPathY(7) = 74
+    FlyPathY(8) = 74 : FlyPathY(9) = 74 : FlyPathY(10) = 73 : FlyPathY(11) = 71
+    FlyPathY(12) = 69 : FlyPathY(13) = 66 : FlyPathY(14) = 63 : FlyPathY(15) = 60
+    FlyPathY(16) = 56 : FlyPathY(17) = 52 : FlyPathY(18) = 49 : FlyPathY(19) = 46
+    FlyPathY(20) = 43 : FlyPathY(21) = 41 : FlyPathY(22) = 39 : FlyPathY(23) = 38
+    FlyPathY(24) = 38 : FlyPathY(25) = 38 : FlyPathY(26) = 39 : FlyPathY(27) = 41
+    FlyPathY(28) = 43 : FlyPathY(29) = 46 : FlyPathY(30) = 49 : FlyPathY(31) = 52
+    FlyPathY(32) = 56 : FlyPathY(33) = 60 : FlyPathY(34) = 63 : FlyPathY(35) = 66
+    FlyPathY(36) = 69 : FlyPathY(37) = 71 : FlyPathY(38) = 73 : FlyPathY(39) = 74
+    FlyPathY(40) = 74 : FlyPathY(41) = 74 : FlyPathY(42) = 73 : FlyPathY(43) = 71
+    FlyPathY(44) = 69 : FlyPathY(45) = 66 : FlyPathY(46) = 63 : FlyPathY(47) = 60
+    FlyPathY(48) = 56 : FlyPathY(49) = 52 : FlyPathY(50) = 49 : FlyPathY(51) = 46
+    FlyPathY(52) = 43 : FlyPathY(53) = 41 : FlyPathY(54) = 39 : FlyPathY(55) = 38
+    FlyPathY(56) = 38 : FlyPathY(57) = 38 : FlyPathY(58) = 39 : FlyPathY(59) = 41
+    FlyPathY(60) = 43 : FlyPathY(61) = 46 : FlyPathY(62) = 49 : FlyPathY(63) = 52
+    ' Color cycle: White → Yellow → Green → Blue → Green → Yellow
+    FlyColors(0) = 7 : FlyColors(1) = 6 : FlyColors(2) = 5
+    FlyColors(3) = 3 : FlyColors(4) = 5 : FlyColors(5) = 6
+    FlyPhase = 0
+    FlySpeed = 0
+    FlyFrame = 0
+    FlyColorIdx = 0
+    FlyColorTimer = 0
+    FlyColor = 7
 
 ' --------------------------------------------
-' Title Loop - 2x2 sprite grid with color banding test
+' Title Loop - card-step march (no SCROLL)
 ' --------------------------------------------
 TitleLoop:
     WAIT
 
-    ' Cycle color phase every 8 frames (0-4 for 5 colors)
-    ShimmerCount = ShimmerCount + 1
-    IF ShimmerCount >= 8 THEN
-        ShimmerCount = 0
-        TitleColor = TitleColor + 1
-        IF TitleColor > 4 THEN
-            TitleColor = 0
-        END IF
+    ' Hide unused sprites
+    SPRITE 0, 0, 0, 0
+    SPRITE 1, 0, 0, 0
+    SPRITE 2, 0, 0, 0
+    SPRITE 3, 0, 0, 0
+    SPRITE 4, 0, 0, 0
+    SPRITE 6, 0, 0, 0
+    SPRITE 7, 0, 0, 0
+
+    ' --- Flying crab sprite (figure-8 path) ---
+    ' Advance path position every 3 frames (64 pts × 3 = ~3.2 sec loop)
+    FlySpeed = FlySpeed + 1
+    IF FlySpeed >= 3 THEN
+        FlySpeed = 0
+        FlyPhase = FlyPhase + 1
+        IF FlyPhase >= 64 THEN FlyPhase = 0
     END IF
 
-    ' March animation - move every 12 frames
+    ' Read current position from path arrays
+    FlyX = FlyPathX(FlyPhase)
+    FlyY = FlyPathY(FlyPhase)
+
+    ' Gradual color shift every 32 frames
+    FlyColorTimer = FlyColorTimer + 1
+    IF FlyColorTimer >= 32 THEN
+        FlyColorTimer = 0
+        FlyColorIdx = FlyColorIdx + 1
+        IF FlyColorIdx >= 6 THEN FlyColorIdx = 0
+        FlyColor = FlyColors(FlyColorIdx)
+    END IF
+
+    ' Draw flying crab (swap animation frame every 16 frames)
+    FlyFrame = FlyFrame + 1
+    IF FlyFrame >= 16 THEN FlyFrame = 0
+    IF FlyFrame < 8 THEN
+        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F1 * 8 + FlyColor + $0800
+    ELSE
+        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F2 * 8 + FlyColor + $0800
+    END IF
+
+    ' March animation - move grid 1 card every 32 frames
     TitleMarchCount = TitleMarchCount + 1
-    IF TitleMarchCount >= 12 THEN
+    IF TitleMarchCount >= 32 THEN
         TitleMarchCount = 0
-        TitleFrame = TitleFrame XOR 1  ' Toggle animation frame
+
         IF TitleMarchDir = 1 THEN
-            ' Moving right
-            TitleMarchX = TitleMarchX + 2
-            IF TitleMarchX >= 20 THEN
+            TitleGridCol = TitleGridCol + 1
+            IF TitleGridCol >= 10 THEN
                 TitleMarchDir = 0  ' Reverse to left
             END IF
         ELSE
-            ' Moving left
-            TitleMarchX = TitleMarchX - 2
-            IF TitleMarchX <= 0 THEN
+            TitleGridCol = TitleGridCol - 1
+            IF TitleGridCol <= 1 THEN
                 TitleMarchDir = 1  ' Reverse to right
             END IF
         END IF
+
+        GOSUB DrawAlienGrid
     END IF
 
-    ' 3x3 grid using all 8 sprites (bottom row has 2 centered)
-    ' Color banding by ROW - all sprites in a row share the same color
-    ' Base X: 58 + TitleMarchX (starts left, marches right)
-    ' Y positions: 40, 48, 56 (3 rows, 8 pixels apart)
+    ' Title text white bolt sweep - advance every 6 frames
+    ' Color Stack BACKTAB: FG color in bits 0-2 (and bit 12 for pastel colors 8+)
+    ' GROM card number in bits 3-10. Mask $EFF8 clears color bits 0-2 and 12.
+    TitleMarchX = TitleMarchX + 1
+    IF TitleMarchX >= 6 THEN
+        TitleMarchX = 0
+        ' Restore current bolt position to green (if visible)
+        IF TitleJitter < 15 THEN
+            #Card = PEEK($216 + TitleJitter)
+            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0005
+        END IF
+        ' Advance bolt position
+        TitleJitter = TitleJitter + 1
+        IF TitleJitter >= 20 THEN TitleJitter = 0
+        ' Set new bolt position to white (if visible)
+        IF TitleJitter < 15 THEN
+            #Card = PEEK($216 + TitleJitter)
+            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0007
+        END IF
+    END IF
 
-    ' Row 0: sprites 0, 1, 2 (3 across)
-    ColorIndex = TitleColor
-    AlienColor = RowColors(ColorIndex)
-    SPRITE 0, 58 + TitleMarchX + SPR_VISIBLE, 40, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-    SPRITE 1, 66 + TitleMarchX + SPR_VISIBLE, 40, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-    SPRITE 2, 74 + TitleMarchX + SPR_VISIBLE, 40, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
+    ' "PRESS FIRE" color pulse - cycle every 40 frames
+    TitleColor = TitleColor + 1
+    IF TitleColor >= 40 THEN
+        TitleColor = 0
+        WavePhase = WavePhase + 1
+        IF WavePhase >= 4 THEN WavePhase = 0
+        PRINT AT 205 COLOR WaveColors(WavePhase), "PRESS FIRE"
+    END IF
 
-    ' Row 1: sprites 3, 4, 5 (3 across)
-    ColorIndex = TitleColor + 1
-    IF ColorIndex > 4 THEN ColorIndex = ColorIndex - 5
-    AlienColor = RowColors(ColorIndex)
-    SPRITE 3, 58 + TitleMarchX + SPR_VISIBLE, 48, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-    SPRITE 4, 66 + TitleMarchX + SPR_VISIBLE, 48, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-    SPRITE 5, 74 + TitleMarchX + SPR_VISIBLE, 48, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-
-    ' Row 2: sprites 6, 7 (2 centered - only 8 sprites available)
-    ColorIndex = TitleColor + 2
-    IF ColorIndex > 4 THEN ColorIndex = ColorIndex - 5
-    AlienColor = RowColors(ColorIndex)
-    SPRITE 6, 62 + TitleMarchX + SPR_VISIBLE, 56, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
-    SPRITE 7, 70 + TitleMarchX + SPR_VISIBLE, 56, (GRAM_ALIEN2 + TitleFrame) * 8 + AlienColor + $0800
+    ' Animation - toggle walk frame every 16 frames via GRAM redefine
+    ShimmerCount = ShimmerCount + 1
+    IF ShimmerCount >= 16 THEN
+        ShimmerCount = 0
+        TitleFrame = 1 - TitleFrame
+        IF TitleFrame = 0 THEN
+            DEFINE GRAM_BAND1, 1, Band1Gfx
+            WAIT
+            DEFINE GRAM_BAND2, 1, Band2Gfx
+        ELSE
+            DEFINE GRAM_BAND1, 1, Band1F1Gfx
+            WAIT
+            DEFINE GRAM_BAND2, 1, Band2F1Gfx
+        END IF
+    END IF
 
     ' Check for fire button to start game
     IF CONT.BUTTON THEN
-        ' Hide all 8 sprites used on title screen
-        SPRITE 0, 0, 0, 0
-        SPRITE 1, 0, 0, 0
-        SPRITE 2, 0, 0, 0
-        SPRITE 3, 0, 0, 0
-        SPRITE 4, 0, 0, 0
-        SPRITE 5, 0, 0, 0
-        SPRITE 6, 0, 0, 0
-        SPRITE 7, 0, 0, 0
+        SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
         GOTO StartGame
     END IF
 
     GOTO TitleLoop
+
+' --- Draw 3x3 alien grid on BACKTAB ---
+DrawAlienGrid: PROCEDURE
+    ' Clear rows 5-7 first (cols 0-19)
+    FOR LoopVar = 100 TO 159
+        PRINT AT LoopVar, 0
+    NEXT LoopVar
+    ' Card values for left/right halves (GRAM + blue foreground)
+    #Card = (GRAM_BAND1 * 8) + COL_BLUE + $0800
+    #Mask = (GRAM_BAND2 * 8) + COL_BLUE + $0800
+    ' Draw 3 rows of 3 aliens (each alien = 2 cards wide, 1 card gap between)
+    FOR LoopVar = 0 TO 2
+        #ScreenPos = (5 + LoopVar) * 20 + TitleGridCol
+        ' Alien 1
+        PRINT AT #ScreenPos, #Card
+        PRINT AT #ScreenPos + 1, #Mask
+        ' Alien 2 (offset +3 cards)
+        PRINT AT #ScreenPos + 3, #Card
+        PRINT AT #ScreenPos + 4, #Mask
+        ' Alien 3 (offset +6 cards)
+        PRINT AT #ScreenPos + 6, #Card
+        PRINT AT #ScreenPos + 7, #Mask
+    NEXT LoopVar
+    RETURN
+END
 
 ' ============================================
 ' START GAME - Initialize gameplay
@@ -642,10 +770,20 @@ CheckRowForHit: PROCEDURE
         IF HitRow < ALIEN_START_Y + AlienOffsetY + ALIEN_ROWS THEN
             AlienGridRow = HitRow - ALIEN_START_Y - AlienOffsetY
 
-            ' Check wide horizontal range (bullet center +/- tolerance)
-            ' Bullet graphic center is at BulletX+3, check 6 pixel range
-            HitCol = (BulletX + 1) / 8
-            GOSUB CheckOneColumn
+            ' Check wide horizontal range - expanded for better hit detection
+            ' Bullet visible pixels are at BulletX+3 and BulletX+4
+            ' Check columns from BulletX-1 to BulletX+7 to catch edge cases
+
+            ' Check left of bullet (catches left edge of aliens)
+            IF BulletX >= 8 THEN
+                HitCol = (BulletX - 1) / 8
+                GOSUB CheckOneColumn
+            END IF
+
+            IF BulletActive THEN
+                HitCol = (BulletX + 2) / 8
+                GOSUB CheckOneColumn
+            END IF
 
             IF BulletActive THEN
                 HitCol = (BulletX + 4) / 8
@@ -851,12 +989,14 @@ END
 ' DrawAliens - Draw all aliens to background
 ' --------------------------------------------
 DrawAliens: PROCEDURE
-    ' Clear the row ABOVE first (where aliens came from when dropping)
+    ' Clear ALL rows above current alien position (handles multiple drops)
     IF AlienOffsetY > 0 THEN
-        #ScreenPos = (ALIEN_START_Y + AlienOffsetY - 1) * 20
-        FOR Col = 0 TO 19
-            PRINT AT #ScreenPos + Col, 0
-        NEXT Col
+        FOR ClearRow = 0 TO AlienOffsetY - 1
+            #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
+            FOR Col = 0 TO 19
+                PRINT AT #ScreenPos + Col, 0
+            NEXT Col
+        NEXT ClearRow
     END IF
 
     ' Draw aliens and clear trail in ONE pass (no flicker)
@@ -991,47 +1131,47 @@ END
 ' Graphics Data
 ' --------------------------------------------
 ShipGfx:
-    ' Player ship body - Frame 0
+    ' Player ship body - Frame 0 (blocky tank-style cannon)
+    BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
-    BITMAP ".XXXXXX."
-    BITMAP "..X..X.."
-    BITMAP ".X....X."
+    BITMAP "XXXXXXXX"
+    BITMAP "XX....XX"
+    BITMAP "XX....XX"
 
-    ' Frame 1 (subtle wing/engine flicker)
+    ' Frame 1 (engine glow variation)
+    BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
-    BITMAP "..X..X.."
+    BITMAP "X......X"
     BITMAP "X......X"
 
-' Ship accent overlay (stacked MOB for 2-color effect)
+' Ship accent overlay (fills gaps in body for 2-color effect)
 ShipAccentGfx:
-    ' Frame 0 (cockpit + small engine dots)
-    BITMAP "........"
-    BITMAP "...XX..."
-    BITMAP "...XX..."
+    ' Frame 0 - engine glow (cyan fills center gap in rows 6-7)
     BITMAP "........"
     BITMAP "........"
-    BITMAP "..X..X.."
     BITMAP "........"
     BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
 
-    ' Frame 1 (engine flicker)
-    BITMAP "........"
-    BITMAP "...XX..."
-    BITMAP "...XX..."
+    ' Frame 1 - brighter engine glow
     BITMAP "........"
     BITMAP "........"
-    BITMAP ".X....X."
     BITMAP "........"
     BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
 
 ' Alien Type 1 - Top row (small squid) - 1px gap right & bottom
 Alien1Gfx:
@@ -1108,52 +1248,138 @@ BulletGfx:
     BITMAP "...XX..."
 
 ' ============================================
-' Color Banding Test Graphics - Title Screen Only
-' 2 cards: top half (4 rows) and bottom half (4 rows)
-' Non-overlapping sprites for clean color wave
+' Space Invaders Sprite Library
+' All wide aliens = 2 side-by-side 8x8 sprites (16x8)
+' Centered/padded to fit 8-pixel GRAM cards
 ' ============================================
+
+' --- SKULL INVADER (12x8 → padded to 16x8) ---
+' Title screen big alien
 Band1Gfx:
-    ' TOP HALF of alien (rows 1-4)
-    BITMAP "X....X.."
-    BITMAP "X.XX.X.."
-    BITMAP "XXXXXX.."
-    BITMAP "XX..XX.."
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
+    ' SKULL left - Frame 1
+    BITMAP "......XX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP "..XXXXXX"
+    BITMAP ".....XX."
+    BITMAP "....XX.."
+    BITMAP "..XX...."
 
 Band2Gfx:
-    ' BOTTOM HALF of alien (rows 5-8)
+    ' SKULL right - Frame 1
+    BITMAP "XX......"
+    BITMAP "XXXXX..."
     BITMAP "XXXXXX.."
-    BITMAP ".XXXX..."
-    BITMAP "X....X.."
+    BITMAP "X..XXX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".XX....."
+    BITMAP "..XX...."
+    BITMAP "....XX.."
+
+Band1F1Gfx:
+    ' SKULL left - Frame 2
+    BITMAP "......XX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP "..XXXXXX"
+    BITMAP "....XXX."
+    BITMAP "...XX..X"
+    BITMAP "....XX.."
+
+Band2F1Gfx:
+    ' SKULL right - Frame 2
+    BITMAP "XX......"
+    BITMAP "XXXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "X..XXX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".XXX...."
+    BITMAP "X..XX..."
+    BITMAP "..XX...."
+
+' --- SMALL CRAB (6x8 → centered in 8x8) ---
+SmallCrabF1Gfx:
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP "XX.XX.XX"
+    BITMAP "XXXXXXXX"
+    BITMAP "..X..X.."
+    BITMAP ".X.XX.X."
+    BITMAP "..X..X.."
+
+SmallCrabF2Gfx:
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP "XX.XX.XX"
+    BITMAP "XXXXXXXX"
+    BITMAP ".X.XX.X."
+    BITMAP "........"
+    BITMAP ".X....X."
+
+' --- SQUID (11x8 → padded to 16x8) ---
+SquidLeftF1Gfx:
+    BITMAP "....X..."
+    BITMAP "..X..X.."
+    BITMAP "..X.XXXX"
+    BITMAP "..XXX.XX"
+    BITMAP "..XXXXXX"
+    BITMAP "...XXXXX"
+    BITMAP "....X..."
+    BITMAP "...X...."
+
+SquidRightF1Gfx:
+    BITMAP "..X....."
     BITMAP ".X..X..."
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
+    BITMAP "XXX.X..."
+    BITMAP "X.XXX..."
+    BITMAP "XXXXX..."
+    BITMAP "XXXX...."
+    BITMAP "..X....."
+    BITMAP "...X...."
+
+SquidLeftF2Gfx:
+    BITMAP "....X..."
+    BITMAP ".....X.."
+    BITMAP "....XXXX"
+    BITMAP "...XX.XX"
+    BITMAP "..XXXXXX"
+    BITMAP "..X.XXXX"
+    BITMAP "..X.X..."
+    BITMAP ".....XX."
+
+SquidRightF2Gfx:
+    BITMAP "..X....."
+    BITMAP ".X......"
+    BITMAP "XXX....."
+    BITMAP "X.XX...."
+    BITMAP "XXXXX..."
+    BITMAP "XXX.X..."
+    BITMAP "..X.X..."
+    BITMAP "XX......"
+
+' --- WIDE CRAB (14x7 → padded to 16x8) ---
+WideCrabLeftF1Gfx:
+    BITMAP ".....XXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP ".XX.XX.X"
+    BITMAP ".XXXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP "...X...."
     BITMAP "........"
 
-Band3Gfx:
-    ' (unused for now)
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-
-Band4Gfx:
-    ' (unused for now)
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
+WideCrabRightF1Gfx:
+    BITMAP "XXX....."
+    BITMAP "XXXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "X.XX.XX."
+    BITMAP "XXXXXXX."
+    BITMAP "X..XXX.."
+    BITMAP "....X..."
     BITMAP "........"
 
 ' Alien2 drawn with DOTS as the alien body (for F/B mode BACKTAB)

@@ -123,12 +123,55 @@ END
 - `PRINT AT position, value` - Write to screen
 - `SCREEN array, x, y, width, height, stride` - Block copy
 
-**Card Format (Color Stack):**
+**Card Format (Color Stack) — GROM cards:**
+
+The STIC uses an **interleaved** bit layout. The card number and color do NOT occupy contiguous bit ranges. This was verified by tracing IntyBASIC's compiled assembly output.
+
 ```
-Bits 0-7:   Card number (0-255 GROM, 256+ GRAM)
-Bits 9-12:  Foreground color
+Bits 0-2:   Foreground color (low 3 bits, 0-7)
+Bits 3-10:  GROM card number (card << 3, 8 bits = 0-255)
+Bit 11:     0 (GROM flag)
+Bit 12:     Foreground color bit 3 (for pastel/extended colors 8-15)
 Bit 13:     Advance color stack
 ```
+
+IntyBASIC encodes `PRINT AT pos COLOR color, "text"` as: `(grom_card << 3) XOR color`
+Since GROM cards always have 000 in their low 3 bits, the XOR is effectively an OR.
+
+**To change only the color of an existing GROM BACKTAB entry:**
+```basic
+' Mask $EFF8 clears bits 0-2 and bit 12 (all color bits)
+#Card = PEEK($200 + position)
+PRINT AT position, (#Card AND $EFF8) OR new_color
+' Where new_color is 0-7 (e.g., 5=green, 7=white)
+```
+
+**WARNING:** Using wrong masks (e.g., clearing bits 3-5 or 9-12) will corrupt the card number and display garbage characters. The color bits are 0-2, NOT 9-12.
+
+**BACKTAB Value Quick Reference (Color Stack):**
+
+| Character | Color   | BACKTAB Value           | Example                    |
+|-----------|---------|-------------------------|----------------------------|
+| GROM 'A'  | Green 5 | (33 << 3) OR 5 = 269    | `PRINT AT pos, 269`       |
+| GROM 'S'  | Green 5 | (51 << 3) OR 5 = 413    | `PRINT AT pos, 413`       |
+| GROM 'S'  | White 7 | (51 << 3) OR 7 = 415    | `PRINT AT pos, 415`       |
+| GRAM 0    | Blue 1  | (0 << 3) OR 1 + $800    | `PRINT AT pos, $0801`     |
+| Space     | Any     | 0                        | `PRINT AT pos, 0`         |
+
+GROM card numbers for letters: A=33, B=34, ..., Z=58. Digits: 0=16, 1=17, ..., 9=25.
+
+**Card Format (Color Stack) — GRAM cards:**
+
+```
+Bits 0-2:   Foreground color (low 3 bits)
+Bits 3-8:   GRAM card number (card << 3, 6 bits = 0-63)
+Bits 9-10:  (unused)
+Bit 11:     1 (GRAM flag)
+Bit 12:     Foreground color bit 3
+Bit 13:     Advance color stack
+```
+
+For GRAM cards in IntyBASIC: `(gram_card * 8) + color + $0800`
 
 **Card Format (F/B Mode):**
 ```
@@ -560,7 +603,7 @@ See `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` for full details.
 **Memory:**
 - **Use `OPTION MAP 2`** - Don't limit yourself to 8K, modern carts support 42K+
 - **Use `--CC3` or `--JLP`** flags for extra RAM if needed
-- **Arrays are ZERO indexed** - `DIM arr(5)` gives indices 0-4
+- **Arrays are ZERO indexed and DIM specifies element count** - `DIM arr(5)` allocates exactly 5 elements (indices 0-4), NOT 6. If you need index 63, use `DIM arr(64)`. Off-by-one here causes reads from adjacent memory (other arrays/variables), leading to subtle bugs like sprites teleporting to wrong positions.
 
 **Intellivoice:**
 - **Call `VOICE INIT` only ONCE** at program start - Multiple calls can lock up real hardware (works in emulator but fails on console)
@@ -568,6 +611,57 @@ See `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` for full details.
 **Testing:**
 - **Test on real hardware** - Emulator behavior differs from actual consoles
 - **Get diverse testers** - Different ages find different issues
+
+## Common Pitfalls (Learned the Hard Way)
+
+### Color Stack BACKTAB Manipulation
+
+When reading/modifying BACKTAB values directly with PEEK/PRINT AT:
+
+1. **Color is in bits 0-2, NOT bits 9-12.** The STIC Color Stack format is interleaved — card number occupies bits 3-10, and foreground color occupies bits 0-2 (plus bit 12 for colors 8+). Many references incorrectly show color in bits 9-12.
+
+2. **Use mask `$EFF8` to strip color.** This clears bits 0-2 and bit 12 without touching the card number. Then OR in the new color (0-7).
+
+3. **Colors 8+ overflow in Color Stack mode.** The 3-bit foreground color field (bits 0-2) only supports colors 0-7. Colors like Cyan (9) will corrupt the card number via bit overflow, displaying garbage characters instead of text.
+
+### DIM Array Sizing
+
+`DIM arr(N)` allocates **exactly N elements** (indices 0 to N-1). This is a common off-by-one source:
+- If your loop uses index 0-63, you need `DIM arr(64)`, not `DIM arr(63)`
+- Out-of-bounds reads silently return data from whatever is next in memory (other arrays, variables), causing hard-to-trace bugs
+
+### Sprite Colors vs Background
+
+When cycling sprite colors, avoid colors that match background BACKTAB tile colors — the sprite becomes invisible against the background. For example, if your BACKTAB aliens use blue (1), don't include blue in a sprite color cycle.
+
+### Sprite Attribute Color Encoding
+
+Sprite attributes (third parameter to `SPRITE`) use the same color-in-low-bits pattern:
+```basic
+SPRITE n, x + SPR_VISIBLE, y, gram_card * 8 + color + $0800
+'                                          ^^^^^ bits 0-2 = color (0-7)
+'                                                 ^^^^^ bit 11 = GRAM flag
+```
+
+### Verifying Bit Formats via Assembly Output
+
+When unsure about IntyBASIC's encoding, **always check the compiled .asm file**. This is the authoritative source:
+
+1. Build the project to generate the .asm file
+2. Search for the IntyBASIC source line (e.g., `PRINT AT 22 COLOR`)
+3. Trace the `MVII` / `XOR` / `MVO@` instructions to see exact values
+4. IntyBASIC uses XOR-chaining for string output — first char gets `base_value XOR color`, subsequent chars XOR a delta from the previous
+
+Example from Space Intruders assembly:
+```
+MVII #408,R0       ; Base value for 'S' = GROM card 51 << 3 = 408
+XOR _color,R0      ; XOR with color 5 → 408 XOR 5 = 413 written to BACKTAB
+MVO@ R0,R4         ; Write to BACKTAB, auto-increment pointer
+XORI #24,R0        ; XOR delta to get next char 'P' → 413 XOR 24 = 389
+MVO@ R0,R4         ; Write 'P' to BACKTAB
+```
+
+This technique confirmed that foreground color is in bits 0-2 (not 9-12 as some references claim).
 
 ## Claude Code Guidelines
 
@@ -590,3 +684,7 @@ When helping with IntyBASIC development:
 8. **Watch ROM size** - Default 8K limit is easy to exceed with Intellivoice + music. If jzintv shows "CPU off in the weeds!", add `OPTION MAP 2` and use `SEGMENT 1` for overflow code/data.
 
 9. **Run with voice** - Use `jzintv_run` or `./build.sh voice` for Intellivoice programs. Missing `--voice=1` causes silent failures.
+
+10. **Verify bit formats in the .asm output** - Never trust documentation (including this file) over the compiled assembly. When doing BACKTAB manipulation, PEEK/POKE, or bit masking, always build first and check the .asm to confirm exact values and bit positions. See "Verifying Bit Formats via Assembly Output" above.
+
+11. **Color Stack mode only supports colors 0-7 in foreground** - The 3-bit FG color field means only Black(0), Blue(1), Red(2), Tan(3), Dark Green(4), Green(5), Yellow(6), White(7). Pastel colors (8-15) require bit 12 set, which changes the BACKTAB word interpretation. Stick to 0-7 for `PRINT AT COLOR` text and BACKTAB card foregrounds.
