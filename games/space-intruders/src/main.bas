@@ -37,6 +37,24 @@ CONST GRAM_EXPLOSION3 = 16      ' Explosion frame 3 (dissipate)
 CONST GRAM_SHIP_ACCENT = 17     ' Ship accent overlay (2 cards for animation)
 CONST GRAM_CRAB_F1  = 19        ' Small crab frame 1 (title screen flyer)
 CONST GRAM_CRAB_F2  = 20        ' Small crab frame 2
+CONST GRAM_SPARK_UP = 21        ' Bolt spark above letter frame 1
+CONST GRAM_SPARK_DN = 22        ' Bolt spark below letter frame 1
+CONST GRAM_SPARK_UP2 = 23       ' Bolt spark above letter frame 2 (trailing)
+CONST GRAM_SPARK_DN2 = 24       ' Bolt spark below letter frame 2 (trailing)
+
+' Custom title font
+CONST GRAM_FONT_S = 25
+CONST GRAM_FONT_P = 26
+CONST GRAM_FONT_A = 27
+CONST GRAM_FONT_C = 28
+CONST GRAM_FONT_E = 29
+CONST GRAM_FONT_I = 30
+CONST GRAM_FONT_N = 31
+CONST GRAM_FONT_T = 32
+CONST GRAM_FONT_R = 33
+CONST GRAM_FONT_U = 34
+CONST GRAM_FONT_D = 35
+CONST GRAM_FONT_F = 36
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -149,6 +167,9 @@ FlyFrame    = 0                 ' Flying sprite animation frame
 FlyColorIdx = 0                 ' Color cycle index (0-5)
 FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
+FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
+FlyLoopCount = 0                ' Number of completed figure-8 loops
+SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
 
 ' --------------------------------------------
 ' Main Program
@@ -196,6 +217,39 @@ FlyColor    = 7                 ' Current sprite color
     WAIT
     DEFINE GRAM_CRAB_F2, 1, SmallCrabF2Gfx
     WAIT
+    DEFINE GRAM_SPARK_UP, 1, SparkUpGfx
+    WAIT
+    DEFINE GRAM_SPARK_DN, 1, SparkDnGfx
+    WAIT
+    DEFINE GRAM_SPARK_UP2, 1, SparkUpGfx2
+    WAIT
+    DEFINE GRAM_SPARK_DN2, 1, SparkDnGfx2
+    WAIT
+    ' Custom title font (11 letters)
+    DEFINE GRAM_FONT_S, 1, FontSGfx
+    WAIT
+    DEFINE GRAM_FONT_P, 1, FontPGfx
+    WAIT
+    DEFINE GRAM_FONT_A, 1, FontAGfx
+    WAIT
+    DEFINE GRAM_FONT_C, 1, FontCGfx
+    WAIT
+    DEFINE GRAM_FONT_E, 1, FontEGfx
+    WAIT
+    DEFINE GRAM_FONT_I, 1, FontIGfx
+    WAIT
+    DEFINE GRAM_FONT_N, 1, FontNGfx
+    WAIT
+    DEFINE GRAM_FONT_T, 1, FontTGfx
+    WAIT
+    DEFINE GRAM_FONT_R, 1, FontRGfx
+    WAIT
+    DEFINE GRAM_FONT_U, 1, FontUGfx
+    WAIT
+    DEFINE GRAM_FONT_D, 1, FontDGfx
+    WAIT
+    DEFINE GRAM_FONT_F, 1, FontFGfx
+    WAIT
 
     ' Initialize row colors (0-7 only for MODE 1)
     ' Blue, Red, Tan, Green, Yellow - rainbow wave
@@ -205,11 +259,12 @@ FlyColor    = 7                 ' Current sprite color
     RowColors(3) = 5   ' Green
     RowColors(4) = 6   ' Yellow
 
-    ' Initialize wave colors for title screen big alien
+    ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
+    ' Grey/White flash
     WaveColors(0) = COL_WHITE
-    WaveColors(1) = COL_YELLOW
-    WaveColors(2) = COL_GREEN
-    WaveColors(3) = COL_BLUE
+    WaveColors(1) = COL_WHITE
+    WaveColors(2) = 0              ' Grey (color 8 encoded as $1800 base)
+    WaveColors(3) = 0              ' Grey
 
 ' ============================================
 ' TITLE SCREEN
@@ -223,12 +278,27 @@ TitleScreen:
     TitleGridCol = 4       ' BACKTAB column of grid left edge
 
     ' Display title text - row 1
-    PRINT AT 22 COLOR COL_GREEN, "SPACE INTRUDERS"
+    ' Title text using custom GRAM font (green = color 5)
+    PRINT AT 22, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
+    PRINT AT 23, GRAM_FONT_P * 8 + COL_TAN + $0800  ' P
+    PRINT AT 24, GRAM_FONT_A * 8 + COL_TAN + $0800  ' A
+    PRINT AT 25, GRAM_FONT_C * 8 + COL_TAN + $0800  ' C
+    PRINT AT 26, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
+    '   position 27 = space (leave black)
+    PRINT AT 28, GRAM_FONT_I * 8 + COL_TAN + $0800  ' I
+    PRINT AT 29, GRAM_FONT_N * 8 + COL_TAN + $0800  ' N
+    PRINT AT 30, GRAM_FONT_T * 8 + COL_TAN + $0800  ' T
+    PRINT AT 31, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
+    PRINT AT 32, GRAM_FONT_U * 8 + COL_TAN + $0800  ' U
+    PRINT AT 33, GRAM_FONT_D * 8 + COL_TAN + $0800  ' D
+    PRINT AT 34, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
+    PRINT AT 35, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
+    PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
 
-    ' "PRESS FIRE" - bottom of screen (row 10)
-    PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
+    ' "PRESS FIRE" slides in from edges — don't print here
     WavePhase = 0          ' Color cycle index for PRESS FIRE
-    TitleColor = 0         ' Frame counter for color change
+    TitleColor = 0         ' Frame counter for color change / slide timer
+    SlidePos = 0           ' Slide-in position (0=edges, 5=final, 6+=done)
     TitleJitter = 0        ' Bolt position (0-14 = char, 15-19 = gap between sweeps)
     TitleMarchX = 0        ' Bolt frame counter
 
@@ -278,6 +348,10 @@ TitleScreen:
     FlyColorIdx = 0
     FlyColorTimer = 0
     FlyColor = 7
+    FlyState = 0           ' Start with entry from left
+    FlyLoopCount = 0
+    FlyX = 0               ' Start off-screen top-left
+    FlyY = 0               ' Start at top of screen
 
 ' --------------------------------------------
 ' Title Loop - card-step march (no SCROLL)
@@ -294,18 +368,70 @@ TitleLoop:
     SPRITE 6, 0, 0, 0
     SPRITE 7, 0, 0, 0
 
-    ' --- Flying crab sprite (figure-8 path) ---
-    ' Advance path position every 3 frames (64 pts × 3 = ~3.2 sec loop)
+    ' --- Flying crab "Zod" state machine ---
+    ' States: 0=enter from left, 1=figure-8 loops, 2=exit right, 3=offscreen pause
     FlySpeed = FlySpeed + 1
     IF FlySpeed >= 3 THEN
         FlySpeed = 0
-        FlyPhase = FlyPhase + 1
-        IF FlyPhase >= 64 THEN FlyPhase = 0
-    END IF
 
-    ' Read current position from path arrays
-    FlyX = FlyPathX(FlyPhase)
-    FlyY = FlyPathY(FlyPhase)
+        IF FlyState = 0 THEN
+            ' Enter from top-left: diagonal path to center (84, 56)
+            FlyX = FlyX + 4
+            FlyY = FlyY + 3
+            IF FlyX >= 84 THEN
+                FlyX = 84
+                FlyY = 56         ' Snap to figure-8 start
+                FlyState = 1       ' Start figure-8
+                FlyPhase = 0
+                FlyLoopCount = 0
+            END IF
+
+        ELSEIF FlyState = 1 THEN
+            ' Figure-8 looping
+            FlyPhase = FlyPhase + 1
+            IF FlyPhase >= 64 THEN
+                FlyPhase = 0
+                FlyLoopCount = FlyLoopCount + 1
+                IF FlyLoopCount >= 2 THEN
+                    FlyState = 2   ' Done looping, exit right
+                    FlyX = 84
+                    FlyY = 56
+                END IF
+            END IF
+            IF FlyState = 1 THEN
+                FlyX = FlyPathX(FlyPhase)
+                FlyY = FlyPathY(FlyPhase)
+            END IF
+
+        ELSEIF FlyState = 2 THEN
+            ' Exit to right with wobble: X increases by 4, Y oscillates
+            FlyX = FlyX + 4
+            FlyPhase = FlyPhase + 1
+            ' Wobble: 4-step cycle → up, center, down, center (±6px)
+            IF (FlyPhase AND 3) = 0 THEN
+                FlyY = 50
+            ELSEIF (FlyPhase AND 3) = 1 THEN
+                FlyY = 56
+            ELSEIF (FlyPhase AND 3) = 2 THEN
+                FlyY = 62
+            ELSE
+                FlyY = 56
+            END IF
+            IF FlyX > 167 THEN
+                FlyState = 3       ' Offscreen pause
+                FlyPhase = 0       ' Reuse as pause counter
+            END IF
+
+        ELSE
+            ' Offscreen pause (~1 sec = 20 steps × 3 frames)
+            FlyPhase = FlyPhase + 1
+            IF FlyPhase >= 20 THEN
+                FlyState = 0       ' Restart: enter from top-left
+                FlyX = 0
+                FlyY = 0
+            END IF
+        END IF
+    END IF
 
     ' Gradual color shift every 32 frames
     FlyColorTimer = FlyColorTimer + 1
@@ -316,13 +442,18 @@ TitleLoop:
         FlyColor = FlyColors(FlyColorIdx)
     END IF
 
-    ' Draw flying crab (swap animation frame every 16 frames)
+    ' Draw flying crab (animate + show/hide based on state)
     FlyFrame = FlyFrame + 1
     IF FlyFrame >= 16 THEN FlyFrame = 0
-    IF FlyFrame < 8 THEN
-        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F1 * 8 + FlyColor + $0800
+    IF FlyState = 3 THEN
+        ' Hidden during offscreen pause
+        SPRITE SPR_FLYER, 0, 0, 0
     ELSE
-        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F2 * 8 + FlyColor + $0800
+        IF FlyFrame < 8 THEN
+            SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F1 * 8 + FlyColor + $0800
+        ELSE
+            SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F2 * 8 + FlyColor + $0800
+        END IF
     END IF
 
     ' March animation - move grid 1 card every 32 frames
@@ -351,29 +482,156 @@ TitleLoop:
     TitleMarchX = TitleMarchX + 1
     IF TitleMarchX >= 6 THEN
         TitleMarchX = 0
-        ' Restore current bolt position to green (if visible)
+        ' Restore current bolt position to green and clear sparks (if visible)
         IF TitleJitter < 15 THEN
             #Card = PEEK($216 + TitleJitter)
-            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0005
+            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0003
+            PRINT AT 2 + TitleJitter, 0    ' Clear spark above
+            PRINT AT 42 + TitleJitter, 0   ' Clear spark below
         END IF
         ' Advance bolt position
         TitleJitter = TitleJitter + 1
         IF TitleJitter >= 20 THEN TitleJitter = 0
-        ' Set new bolt position to white (if visible)
+        ' Set new bolt position to white and place sparks (if visible)
         IF TitleJitter < 15 THEN
             #Card = PEEK($216 + TitleJitter)
             PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0007
+            ' Grey sparks: color 8 on GRAM = low bits 0 + bit 12 → card*8 + $1800
+            PRINT AT 2 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
+            PRINT AT 42 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
         END IF
     END IF
 
-    ' "PRESS FIRE" color pulse - cycle every 40 frames
-    TitleColor = TitleColor + 1
-    IF TitleColor >= 40 THEN
-        TitleColor = 0
-        WavePhase = WavePhase + 1
-        IF WavePhase >= 4 THEN WavePhase = 0
-        PRINT AT 205 COLOR WaveColors(WavePhase), "PRESS FIRE"
+    ' Spark 2-frame animation: frame 1 (0-2) → frame 2 (3-5) within each bolt step
+    IF TitleJitter < 15 THEN
+        IF TitleMarchX >= 3 THEN
+            ' Frame 2: trailing dot position
+            PRINT AT 2 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
+            PRINT AT 42 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
+        END IF
     END IF
+
+    ' Screen shake (title screen) - same pattern as gameplay
+    IF ShakeTimer > 0 THEN
+        ShakeTimer = ShakeTimer - 1
+        IF ShakeTimer > 0 THEN
+            IF ShakeTimer AND 2 THEN
+                SCROLL 1, 0
+            ELSEIF ShakeTimer AND 1 THEN
+                SCROLL 0, 1
+            ELSE
+                SCROLL -1, 0
+            END IF
+        ELSE
+            SCROLL 0, 0  ' Reset to normal when done
+        END IF
+    END IF
+
+    ' "PRESS FIRE" slide-in from edges, then shimmer (GRAM font)
+    ' Wait until flyer begins figure-8 before starting slide-in
+    IF FlyState = 0 THEN GOTO SkipPressfire
+
+    ' When Zod exits (state 2): rapid flash then disappear
+    IF FlyState = 2 THEN
+        ' Toggle visible/invisible every 2 frames for rapid blink
+        TitleColor = TitleColor + 1
+        IF TitleColor >= 4 THEN TitleColor = 0
+        IF TitleColor < 2 THEN
+            ' Visible frame (grey = dim flash)
+            PRINT AT 205, GRAM_FONT_P * 8 + $1800
+            PRINT AT 206, GRAM_FONT_R * 8 + $1800
+            PRINT AT 207, GRAM_FONT_E * 8 + $1800
+            PRINT AT 208, GRAM_FONT_S * 8 + $1800
+            PRINT AT 209, GRAM_FONT_S * 8 + $1800
+            PRINT AT 210, 0
+            PRINT AT 211, GRAM_FONT_F * 8 + $1800
+            PRINT AT 212, GRAM_FONT_I * 8 + $1800
+            PRINT AT 213, GRAM_FONT_R * 8 + $1800
+            PRINT AT 214, GRAM_FONT_E * 8 + $1800
+        ELSE
+            ' Invisible frame (clear)
+            FOR LoopVar = 205 TO 214
+                PRINT AT LoopVar, 0
+            NEXT LoopVar
+        END IF
+        GOTO SkipPressfire
+    END IF
+
+    ' When Zod is offscreen (state 3): clear text and reset for next cycle
+    IF FlyState = 3 THEN
+        IF SlidePos > 0 THEN
+            FOR LoopVar = 200 TO 219
+                PRINT AT LoopVar, 0
+            NEXT LoopVar
+            SlidePos = 0
+            TitleColor = 0
+            WavePhase = 0
+        END IF
+        GOTO SkipPressfire
+    END IF
+
+    IF SlidePos <= 5 THEN
+        ' Slide-in phase: PRESS from left, FIRE from right
+        TitleColor = TitleColor + 1
+        IF TitleColor >= 8 THEN
+            TitleColor = 0
+            ' Clear row 10
+            FOR LoopVar = 200 TO 219
+                PRINT AT LoopVar, 0
+            NEXT LoopVar
+            ' "PRESS" slides from col 0 to col 5 (white, GRAM)
+            #Card = 200 + SlidePos
+            PRINT AT #Card, GRAM_FONT_P * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 1, GRAM_FONT_R * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 2, GRAM_FONT_E * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 3, GRAM_FONT_S * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 4, GRAM_FONT_S * 8 + COL_WHITE + $0800
+            ' "FIRE" slides from col 16 to col 11
+            #Card = 216 - SlidePos
+            PRINT AT #Card, GRAM_FONT_F * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 1, GRAM_FONT_I * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 2, GRAM_FONT_R * 8 + COL_WHITE + $0800
+            PRINT AT #Card + 3, GRAM_FONT_E * 8 + COL_WHITE + $0800
+            SlidePos = SlidePos + 1
+            ' Trigger impact shake when words connect (SlidePos just became 6)
+            IF SlidePos = 6 THEN ShakeTimer = 8
+        END IF
+    ELSE
+        ' Shimmer - cycle Grey/White every 12 frames
+        TitleColor = TitleColor + 1
+        IF TitleColor >= 4 THEN
+            TitleColor = 0
+            WavePhase = WavePhase + 1
+            IF WavePhase >= 4 THEN WavePhase = 0
+            ' WaveColors: 0=grey (use $1800), 7=white (use $0800+7)
+            IF WaveColors(WavePhase) = 0 THEN
+                ' Grey = color 8: GRAM card * 8 + $1800 (bit 12 set, low bits 0)
+                PRINT AT 205, GRAM_FONT_P * 8 + $1800
+                PRINT AT 206, GRAM_FONT_R * 8 + $1800
+                PRINT AT 207, GRAM_FONT_E * 8 + $1800
+                PRINT AT 208, GRAM_FONT_S * 8 + $1800
+                PRINT AT 209, GRAM_FONT_S * 8 + $1800
+                PRINT AT 210, 0  ' space
+                PRINT AT 211, GRAM_FONT_F * 8 + $1800
+                PRINT AT 212, GRAM_FONT_I * 8 + $1800
+                PRINT AT 213, GRAM_FONT_R * 8 + $1800
+                PRINT AT 214, GRAM_FONT_E * 8 + $1800
+            ELSE
+                ' White = color 7: GRAM card * 8 + 7 + $0800
+                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
+                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
+                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 210, 0  ' space
+                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
+                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
+                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
+            END IF
+        END IF
+    END IF
+SkipPressfire:
 
     ' Animation - toggle walk frame every 16 frames via GRAM redefine
     ShimmerCount = ShimmerCount + 1
@@ -1319,6 +1577,175 @@ SmallCrabF2Gfx:
     BITMAP ".X.XX.X."
     BITMAP "........"
     BITMAP ".X....X."
+
+' ============================================
+' Custom Title Font - "SPACE INTRUDERS"
+' Outlined / hollow style - wide and spacey
+' ============================================
+
+FontSGfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP ".XXXXX.."
+    BITMAP ".....XX."
+    BITMAP ".....XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+FontPGfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+
+FontAGfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX..XXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+FontCGfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+FontEGfx:
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+
+FontIGfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "XXXXXXX."
+
+FontNGfx:
+    BITMAP "XX...XX."
+    BITMAP "XXX..XX."
+    BITMAP "XXXX.XX."
+    BITMAP "XX.XXXX."
+    BITMAP "XX..XXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+FontTGfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+FontRGfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+FontUGfx:
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+FontDGfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+
+FontFGfx:
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+
+' --- BOLT SPARK (above letter - points down) ---
+SparkUpGfx:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".......X"
+
+' --- BOLT SPARK (below letter - points up) ---
+SparkDnGfx:
+    BITMAP ".......X"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+' --- BOLT SPARK frame 2 (above - dot trails left) ---
+SparkUpGfx2:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "......X."
+
+' --- BOLT SPARK frame 2 (below - dot trails right) ---
+SparkDnGfx2:
+    BITMAP "......X."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
 
 ' --- SQUID (11x8 → padded to 16x8) ---
 SquidLeftF1Gfx:
