@@ -60,6 +60,10 @@ CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
 CONST GRAM_SAUCER = 39         ' Flying saucer (bonus target)
 CONST GRAM_BEAM   = 40         ' Wide beam shot (full 8px width)
 CONST GRAM_POWERUP = 41        ' Power-up capsule graphic
+CONST GRAM_SAUCER_F2 = 42      ' Saucer frame 2 (left window lit)
+CONST GRAM_SAUCER_F3 = 43      ' Saucer frame 3 (middle window lit)
+CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
+CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -70,15 +74,15 @@ CONST SPR_POWERUP   = 7         ' Power-up drop/pickup sprite
 ' Alien grid constants
 CONST ALIEN_COLS    = 9         ' 9 aliens per row
 CONST ALIEN_ROWS    = 5         ' 5 rows of aliens
-CONST ALIEN_START_X = 1         ' Starting column on screen (leftmost)
+CONST ALIEN_START_X = 0         ' Starting column on screen (leftmost)
 CONST ALIEN_START_Y = 1         ' Starting row on screen
-CONST ALIEN_MAX_X   = 10        ' Maximum X offset before reversing (20 - 9 - 1)
+CONST ALIEN_MAX_X   = 11        ' Maximum X offset before reversing (20 - 9)
 ' CONST MARCH_SPEED_START = 160   ' Starting frames between march steps
 CONST MARCH_SPEED_START = 60   ' Starting frames between march steps
 CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
 
 ' Bullet constants
-CONST BULLET_SPEED  = 1         ' Player bullet speed (slower)
+CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
 CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed
 CONST ALIEN_SHOOT_RATE = 90     ' Frames between alien shots
@@ -133,7 +137,6 @@ ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 #Score      = 0                 ' Player score
 PlayerHit   = 0                 ' 1 = player was hit
-HitTimer    = 0                 ' Countdown for hit effect
 DeathTimer  = 0                 ' Countdown during death animation
 Invincible  = 0                 ' Invincibility timer after respawn
 Lives       = STARTING_LIVES    ' Player lives remaining
@@ -177,7 +180,7 @@ FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
 FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
 ' Starfield variables
-DIM #StarPos(16)                ' Star BACKTAB positions (16 stars, 16-bit for safe math)
+DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
 DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
 StarCount   = 0                 ' Number of active stars
 StarTimer   = 0                 ' Frame counter for scroll updates
@@ -194,6 +197,17 @@ StarTick    = 0                 ' Tick counter (for slow layer)
 #RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
 #PathXAddr  = 0                 ' ROM address of FlyPathXData (set at title init)
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
+' Sound effect variables
+SfxVolume   = 0                 ' Current decay volume (0 = silent)
+SfxType     = 0                 ' 0=none, 1=alien explode, 2=saucer explode, 3=player death
+#SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
+' Dual laser variables
+Bullet2X    = 0                 ' Second bullet X position
+Bullet2Y    = 0                 ' Second bullet Y position
+Bullet2Active = 0               ' 1 = bullet 2 flying
+#DualTimer  = 0                 ' Dual laser countdown (300 frames = 5 sec, 0 = normal)
+WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
+#NextLife   = 1000              ' Score threshold for next extra life
 
 ' --------------------------------------------
 ' Main Program
@@ -280,9 +294,17 @@ StarTick    = 0                 ' Tick counter (for slow layer)
     WAIT
     DEFINE GRAM_SAUCER, 1, SaucerGfx
     WAIT
+    DEFINE GRAM_SAUCER_F2, 1, SaucerF2Gfx
+    WAIT
+    DEFINE GRAM_SAUCER_F3, 1, SaucerF3Gfx
+    WAIT
+    DEFINE GRAM_SAUCER_F4, 1, SaucerF4Gfx
+    WAIT
     DEFINE GRAM_BEAM, 1, BeamGfx
     WAIT
     DEFINE GRAM_POWERUP, 1, PowerUpGfx
+    WAIT
+    DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx
     WAIT
 
     ' Initialize row colors (0-7 only for MODE 1)
@@ -362,7 +384,7 @@ TitleScreen:
     FlyX = 0               ' Start off-screen top-left
     FlyY = 0               ' Start at top of screen
 
-    ' Start title music
+    ' Start title music (PLAY FULL for full 3-channel theme)
     PLAY FULL
     PLAY VOLUME 12
     PLAY space_intruders_theme
@@ -673,12 +695,17 @@ SkipPressfire:
 
     ' Check for fire button to start game
     IF CONT.BUTTON THEN
-        PLAY OFF                       ' Stop title music
+        ' Start gameplay music (mid tempo default)
+        PLAY SIMPLE
+        PLAY VOLUME 12
+        PLAY si_dnb_mid
         SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
         GOTO StartGame
     END IF
 
     GOTO TitleLoop
+
+    SEGMENT 1   ' All procedures in Segment 1 (Seg 0 reserved for main code + Intellivoice runtime)
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
@@ -714,23 +741,23 @@ GenerateStars: PROCEDURE
         Col = RANDOM(20)
         Row = RANDOM(5)
         IF Row = 0 THEN
-            #StarPos(LoopVar) = 60 + Col       ' Row 3
+            StarPos(LoopVar) = 60 + Col       ' Row 3
         ELSEIF Row = 1 THEN
-            #StarPos(LoopVar) = 80 + Col       ' Row 4
+            StarPos(LoopVar) = 80 + Col       ' Row 4
         ELSEIF Row = 2 THEN
-            #StarPos(LoopVar) = 160 + Col      ' Row 8
+            StarPos(LoopVar) = 160 + Col      ' Row 8
         ELSEIF Row = 3 THEN
-            #StarPos(LoopVar) = 180 + Col      ' Row 9
+            StarPos(LoopVar) = 180 + Col      ' Row 9
         ELSE
-            #StarPos(LoopVar) = 220 + Col      ' Row 11
+            StarPos(LoopVar) = 220 + Col      ' Row 11
         END IF
         ' Alternate star type: even=slow/dim, odd=fast/bright
         StarType(LoopVar) = LoopVar AND 1
         ' Draw the star
         IF StarType(LoopVar) = 0 THEN
-            PRINT AT #StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
+            PRINT AT StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
         ELSE
-            PRINT AT #StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
+            PRINT AT StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
         END IF
         StarCount = StarCount + 1
     NEXT LoopVar
@@ -741,11 +768,11 @@ END
 ScrollStars: PROCEDURE
     FOR LoopVar = 0 TO StarCount - 1
         ' Calculate row and column from BACKTAB position
-        Row = #StarPos(LoopVar) / 20
-        Col = #StarPos(LoopVar) - (Row * 20)
+        Row = StarPos(LoopVar) / 20
+        Col = StarPos(LoopVar) - (Row * 20)
 
         ' Clear old position
-        PRINT AT #StarPos(LoopVar), 0
+        PRINT AT StarPos(LoopVar), 0
 
         ' Parallax: slow stars move every other tick, fast every tick
         IF StarType(LoopVar) = 0 THEN
@@ -767,13 +794,13 @@ ScrollStars: PROCEDURE
         END IF
 
         ' Update position
-        #StarPos(LoopVar) = Row * 20 + Col
+        StarPos(LoopVar) = Row * 20 + Col
 
         ' Redraw star
         IF StarType(LoopVar) = 0 THEN
-            PRINT AT #StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
+            PRINT AT StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
         ELSE
-            PRINT AT #StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
+            PRINT AT StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
         END IF
     NEXT LoopVar
     RETURN
@@ -790,29 +817,53 @@ StartGame:
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
 
-    ' Initialize march speed
+    ' Initialize level and march speed
+    Level = 1
     CurrentMarchSpeed = MARCH_SPEED_START
-
-    ' Draw the alien grid
-    GOSUB DrawAliens
+    WaveRevealCol = 0             ' Start column sweep from left
 
     ' Draw score and lives
     PRINT AT 220, "SCORE: 0"
     ' Lives ship icon (GRAM card 0, green, Color Stack mode)
-    PRINT AT 236, (GRAM_SHIP * 8) + COL_WHITE + $0800
-    PRINT AT 237 COLOR COL_WHITE, "X4"
+    PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
+    PRINT AT 237 COLOR COL_WHITE, "X3"
 
     ' Initialize saucer (inactive, spawn after ~5 seconds)
     FlyState = 0
     FlyPhase = 0  ' Spawn countdown (counts up to threshold)
     #BeamTimer = 0  ' No beam power-up
     #RapidTimer = 0 ' No rapid fire
+    #DualTimer = 0  ' No dual laser
+    Bullet2Active = 0
     TitleFrame = 0  ' No power-up drop
     TitleColor = 0  ' First drop is beam
     TitleJitter = 0 ' No fire cooldown
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
+    SPRITE SPR_FLYER, 0, 0, 0
+
+    ' Wave 1 announcement
+    IF VOICE.AVAILABLE THEN
+        VOICE PLAY wave_phrase
+        VOICE WAIT
+        VOICE NUMBER 1
+    END IF
+    PRINT AT 107 COLOR 6, "WAVE 1"
+    FOR LoopVar = 0 TO 90
+        WAIT
+    NEXT LoopVar
+    FOR LoopVar = 0 TO 7
+        IF (LoopVar AND 1) = 0 THEN
+            PRINT AT 107, "       "
+        ELSE
+            PRINT AT 107 COLOR 6, "WAVE 1"
+        END IF
+        FOR Row = 0 TO 4
+            WAIT
+        NEXT Row
+    NEXT LoopVar
+    PRINT AT 107, "       "
 
     ' Initialize player sprite
     GOSUB DrawPlayer
@@ -846,13 +897,16 @@ GameLoop:
             Lives = STARTING_LIVES
             Level = 1
             #Score = 0
+            #NextLife = 1000
             PlayerX = 80
             AlienOffsetX = 0
             AlienOffsetY = 0
             AlienDir = 1
             MarchCount = 0
             BulletActive = 0
+            Bullet2Active = 0
             ABulletActive = 0
+            #DualTimer = 0
             DeathTimer = 0
             Invincible = 0
             ShakeTimer = 0
@@ -861,6 +915,7 @@ GameLoop:
             SPRITE SPR_PLAYER, 0, 0, 0
             SPRITE SPR_PBULLET, 0, 0, 0
             SPRITE SPR_ABULLET, 0, 0, 0
+            SPRITE SPR_FLYER, 0, 0, 0
             SPRITE SPR_SAUCER, 0, 0, 0
             SPRITE SPR_SAUCER2, 0, 0, 0
             SPRITE SPR_POWERUP, 0, 0, 0
@@ -895,27 +950,47 @@ GameLoop:
         GOSUB DrawAliens
     END IF
 
-    ' Update alien march
+    ' Advance wave reveal (sweep columns in from left, 1 col per frame)
+    IF WaveRevealCol < ALIEN_COLS - 1 THEN
+        WaveRevealCol = WaveRevealCol + 1
+        GOSUB DrawAliens
+    END IF
+
+    ' Update alien march (only after reveal is complete)
+    IF WaveRevealCol >= ALIEN_COLS - 1 THEN
     MarchCount = MarchCount + 1
     IF MarchCount >= CurrentMarchSpeed THEN
         MarchCount = 0
         GOSUB MarchAliens
         GOSUB DrawAliens
         ' Check if aliens reached the bottom (invasion!)
-        ' Bottom alien row = ALIEN_START_Y + AlienOffsetY + ALIEN_ROWS - 1
-        ' If this reaches row 10 (one above player), game over
-        IF AlienOffsetY >= 5 THEN
-            GameOver = 1
-            ShakeTimer = 40  ' Big shake on invasion!
-            PRINT AT 105, "INVASION!"
-            PRINT AT 125, "PRESS FIRE"
-            SPRITE SPR_PLAYER, 0, 0, 0
+        ' Find bottom-most alive row (scan from bottom up, stop at first alive)
+        HitRow = 255  ' sentinel: no alive row found
+        FOR Row = ALIEN_ROWS - 1 TO 0 STEP -1
+            IF #AlienRow(Row) THEN
+                IF HitRow = 255 THEN HitRow = Row
+            END IF
+        NEXT Row
+        ' Check invasion threshold (row 10 = HUD area)
+        IF HitRow < 255 THEN
+            IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
+                GameOver = 1
+                PLAY OFF
+                ShakeTimer = 40  ' Big shake on invasion!
+                PRINT AT 105, "INVASION!"
+                PRINT AT 125, "PRESS FIRE"
+                SPRITE SPR_PLAYER, 0, 0, 0
+            END IF
         END IF
     END IF
+    END IF ' WaveRevealCol gate
 
-    ' Update bullet
+    ' Update bullets
     IF BulletActive THEN
         GOSUB MoveBullet
+    END IF
+    IF Bullet2Active THEN
+        GOSUB MoveBullet2
     END IF
 
     ' Alien shooting logic
@@ -944,6 +1019,9 @@ GameLoop:
         END IF
     END IF
 
+    ' Update explosion sound effect (noise decay)
+    GOSUB UpdateSfx
+
     ' Update flying saucer
     GOSUB UpdateSaucer
 
@@ -971,26 +1049,43 @@ GameLoop:
         END IF
     END IF
 
+    ' Check bullet 2 vs alien bullet collision
+    IF Bullet2Active THEN
+        IF ABulletActive THEN
+            IF Bullet2X >= ABulletX - 6 THEN
+                IF Bullet2X <= ABulletX + 6 THEN
+                    IF Bullet2Y >= ABulletY - 8 THEN
+                        IF Bullet2Y <= ABulletY + 8 THEN
+                            Bullet2Active = 0
+                            ABulletActive = 0
+                            #Score = #Score + 5
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
     ' Check if player was hit (only if not already dying or invincible)
     IF PlayerHit THEN
         IF DeathTimer = 0 THEN
             IF Invincible = 0 THEN
                 PlayerHit = 0
                 Lives = Lives - 1
-                ' Update lives display
+                ' Update lives display (show extra lives remaining)
                 IF Lives = 3 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X3"
-                END IF
-                IF Lives = 2 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X2"
                 END IF
-                IF Lives = 1 THEN
+                IF Lives = 2 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X1"
+                END IF
+                IF Lives = 1 THEN
+                    PRINT AT 237 COLOR COL_WHITE, "X0"
                 END IF
                 IF Lives = 0 THEN
                     ' Game over
-                    PRINT AT 237 COLOR COL_WHITE, "X0"
                     GameOver = 1
+                    PLAY OFF
                     ShakeTimer = 30  ' Big shake on game over
                     PRINT AT 105, "GAME OVER"
                     PRINT AT 125, "PRESS FIRE"
@@ -1024,13 +1119,7 @@ GameLoop:
         Invincible = Invincible - 1
     END IF
 
-    ' Handle hit effect timer (turns off explosion sound)
-    IF HitTimer > 0 THEN
-        HitTimer = HitTimer - 1
-        IF HitTimer = 0 THEN
-            SOUND 0, , 0
-        END IF
-    END IF
+    ' (Explosion sound decay now handled by UpdateSfx)
 
     ' Check if all aliens are dead (wave win)
     GOSUB CheckWaveWin
@@ -1042,6 +1131,9 @@ GameLoop:
     IF #RapidTimer > 0 THEN
         #RapidTimer = #RapidTimer - 1
     END IF
+    IF #DualTimer > 0 THEN
+        #DualTimer = #DualTimer - 1
+    END IF
     IF TitleJitter > 0 THEN
         TitleJitter = TitleJitter - 1
     END IF
@@ -1049,10 +1141,36 @@ GameLoop:
     ' Update sprites
     GOSUB DrawPlayer
     GOSUB DrawBullet
+    GOSUB DrawBullet2
     GOSUB DrawAlienBullet
 
     ' Update score display
     PRINT AT 227, <>#Score
+
+    ' Extra life every 1000 points
+    IF #Score >= #NextLife THEN
+        #NextLife = #NextLife + 1000
+        IF Lives < 9 THEN
+            Lives = Lives + 1
+            ' Update lives display
+            IF Lives = 2 THEN
+                PRINT AT 237 COLOR COL_WHITE, "X1"
+            ELSEIF Lives = 3 THEN
+                PRINT AT 237 COLOR COL_WHITE, "X2"
+            ELSEIF Lives = 4 THEN
+                PRINT AT 237 COLOR COL_WHITE, "X3"
+            ELSEIF Lives = 5 THEN
+                PRINT AT 237 COLOR COL_WHITE, "X4"
+            ELSEIF Lives >= 6 THEN
+                PRINT AT 237 COLOR COL_WHITE, "X"
+                PRINT AT 238, <> (Lives - 1)
+            END IF
+            ' Announce extra life
+            IF VOICE.AVAILABLE THEN
+                VOICE PLAY extra_life_phrase
+            END IF
+        END IF
+    END IF
 
     GOTO GameLoop
 
@@ -1076,13 +1194,26 @@ MovePlayer: PROCEDURE
 
     ' Fire: side buttons or keypad 1 (auto-fire, works while moving)
     IF CONT.BUTTON OR CONT.KEY = 1 THEN
-        IF BulletActive = 0 THEN
-            IF TitleJitter = 0 THEN
-                BulletX = PlayerX + 3  ' Center of ship
+        IF #DualTimer > 0 THEN
+            ' Dual laser: fire pair when either slot is free
+            IF BulletActive = 0 OR Bullet2Active = 0 THEN
+                BulletX = PlayerX        ' Left side of ship
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
-                IF #RapidTimer > 0 THEN
-                    TitleJitter = RAPID_COOLDOWN
+                Bullet2X = PlayerX + 6   ' Right side of ship
+                Bullet2Y = PLAYER_Y - 4
+                Bullet2Active = 1
+            END IF
+        ELSE
+            ' Normal/beam/rapid: single center shot
+            IF BulletActive = 0 THEN
+                IF TitleJitter = 0 THEN
+                    BulletX = PlayerX + 3  ' Center of ship
+                    BulletY = PLAYER_Y - 4
+                    BulletActive = 1
+                    IF #RapidTimer > 0 THEN
+                        TitleJitter = RAPID_COOLDOWN
+                    END IF
                 END IF
             END IF
         END IF
@@ -1091,46 +1222,34 @@ MovePlayer: PROCEDURE
     RETURN
 END
 
-' --------------------------------------------
-' MarchAliens - Move alien grid
-' --------------------------------------------
-MarchAliens: PROCEDURE
-    ' Move in current direction
-    IF AlienDir = 1 THEN
-        ' Moving right
-        AlienOffsetX = AlienOffsetX + 1
-        IF AlienOffsetX >= ALIEN_MAX_X THEN
-            ' Hit right edge - drop down and reverse
-            AlienOffsetY = AlienOffsetY + 1
-            AlienDir = 255  ' Will subtract 1 (unsigned wraps)
-        END IF
-    ELSE
-        ' Moving left
-        IF AlienOffsetX > 0 THEN
-            AlienOffsetX = AlienOffsetX - 1
-        ELSE
-            ' Hit left edge - drop down and reverse
-            AlienOffsetY = AlienOffsetY + 1
-            AlienDir = 1
-        END IF
-    END IF
-    RETURN
-END
 
 ' --------------------------------------------
 ' MoveBullet - Update bullet position and check collisions
 ' --------------------------------------------
 MoveBullet: PROCEDURE
-    ' Move bullet up (rapid fire = 3px/frame, normal = 1px/frame)
+    ' Move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
     IF #RapidTimer > 0 THEN
         IF BulletY > BULLET_TOP + RAPID_SPEED THEN
             BulletY = BulletY - RAPID_SPEED
         ELSE
             BulletActive = 0
         END IF
+    ELSEIF #DualTimer > 0 THEN
+        ' Dual laser: flat 2px/frame (matches bullet 2)
+        IF BulletY > BULLET_TOP + 2 THEN
+            BulletY = BulletY - 2
+        ELSE
+            BulletActive = 0
+        END IF
     ELSE
-        IF BulletY > BULLET_TOP + BULLET_SPEED THEN
-            BulletY = BulletY - BULLET_SPEED
+        ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
+        IF (BulletColor AND 3) = 3 THEN
+            LoopVar = 2
+        ELSE
+            LoopVar = 1
+        END IF
+        IF BulletY > BULLET_TOP + LoopVar THEN
+            BulletY = BulletY - LoopVar
         ELSE
             BulletActive = 0
         END IF
@@ -1150,13 +1269,14 @@ END
 ' --------------------------------------------
 CheckBulletHit: PROCEDURE
     ' Check primary row (where bullet tip is)
-    HitRow = BulletY / 8
+    ' Sprite coords have 8px offset from BACKTAB: column 0 = sprite X=8, row 0 = sprite Y=8
+    HitRow = (BulletY - 8) / 8
     GOSUB CheckRowForHit
 
     ' Also check row above (bullet may be straddling boundary)
     IF BulletActive THEN
-        IF BulletY > 8 THEN
-            HitRow = (BulletY - 4) / 8
+        IF BulletY > 16 THEN
+            HitRow = (BulletY - 12) / 8
             GOSUB CheckRowForHit
         END IF
     END IF
@@ -1176,40 +1296,40 @@ CheckRowForHit: PROCEDURE
 
             IF #BeamTimer > 0 THEN
                 ' Wide beam mode: beam covers BulletX-3 to BulletX+4 (8px)
-                ' Check every column the beam touches
-                IF BulletX >= 3 THEN
-                    HitCol = (BulletX - 3) / 8
+                ' Subtract 8 from X for sprite-to-BACKTAB offset
+                IF BulletX >= 11 THEN
+                    HitCol = (BulletX - 11) / 8
                     GOSUB CheckOneColumn
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX) / 8
+                    HitCol = (BulletX - 8) / 8
                     GOSUB CheckOneColumn
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX + 4) / 8
+                    HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
             ELSE
-                ' Normal bullet: check columns from BulletX-1 to BulletX+6
-                IF BulletX >= 8 THEN
-                    HitCol = (BulletX - 1) / 8
+                ' Normal bullet: subtract 8 for sprite-to-BACKTAB offset
+                IF BulletX >= 9 THEN
+                    HitCol = (BulletX - 9) / 8
                     GOSUB CheckOneColumn
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX + 2) / 8
+                    HitCol = (BulletX - 6) / 8
                     GOSUB CheckOneColumn
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX + 4) / 8
+                    HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX + 6) / 8
+                    HitCol = (BulletX - 2) / 8
                     GOSUB CheckOneColumn
                 END IF
             END IF
@@ -1226,6 +1346,9 @@ CheckOneColumn: PROCEDURE
     IF HitCol >= ALIEN_START_X + AlienOffsetX THEN
         IF HitCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
             AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
+
+            ' Can't hit unrevealed columns during wave sweep-in
+            IF AlienGridCol > WaveRevealCol THEN RETURN
 
             ' Calculate bitmask for this column
             #Mask = 1
@@ -1246,6 +1369,10 @@ CheckOneColumn: PROCEDURE
 
                 ' Update score
                 #Score = #Score + 10
+
+                ' Noise explosion SFX (short punchy crunch)
+                SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
+                SOUND 2, 200, 12  ' Immediate tone hit on channel 3
 
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
@@ -1380,8 +1507,9 @@ MoveAlienBullet: PROCEDURE
                     ' HIT! Player is hit
                     PlayerHit = 1
                     ABulletActive = 0
-                    SOUND 0, 100, 15
-                    HitTimer = 20
+                    ' Dramatic noise explosion SFX (descending pitch)
+                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 80
+                    SOUND 2, 80, 15  ' Immediate tone hit on channel 3
                     RETURN
                 END IF
             END IF
@@ -1409,7 +1537,148 @@ DrawAlienBullet: PROCEDURE
     RETURN
 END
 
-    SEGMENT 1   ' Move remaining procedures + graphics to Segment 1 ($A000-$BFFF, 8K)
+' --------------------------------------------
+' MarchAliens - Move alien grid (dynamic boundaries)
+' --------------------------------------------
+MarchAliens: PROCEDURE
+    ' Find leftmost and rightmost alive columns across all rows
+    HitRow = ALIEN_COLS - 1       ' LeftmostCol: start high, find min
+    LoopVar = 0                   ' RightmostCol: start low, find max
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        IF #AlienRow(Row) THEN
+            #Mask = 1
+            FOR Col = 0 TO ALIEN_COLS - 1
+                IF #AlienRow(Row) AND #Mask THEN
+                    IF Col < HitRow THEN HitRow = Col
+                    IF Col > LoopVar THEN LoopVar = Col
+                END IF
+                #Mask = #Mask * 2
+            NEXT Col
+        END IF
+    NEXT Row
+
+    ' HitRow = leftmost alive col, LoopVar = rightmost alive col
+    ' Right boundary: ALIEN_START_X + AlienOffsetX + LoopVar must stay <= 19
+    ' Left boundary: ALIEN_START_X + AlienOffsetX + HitRow must stay >= 0
+
+    IF AlienDir = 1 THEN
+        ' Moving right
+        IF ALIEN_START_X + AlienOffsetX + LoopVar < 19 THEN
+            AlienOffsetX = AlienOffsetX + 1
+        ELSE
+            ' Hit right edge - drop down and reverse
+            AlienOffsetY = AlienOffsetY + 1
+            AlienDir = 255
+        END IF
+    ELSE
+        ' Moving left
+        ' Guard: AlienOffsetX is unsigned 8-bit, can't go below 0
+        IF AlienOffsetX > 0 THEN
+            IF AlienOffsetX + HitRow > 0 THEN
+                AlienOffsetX = AlienOffsetX - 1
+            ELSE
+                ' Hit left edge - drop down and reverse
+                AlienOffsetY = AlienOffsetY + 1
+                AlienDir = 1
+            END IF
+        ELSE
+            ' AlienOffsetX = 0: reverse (can't represent negative offset)
+            AlienOffsetY = AlienOffsetY + 1
+            AlienDir = 1
+        END IF
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' MoveBullet2 - Move second bullet and check collisions via swap
+' --------------------------------------------
+MoveBullet2: PROCEDURE
+    ' Move up at 2px/frame (dual laser is a power-up, should feel fast)
+    IF Bullet2Y > BULLET_TOP + 2 THEN
+        Bullet2Y = Bullet2Y - 2
+    ELSE
+        Bullet2Active = 0
+    END IF
+
+    ' Check collision with aliens via swap
+    IF Bullet2Active THEN
+        ' Save bullet 1 state into unused title-screen vars
+        FlyFrame = BulletX
+        FlyLoopCount = BulletY
+        FlyColorTimer = BulletActive
+        ' Swap bullet 2 into globals
+        BulletX = Bullet2X
+        BulletY = Bullet2Y
+        BulletActive = Bullet2Active
+        GOSUB CheckBulletHit
+        ' Copy results back to bullet 2
+        Bullet2Active = BulletActive
+        ' Restore bullet 1
+        BulletX = FlyFrame
+        BulletY = FlyLoopCount
+        BulletActive = FlyColorTimer
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' DrawBullet2 - Draw second bullet on SPR_FLYER
+' (must be called AFTER DrawBullet so LaserColor is set)
+' --------------------------------------------
+DrawBullet2: PROCEDURE
+    IF Bullet2Active THEN
+        SPRITE SPR_FLYER, Bullet2X + $0200, Bullet2Y, GRAM_BULLET * 8 + LaserColor + $0800
+    ELSE
+        SPRITE SPR_FLYER, 0, 0, 0
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' UpdateSfx - Noise channel explosion with attack-decay
+' --------------------------------------------
+UpdateSfx: PROCEDURE
+    IF SfxVolume = 0 THEN RETURN
+
+    ' All SFX on channel 3 (SOUND 2) to coexist with PLAY SIMPLE music
+    SOUND 2, #SfxPitch, SfxVolume
+
+    ' Decay based on type
+    IF SfxType = 2 THEN
+        ' Saucer crash: slow decay + descending pitch (sustained crunch)
+        IF (BulletColor AND 1) = 0 THEN
+            IF SfxVolume > 1 THEN
+                SfxVolume = SfxVolume - 1
+            ELSE
+                SfxVolume = 0
+            END IF
+        END IF
+        #SfxPitch = #SfxPitch + 8
+    ELSEIF SfxType = 3 THEN
+        ' Player death: slow decay + descending pitch
+        IF SfxVolume > 1 THEN
+            SfxVolume = SfxVolume - 1
+        ELSE
+            SfxVolume = 0
+        END IF
+        #SfxPitch = #SfxPitch + 10
+    ELSE
+        ' Alien: fast decay (2 per frame)
+        IF SfxVolume > 2 THEN
+            SfxVolume = SfxVolume - 2
+        ELSE
+            SfxVolume = 0
+        END IF
+    END IF
+
+    ' Silence when done
+    IF SfxVolume = 0 THEN
+        SOUND 2, , 0           ' Silence channel 3
+        SfxType = 0
+    END IF
+    RETURN
+END
 
 ' --------------------------------------------
 ' UpdateSaucer - Spawn, move, and check collision for flying saucer
@@ -1432,7 +1701,7 @@ UpdateSaucer: PROCEDURE
             END IF
             FlyY = 8            ' Row 0 (sprites have 8px Y offset on STIC)
             FlySpeed = 0
-            FlyColor = 1        ' Cyan (low 3 bits; $1000 adds bit 3 in SPRITE)
+            FlyColor = 4        ' Dark Green
         END IF
         RETURN
     END IF
@@ -1446,6 +1715,7 @@ UpdateSaucer: PROCEDURE
             IF FlyX > 167 THEN
                 ' Off screen right - deactivate
                 FlyState = 0
+                FlyPhase = 0
                 SPRITE SPR_SAUCER, 0, 0, 0
                 SPRITE SPR_SAUCER2, 0, 0, 0
                 RETURN
@@ -1456,6 +1726,7 @@ UpdateSaucer: PROCEDURE
             ELSE
                 ' Off screen left - deactivate
                 FlyState = 0
+                FlyPhase = 0
                 SPRITE SPR_SAUCER, 0, 0, 0
                 SPRITE SPR_SAUCER2, 0, 0, 0
                 RETURN
@@ -1463,9 +1734,26 @@ UpdateSaucer: PROCEDURE
         END IF
     END IF
 
-    ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide, cyan)
-    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, GRAM_SAUCER * 8 + FlyColor + $1800
-    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, GRAM_SAUCER * 8 + FlyColor + $1800
+    ' Animate saucer: 4-frame window scan + color cycle
+    FlyPhase = FlyPhase + 1
+    IF FlyPhase >= 24 THEN FlyPhase = 0
+    IF FlyPhase = 0 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerGfx       ' All windows dark
+        FlyColor = 4                            ' Dark Green
+    ELSEIF FlyPhase = 6 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF2Gfx     ' Inner window lit
+        FlyColor = 5                            ' Green
+    ELSEIF FlyPhase = 12 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF3Gfx     ' Outer window lit
+        FlyColor = 4                            ' Dark Green
+    ELSEIF FlyPhase = 18 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF4Gfx     ' Both windows + engine glow
+        FlyColor = 5                            ' Green
+    END IF
+
+    ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
+    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, GRAM_SAUCER * 8 + FlyColor + $0800
+    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, GRAM_SAUCER * 8 + FlyColor + $0800
 
     ' Check collision with player bullet (16px wide hitbox)
     IF BulletActive THEN
@@ -1476,8 +1764,13 @@ UpdateSaucer: PROCEDURE
                     ' HIT the saucer!
                     BulletActive = 0
                     FlyState = 0
+                    FlyPhase = 0
+                    DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
                     SPRITE SPR_SAUCER, 0, 0, 0
                     SPRITE SPR_SAUCER2, 0, 0, 0
+                    ' Saucer crash SFX (deep rumble + descending pitch)
+                    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+                    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
                     ' Bonus points
                     #Score = #Score + 50
                     ' Drop power-up from saucer position
@@ -1486,6 +1779,33 @@ UpdateSaucer: PROCEDURE
                     FlyY = 8             ' Start falling from row 0
                     SlidePos = 0
                     ' Show explosion at saucer position using BACKTAB
+                    #ExplosionPos = FlyX / 8
+                    ExplosionTimer = 15
+                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' Check collision with bullet 2 (16px wide hitbox)
+    IF Bullet2Active THEN
+        IF Bullet2Y < 14 THEN
+            IF Bullet2X >= FlyX - 4 THEN
+                IF Bullet2X <= FlyX + 16 THEN
+                    ' HIT the saucer with bullet 2!
+                    Bullet2Active = 0
+                    FlyState = 0
+                    FlyPhase = 0
+                    DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
+                    SPRITE SPR_SAUCER, 0, 0, 0
+                    SPRITE SPR_SAUCER2, 0, 0, 0
+                    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+                    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
+                    #Score = #Score + 50
+                    TitleFrame = 1
+                    TitleMarchDir = FlyX
+                    FlyY = 8
+                    SlidePos = 0
                     #ExplosionPos = FlyX / 8
                     ExplosionTimer = 15
                     PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -1507,9 +1827,12 @@ UpdatePowerUp: PROCEDURE
     IF TitleColor = 0 THEN
         TitleGridCol = COL_YELLOW    ' Beam: yellow/white
         TitleMarchCount = COL_WHITE
-    ELSE
+    ELSEIF TitleColor = 1 THEN
         TitleGridCol = COL_GREEN     ' Rapid: green/blue
         TitleMarchCount = COL_BLUE
+    ELSE
+        TitleGridCol = COL_RED       ' Dual: red/tan
+        TitleMarchCount = COL_TAN
     END IF
 
     IF TitleFrame = 1 THEN
@@ -1544,13 +1867,21 @@ UpdatePowerUp: PROCEDURE
                 IF TitleColor = 0 THEN
                     #BeamTimer = 300
                     #RapidTimer = 0
-                ELSE
+                    #DualTimer = 0
+                ELSEIF TitleColor = 1 THEN
                     #RapidTimer = 300
                     #BeamTimer = 0
+                    #DualTimer = 0
+                ELSE
+                    #DualTimer = 300
+                    #BeamTimer = 0
+                    #RapidTimer = 0
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
-                TitleColor = TitleColor XOR 1
+                ' Cycle: 0(beam) → 1(rapid) → 2(dual) → 0
+                TitleColor = TitleColor + 1
+                IF TitleColor >= 3 THEN TitleColor = 0
                 RETURN
             END IF
         END IF
@@ -1624,12 +1955,15 @@ DrawAliens: PROCEDURE
         #Card = AlienCard * 8 + AlienColor + $0800
 
         ' Draw aliens using PRINT AT (standard IntyBASIC)
+        ' Only draw columns up to WaveRevealCol (sweep-in effect)
         #Mask = 1
         FOR Col = 0 TO ALIEN_COLS - 1
-            IF #AlienRow(Row) AND #Mask THEN
-                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
-            ELSE
-                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+            IF Col <= WaveRevealCol THEN
+                IF #AlienRow(Row) AND #Mask THEN
+                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                ELSE
+                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+                END IF
             END IF
             #Mask = #Mask * 2
         NEXT Col
@@ -1668,8 +2002,20 @@ END
 ' StartNewWave - Reset aliens for next wave
 ' --------------------------------------------
 StartNewWave: PROCEDURE
+    ' Silence any lingering SFX (game loop UpdateSfx won't run during transition)
+    SOUND 2, , 0
+    SfxVolume = 0
+    SfxType = 0
+
     ' Increment level
     Level = Level + 1
+
+    ' Switch music gear based on difficulty (already in PLAY SIMPLE from StartGame)
+    IF Level = 3 THEN
+        PLAY si_dnb_fast
+    ELSEIF Level = 5 THEN
+        PLAY si_dnb_panic
+    END IF
 
     ' Speed up aliens (reduce march delay)
     IF CurrentMarchSpeed > MARCH_SPEED_MIN + 20 THEN
@@ -1691,9 +2037,12 @@ StartNewWave: PROCEDURE
 
     ' Clear any active bullets
     BulletActive = 0
+    Bullet2Active = 0
     ABulletActive = 0
+    #DualTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
+    SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
@@ -1702,41 +2051,68 @@ StartNewWave: PROCEDURE
     TitleFrame = 0
     #RapidTimer = 0
     TitleJitter = 0
+    WaveRevealCol = 0             ' Start column sweep from left
 
-    ' Clear screen and redraw
+    ' Clear screen (aliens will paint in via game loop)
     CLS
-    GOSUB DrawAliens
 
     ' Redraw HUD
     PRINT AT 220, "SCORE:"
     PRINT AT 227, <>#Score
-    PRINT AT 236, (GRAM_SHIP * 8) + COL_WHITE + $0800
+    PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     IF Lives = 4 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X4"
-    END IF
-    IF Lives = 3 THEN
         PRINT AT 237 COLOR COL_WHITE, "X3"
     END IF
-    IF Lives = 2 THEN
+    IF Lives = 3 THEN
         PRINT AT 237 COLOR COL_WHITE, "X2"
     END IF
-    IF Lives = 1 THEN
+    IF Lives = 2 THEN
         PRINT AT 237 COLOR COL_WHITE, "X1"
     END IF
+    IF Lives = 1 THEN
+        PRINT AT 237 COLOR COL_WHITE, "X0"
+    END IF
 
-    ' Brief pause to show new wave
-    PRINT AT 90, "WAVE"
-    PRINT AT 95, <> Level
-    FOR LoopVar = 0 TO 60
+    ' Phase A: Breather pause (blank screen + HUD only)
+    FOR LoopVar = 0 TO 30
         WAIT
     NEXT LoopVar
 
-    ' Clear wave message
-    PRINT AT 90, "    "
-    PRINT AT 95, "  "
+    ' Phase B: Voice announcement + Banner display
+    IF VOICE.AVAILABLE THEN
+        VOICE PLAY wave_phrase        ' Say "WAVE"
+        VOICE WAIT                    ' Wait for speech to finish
+        VOICE NUMBER Level            ' Say the number
+    END IF
+    PRINT AT 107 COLOR 6, "WAVE "     ' Yellow, centered row 5 col 7
+    PRINT AT 112, <> Level
+    FOR LoopVar = 0 TO 90
+        WAIT
+    NEXT LoopVar
+
+    ' Phase C: Flash-off (blink then vanish)
+    FOR LoopVar = 0 TO 7
+        IF (LoopVar AND 1) = 0 THEN
+            PRINT AT 107, "       "   ' Hide
+        ELSE
+            PRINT AT 107 COLOR 6, "WAVE "
+            PRINT AT 112, <> Level
+        END IF
+        FOR Row = 0 TO 4
+            WAIT
+        NEXT Row
+    NEXT LoopVar
+    PRINT AT 107, "       "           ' Final clear
 
     RETURN
 END
+
+' Intellivoice speech data
+wave_phrase:
+    VOICE WW, EY, VV, PA2, 0
+
+extra_life_phrase:
+    VOICE EH, EH, KK1, SS, TT1, RR1, AX, PA2, LL, AY, FF, PA1, 0
 
 ' --------------------------------------------
 ' GenerateGameStars - Place twinkling stars on row 0
@@ -1748,7 +2124,7 @@ GenerateGameStars: PROCEDURE
     ' Place 6 stars on row 0 (positions 0-19)
     FOR LoopVar = 0 TO 5
         Col = RANDOM(20)
-        #StarPos(LoopVar) = Col           ' Row 0
+        StarPos(LoopVar) = Col           ' Row 0
         StarType(LoopVar) = LoopVar AND 1
         IF StarType(LoopVar) = 0 THEN
             PRINT AT Col, GRAM_STAR1 * 8 + 4 + $0800
@@ -1760,7 +2136,7 @@ GenerateGameStars: PROCEDURE
     ' Place 6 stars on row 10 (positions 200-219)
     FOR LoopVar = 6 TO 11
         Col = RANDOM(20)
-        #StarPos(LoopVar) = 200 + Col     ' Row 10
+        StarPos(LoopVar) = 200 + Col     ' Row 10
         StarType(LoopVar) = LoopVar AND 1
         IF StarType(LoopVar) = 0 THEN
             PRINT AT 200 + Col, GRAM_STAR1 * 8 + 4 + $0800
@@ -1780,17 +2156,17 @@ TwinkleStars: PROCEDURE
     IF StarTimer >= 4 THEN
         StarTimer = 0
         ' Toggle current star visible/invisible
-        #Card = PEEK($200 + #StarPos(StarTick))
+        #Card = PEEK($200 + StarPos(StarTick))
         IF #Card = 0 THEN
             ' Star is off - turn it back on
             IF StarType(StarTick) = 0 THEN
-                PRINT AT #StarPos(StarTick), GRAM_STAR1 * 8 + 4 + $0800
+                PRINT AT StarPos(StarTick), GRAM_STAR1 * 8 + 4 + $0800
             ELSE
-                PRINT AT #StarPos(StarTick), GRAM_STAR2 * 8 + 7 + $0800
+                PRINT AT StarPos(StarTick), GRAM_STAR2 * 8 + 7 + $0800
             END IF
         ELSE
             ' Star is on - turn it off
-            PRINT AT #StarPos(StarTick), 0
+            PRINT AT StarPos(StarTick), 0
         END IF
         ' Advance to next star
         StarTick = StarTick + 1
@@ -1822,6 +2198,17 @@ ShipGfx:
     BITMAP "XXXXXXXX"
     BITMAP "X......X"
     BITMAP "X......X"
+
+' Compact ship icon for HUD (vertically centered to match GROM text)
+ShipHudGfx:
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XX....XX"
+    BITMAP "........"
+    BITMAP "........"
 
 ' Ship accent overlay (fills gaps in body for 2-color effect)
 ShipAccentGfx:
@@ -2140,12 +2527,46 @@ Star2Gfx:
 
 ' --- Flying Saucer (rounded rectangle) ---
 SaucerGfx:
+    ' Frame 1: windows dark (gaps visible)
     BITMAP ".....XXX"
     BITMAP "...XXXXX"
     BITMAP "..XXXXXX"
     BITMAP ".XX.XX.X"
     BITMAP "XXXXXXXX"
     BITMAP "..XXX..X"
+    BITMAP "...X...."
+    BITMAP "........"
+
+SaucerF2Gfx:
+    ' Frame 2: inner window lit (col 3)
+    BITMAP ".....XXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP ".XXXXX.X"
+    BITMAP "XXXXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP "...X...."
+    BITMAP "........"
+
+SaucerF3Gfx:
+    ' Frame 3: outer window lit (col 6)
+    BITMAP ".....XXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP ".XX.XXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP "...X...."
+    BITMAP "........"
+
+SaucerF4Gfx:
+    ' Frame 4: both windows lit + engine glow
+    BITMAP ".....XXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP ".XXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "..XXXXXX"
     BITMAP "...X...."
     BITMAP "........"
 
@@ -2520,3 +2941,340 @@ si_loop:
   MUSIC -,   S,   -, M3
 
   MUSIC JUMP si_loop
+
+' ============================================================
+' DNB GAMEPLAY MUSIC (PLAY SIMPLE format: ch1, ch2, drums)
+' Channel 3 free for SFX via SOUND 2
+' Tempo: 11=slow, 7=mid, 5=fast, 4=panic
+' ============================================================
+
+' ------------------------------------------------------------
+' Slow - "invaders far away" (~55 BPM)
+' ------------------------------------------------------------
+si_dnb_slow:
+  DATA 11
+
+si_dnb_slow_loop:
+
+  ' --- Bar 1 (A): E3/C3 heartbeat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+
+  ' --- Bar 2 (A): heartbeat + hat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+
+  ' --- Bar 3 (A): heartbeat + snare anticipation ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+
+  ' --- Bar 4 (B): G4/D4 synth hook ---
+  MUSIC G4,  G2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC D4,  A2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  -
+
+  MUSIC JUMP si_dnb_slow_loop
+
+
+' ------------------------------------------------------------
+' Mid - "breakbeat emerging" (~107 BPM)
+' ------------------------------------------------------------
+si_dnb_mid:
+  DATA 7
+
+si_dnb_mid_loop:
+
+  ' --- Bar 1 (A): heartbeat + bass phrase + breakbeat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   D2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M3
+
+  ' --- Bar 2 (A): same groove ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   D2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   -,  -,  M3
+
+  ' --- Bar 3 (A): groove with snare fill ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,  -,  -
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   D2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,  -,  M3
+
+  ' --- Bar 4 (B): G4/E4 stabs over walking bass ---
+  MUSIC G4X, G2,  -, M1
+  MUSIC -,   S,  -,  -
+  MUSIC E4X, -,  -,  M3
+  MUSIC -,   A2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC G4X, -,  -,  M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,  -,  M3
+  MUSIC D4X, B2,  -, M1
+  MUSIC -,   S,  -,  -
+  MUSIC E4X, -,  -,  M3
+  MUSIC -,   A2,  -, -
+  MUSIC -,   S,  -,  M2
+  MUSIC G4X, -,  -,  M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,  -,  M3
+
+  MUSIC JUMP si_dnb_mid_loop
+
+
+' ------------------------------------------------------------
+' Fast - "full DnB" (~180 BPM)
+' ------------------------------------------------------------
+si_dnb_fast:
+  DATA 5
+
+si_dnb_fast_loop:
+
+  ' --- Bar 1 (A): full amen groove ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, -
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  M1
+  MUSIC -,   D2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 2 (A): same groove ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, -
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  M1
+  MUSIC -,   D2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 3 (A): groove with drum fill ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, -
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   -,  -,  M1
+  MUSIC -,   D2,  -, M3
+  MUSIC -,   S,  -,  M2
+  MUSIC -,   -,  -,  M2
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 4 (B): G4/E5 piercing stabs ---
+  MUSIC G4X, G2,  -, -
+  MUSIC -,   S,  -,  -
+  MUSIC E5X, A2,  -, M3
+  MUSIC -,   S,  -,  -
+  MUSIC D4X, B2,  -, -
+  MUSIC -,   S,  -,  -
+  MUSIC E5X, A2,  -, M3
+  MUSIC -,   S,  -,  -
+  MUSIC G4X, G2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC E5X, -,  -,  M2
+  MUSIC -,   A2,  -, M3
+  MUSIC D4X, S,  -,  M1
+  MUSIC -,   -,  -,  M3
+  MUSIC G4X, E2,  -, M2
+  MUSIC -,   -,  -,  M2
+
+  MUSIC JUMP si_dnb_fast_loop
+
+
+' ------------------------------------------------------------
+' Panic - "final descent" (~225 BPM)
+' ------------------------------------------------------------
+si_dnb_panic:
+  DATA 4
+
+si_dnb_panic_loop:
+
+  ' --- Bar 1 (A): driving amen ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   D2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 2 (A): same ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   D2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 3 (A): with snare roll fill ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC C3X, C2,  -, M1
+  MUSIC -,   S,  -,  M3
+  MUSIC -,   D2,  -, M1
+  MUSIC -,   -,  -,  M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   -,  -,  M2
+  MUSIC -,   G2,  -, M2
+  MUSIC -,   -,  -,  M2
+
+  ' --- Bar 4 (B): G4/E5/G5 frantic arpeggios ---
+  MUSIC G4X, G2,  -, M1
+  MUSIC E5X, S,  -,  M3
+  MUSIC G5X, A2,  -, M3
+  MUSIC E5X, -,  -,  M3
+  MUSIC D4X, B2,  -, M2
+  MUSIC E5X, S,  -,  M3
+  MUSIC G5X, C3,  -, M1
+  MUSIC E5X, S,  -,  M3
+  MUSIC G4X, B2,  -, M1
+  MUSIC E5X, S,  -,  M3
+  MUSIC G5X, A2,  -, M1
+  MUSIC E5X, -,  -,  M3
+  MUSIC D4X, G2,  -, M2
+  MUSIC G4X, S,  -,  M3
+  MUSIC E5X, E2,  -, M1
+  MUSIC G5X, -,  -,  M2
+
+  MUSIC JUMP si_dnb_panic_loop

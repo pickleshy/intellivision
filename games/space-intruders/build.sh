@@ -4,9 +4,10 @@
 # ============================================
 # A Space Invaders clone for Intellivision
 #
-# Usage: ./build.sh [run]
+# Usage: ./build.sh [run|voice]
 #   - No args: compile only
 #   - run: compile and launch in jzIntv emulator
+#   - voice: compile and launch with Intellivoice support
 # ============================================
 
 set -e
@@ -61,5 +62,13 @@ if [ "$1" = "run" ]; then
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
+        "$ROM"
+elif [ "$1" = "voice" ]; then
+    echo ""
+    echo "=== Launching jzIntv (with Intellivoice) ==="
+    arch -x86_64 $JZINTV \
+        --execimg="$EXEC_ROM" \
+        --gromimg="$GROM_ROM" \
+        --voice=1 \
         "$ROM"
 fi
