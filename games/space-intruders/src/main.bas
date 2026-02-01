@@ -309,6 +309,41 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
     WaveColors(2) = 0              ' Grey (color 8 encoded as $1800 base)
     WaveColors(3) = 0              ' Grey
 
+    ' Initialize Intellivoice (once only — multiple calls can lock real hardware)
+    IF VOICE.AVAILABLE THEN VOICE INIT
+
+' ============================================
+' Reset state and return to title screen
+' (shared by GameOver=2 and GameOver=6)
+' ============================================
+ResetToTitle:
+    GameOver = 0
+    Lives = STARTING_LIVES
+    Level = 1
+    #Score = 0
+    #NextLife = 1000
+    PlayerX = 80
+    AlienOffsetX = 0
+    AlienOffsetY = 0
+    AlienDir = 1
+    MarchCount = 0
+    BulletActive = 0
+    Bullet2Active = 0
+    ABulletActive = 0
+    #DualTimer = 0
+    DeathTimer = 0
+    Invincible = 0
+    ShakeTimer = 0
+    SCROLL 0, 0
+    SPRITE SPR_PLAYER, 0, 0, 0
+    SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+    SPRITE SPR_PBULLET, 0, 0, 0
+    SPRITE SPR_ABULLET, 0, 0, 0
+    SPRITE SPR_FLYER, 0, 0, 0
+    SPRITE SPR_SAUCER, 0, 0, 0
+    SPRITE SPR_SAUCER2, 0, 0, 0
+    SPRITE SPR_POWERUP, 0, 0, 0
+
 ' ============================================
 ' TITLE SCREEN
 ' ============================================
@@ -889,34 +924,66 @@ GameLoop:
     END IF
     IF GameOver = 2 THEN
         IF CONT.BUTTON OR CONT.KEY = 1 THEN
-            ' Reset variables and go back to title screen
-            GameOver = 0
-            Lives = STARTING_LIVES
-            Level = 1
-            #Score = 0
-            #NextLife = 1000
-            PlayerX = 80
-            AlienOffsetX = 0
-            AlienOffsetY = 0
-            AlienDir = 1
-            MarchCount = 0
-            BulletActive = 0
-            Bullet2Active = 0
-            ABulletActive = 0
-            #DualTimer = 0
-            DeathTimer = 0
-            Invincible = 0
-            ShakeTimer = 0
-            SCROLL 0, 0  ' Reset scroll
-            ' Hide all sprites
-            SPRITE SPR_PLAYER, 0, 0, 0
-            SPRITE SPR_PBULLET, 0, 0, 0
-            SPRITE SPR_ABULLET, 0, 0, 0
-            SPRITE SPR_FLYER, 0, 0, 0
-            SPRITE SPR_SAUCER, 0, 0, 0
-            SPRITE SPR_SAUCER2, 0, 0, 0
-            SPRITE SPR_POWERUP, 0, 0, 0
-            GOTO TitleScreen
+            GOTO ResetToTitle
+        END IF
+        GOTO GameLoop
+    END IF
+
+    ' Game Over screen with bolt sweep effect (GameOver=5: release, 6: accept)
+    IF GameOver >= 5 THEN
+        ' White bolt sweep across "GAME OVER" text (same technique as title screen)
+        ' TitleMarchX = frame counter, advance bolt every 6 frames
+        ' TitleJitter = bolt position (0-8 on text, 9-13 gap between sweeps)
+        TitleMarchX = TitleMarchX + 1
+        IF TitleMarchX >= 6 THEN
+            TitleMarchX = 0
+            ' Restore current bolt position to tan and clear sparks
+            IF TitleJitter < 9 THEN
+                #Card = PEEK($269 + TitleJitter)
+                PRINT AT 105 + TitleJitter, (#Card AND $EFF8) OR COL_TAN
+                PRINT AT 85 + TitleJitter, 0     ' Clear spark above
+                PRINT AT 125 + TitleJitter, 0    ' Clear spark below
+            END IF
+            ' Advance bolt position
+            TitleJitter = TitleJitter + 1
+            IF TitleJitter >= 14 THEN TitleJitter = 0
+            ' Set new bolt position to white with sparks
+            IF TitleJitter < 9 THEN
+                #Card = PEEK($269 + TitleJitter)
+                PRINT AT 105 + TitleJitter, (#Card AND $EFF8) OR COL_WHITE
+                PRINT AT 85 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
+                PRINT AT 125 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
+            END IF
+        END IF
+        ' Spark 2-frame animation: switch to trailing frame at frame 3
+        IF TitleJitter < 9 THEN
+            IF TitleMarchX >= 3 THEN
+                PRINT AT 85 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
+                PRINT AT 125 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
+            END IF
+        END IF
+
+        ' "PRESS FIRE" shimmer: alternate white/tan every 4 frames
+        TitleColor = TitleColor + 1
+        IF TitleColor >= 4 THEN
+            TitleColor = 0
+            WavePhase = WavePhase + 1
+            IF WavePhase >= 4 THEN WavePhase = 0
+            IF WaveColors(WavePhase) = 0 THEN
+                PRINT AT 165 COLOR COL_TAN, "PRESS FIRE"
+            ELSE
+                PRINT AT 165 COLOR COL_WHITE, "PRESS FIRE"
+            END IF
+        END IF
+
+        ' Button debounce: GameOver=5 waits for release, GameOver=6 accepts press
+        IF GameOver = 5 THEN
+            IF CONT.BUTTON = 0 AND CONT.KEY = 12 THEN GameOver = 6
+        END IF
+        IF GameOver = 6 THEN
+            IF CONT.BUTTON OR CONT.KEY = 1 THEN
+                GOTO ResetToTitle
+            END IF
         END IF
         GOTO GameLoop
     END IF
@@ -1068,18 +1135,15 @@ GameLoop:
                     PRINT AT 237 COLOR COL_WHITE, "X0"
                 END IF
                 IF Lives = 0 THEN
-                    ' Game over
-                    GameOver = 1
-                    PLAY OFF
-                    SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
-                    ShakeTimer = 30  ' Big shake on game over
-                    PRINT AT 105, "GAME OVER"
-                    PRINT AT 125, "PRESS FIRE"
+                    ' Pre-game-over: play death explosion, then aliens crawl
+                    GameOver = 3
+                    DeathTimer = 75
+                    ShakeTimer = 30
                     SPRITE SPR_PLAYER, 0, 0, 0
                 ELSE
-                    ' Start death sequence (60 frames = 1 second)
-                    DeathTimer = 60
-                    ShakeTimer = 15  ' Shake on death
+                    ' Start death sequence (75 frames = 1.25 seconds)
+                    DeathTimer = 75
+                    ShakeTimer = 30
                     SPRITE SPR_PLAYER, 0, 0, 0
                 END IF
             ELSE
@@ -1094,9 +1158,48 @@ GameLoop:
     IF DeathTimer > 0 THEN
         DeathTimer = DeathTimer - 1
         IF DeathTimer = 0 THEN
-            ' Respawn at center with invincibility
-            PlayerX = 80
-            Invincible = 120
+            IF GameOver = 3 THEN
+                ' Explosion done — let aliens crawl for 1 more second
+                DeathTimer = 60
+                GameOver = 4
+            ELSEIF GameOver = 4 THEN
+                ' Alien crawl done — fancy Game Over screen
+                PLAY OFF
+                SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                ShakeTimer = 0
+                SCROLL 0, 0
+                CLS
+                ' Hide all sprites
+                SPRITE SPR_PLAYER, 0, 0, 0
+                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+                SPRITE SPR_PBULLET, 0, 0, 0
+                SPRITE SPR_ABULLET, 0, 0, 0
+                SPRITE SPR_FLYER, 0, 0, 0
+                SPRITE SPR_SAUCER, 0, 0, 0
+                SPRITE SPR_SAUCER2, 0, 0, 0
+                SPRITE SPR_POWERUP, 0, 0, 0
+                ' "GAME OVER" in tan at row 5 (pos 105), centered
+                PRINT AT 105 COLOR COL_TAN, "GAME OVER"
+                ' "PRESS FIRE" in white at row 8 (pos 165), centered
+                PRINT AT 165 COLOR COL_WHITE, "PRESS FIRE"
+                ' Show final score
+                PRINT AT 187 COLOR COL_WHITE, "SCORE "
+                PRINT AT 193, <>#Score
+                ' Voice announcement
+                IF VOICE.AVAILABLE THEN
+                    VOICE PLAY game_over_phrase
+                END IF
+                ' Initialize bolt sweep effect
+                TitleJitter = 0
+                TitleMarchX = 0
+                WavePhase = 0
+                TitleColor = 0
+                GameOver = 5
+            ELSE
+                ' Normal respawn at center with invincibility
+                PlayerX = 80
+                Invincible = 120
+            END IF
         END IF
     END IF
 
@@ -1380,9 +1483,33 @@ DrawPlayer: PROCEDURE
     ' A: card*8 + color + $800 (GRAM)
     ' Two stacked sprites for 2-color ship: body (green) + accent (cyan)
     IF DeathTimer > 0 THEN
-        ' Player is dead - hide both sprites
-        SPRITE SPR_PLAYER, 0, 0, 0
-        SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+        ' Ship explosion animation (multi-phase visual)
+        IF DeathTimer > 67 THEN
+            ' Phase 1 - Initial blast: tight explosion, red (8 frames)
+            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_EXPLOSION * 8 + 2 + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0204, PLAYER_Y, GRAM_EXPLOSION * 8 + 6 + $0800
+        ELSEIF DeathTimer > 57 THEN
+            ' Phase 2 - Expanding: scattered debris, yellow/white (10 frames)
+            SPRITE SPR_PLAYER, PlayerX + $01FE, PLAYER_Y + 2, GRAM_EXPLOSION2 * 8 + 6 + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0204, PLAYER_Y - 2, GRAM_EXPLOSION2 * 8 + 7 + $0800
+        ELSEIF DeathTimer > 47 THEN
+            ' Phase 3 - Dissipating: sparse particles, white/tan (10 frames)
+            SPRITE SPR_PLAYER, PlayerX + $01FC, PLAYER_Y + 4, GRAM_EXPLOSION3 * 8 + 7 + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0206, PLAYER_Y - 4, GRAM_EXPLOSION3 * 8 + 3 + $0800
+        ELSEIF DeathTimer > 39 THEN
+            ' Phase 4 - Fading embers: blink on/off (8 frames)
+            IF DeathTimer AND 2 THEN
+                SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_EXPLOSION3 * 8 + 3 + $0800
+                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+            ELSE
+                SPRITE SPR_PLAYER, 0, 0, 0
+                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+            END IF
+        ELSE
+            ' Hidden - SFX continues playing through remaining frames
+            SPRITE SPR_PLAYER, 0, 0, 0
+            SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+        END IF
     ELSEIF Invincible > 0 THEN
         ' Flash during invincibility (show every other frame)
         IF Invincible AND 4 THEN
@@ -1493,9 +1620,11 @@ MoveAlienBullet: PROCEDURE
                     ' HIT! Player is hit
                     PlayerHit = 1
                     ABulletActive = 0
-                    ' Dramatic noise explosion SFX (descending pitch)
-                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 80
-                    SOUND 2, 80, 15  ' Immediate tone hit on channel 3
+                    ' White noise explosion (pure noise, Astrosmash-style boom)
+                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                    SOUND 2, 0, 15           ' Channel C volume max (no tone)
+                    POKE $1F7, 14            ' Noise period (deep boom)
+                    POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only (bit 5 clear)
                     RETURN
                 END IF
             END IF
@@ -1642,13 +1771,30 @@ UpdateSfx: PROCEDURE
         END IF
         #SfxPitch = #SfxPitch + 8
     ELSEIF SfxType = 3 THEN
-        ' Player death: slow decay + descending pitch
-        IF SfxVolume > 1 THEN
-            SfxVolume = SfxVolume - 1
+        ' Player death: pure white noise boom (Astrosmash-style)
+        ' No tone on channel C - only noise via PSG POKE after ISR
+        ' DeathTimer=0 on first frame (before PlayerHit sets it)
+        #SfxPitch = 0
+        IF DeathTimer > 5 OR DeathTimer = 0 THEN
+            ' Slow volume decay: drop 1 every 4 frames
+            IF DeathTimer > 0 THEN
+                IF (DeathTimer AND 3) = 0 THEN
+                    IF SfxVolume > 1 THEN
+                        SfxVolume = SfxVolume - 1
+                    END IF
+                END IF
+                ' Noise period deepens over time (14 → ~31)
+                POKE $1F7, 14 + (75 - DeathTimer) / 4
+            ELSE
+                POKE $1F7, 14
+            END IF
         ELSE
             SfxVolume = 0
         END IF
-        #SfxPitch = #SfxPitch + 10
+        ' Enable noise only on channel C (no tone = pure white noise)
+        IF SfxVolume > 0 THEN
+            POKE $1F8, PEEK($1F8) AND $DF ' Bit 5 clear: noise C on
+        END IF
     ELSE
         ' Alien: fast decay (2 per frame)
         IF SfxVolume > 2 THEN
@@ -1660,7 +1806,7 @@ UpdateSfx: PROCEDURE
 
     ' Silence when done
     IF SfxVolume = 0 THEN
-        SOUND 2, , 0           ' Silence channel 3
+        SOUND 2, , 0           ' Silence channel 3 (ISR restores $1F8 next WAIT)
         SfxType = 0
     END IF
     RETURN
@@ -1980,9 +2126,11 @@ CheckWaveWin: PROCEDURE
         #AliensAlive = #AliensAlive + #AlienRow(LoopVar)
     NEXT LoopVar
 
-    ' If no aliens left, start new wave
+    ' If no aliens left, wait for explosion to finish then start new wave
     IF #AliensAlive = 0 THEN
-        GOSUB StartNewWave
+        IF ExplosionTimer = 0 THEN
+            GOSUB StartNewWave
+        END IF
     END IF
     RETURN
 END
@@ -2111,6 +2259,9 @@ rapid_phrase:
 
 dual_phrase:
     VOICE DD2, UW2, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
+
+game_over_phrase:
+    VOICE GG1, EY, MM, PA2, OW, VV, ER1, PA2, 0
 
 ' --------------------------------------------
 ' Graphics Data
