@@ -55,6 +55,8 @@ CONST GRAM_FONT_R = 33
 CONST GRAM_FONT_U = 34
 CONST GRAM_FONT_D = 35
 CONST GRAM_FONT_F = 36
+CONST GRAM_STAR1  = 37        ' Star dot (upper-left pixel)
+CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -107,8 +109,7 @@ DIM FlyColors(6)               ' Color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
 PlayerX     = 80                ' Player X position (center)
 AnimFrame   = 0                 ' Animation frame (0 or 1)
-FrameCount  = 0                 ' Frame counter for animation timing
-ColorPhase  = 0                 ' Color shimmer phase (0-7)
+' (FrameCount, ColorPhase removed - unused)
 ShimmerCount = 0                ' Frame counter for shimmer updates
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
 AlienOffsetY = 0                ' Alien grid Y offset (drops down)
@@ -143,11 +144,11 @@ Row         = 0                 ' Row counter for drawing
 Col         = 0                 ' Column counter for drawing
 AlienCard   = 0                 ' Current alien GRAM card
 AlienColor  = 0                 ' Current alien color
-ColorIndex  = 0                 ' Index into shimmer color cycle
+' (ColorIndex removed - unused)
 #ScreenPos  = 0                 ' Screen position (16-bit for multiplication)
 #Mask       = 0                 ' Bitmask for checking alive aliens
 #Card       = 0                 ' Card value for PRINT
-GameState   = 0                 ' 0 = title screen, 1 = playing
+' (GameState removed - unused)
 TitleColor  = 0                 ' Color index for title sprite shimmer
 TitleFrame  = 0                 ' Animation frame for title alien
 ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
@@ -158,7 +159,6 @@ TitleJitter = 0                 ' Title screen jitter phase (0-7)
 WavePhase   = 0                 ' Color wave phase for big alien (0-3)
 ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
 #ExplosionPos  = 0              ' Explosion BACKTAB position (screen address)
-ExplosionColor = 0              ' Explosion color (matches destroyed alien)
 FlyX        = 0                 ' Flying sprite X position (from path table)
 FlyY        = 0                 ' Flying sprite Y position (from path table)
 FlyPhase    = 0                 ' Path position index (0-31)
@@ -170,6 +170,12 @@ FlyColor    = 7                 ' Current sprite color
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
 FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
+' Starfield variables
+DIM #StarPos(16)                ' Star BACKTAB positions (16 stars, 16-bit for safe math)
+DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
+StarCount   = 0                 ' Number of active stars
+StarTimer   = 0                 ' Frame counter for scroll updates
+StarTick    = 0                 ' Tick counter (for slow layer)
 
 ' --------------------------------------------
 ' Main Program
@@ -250,6 +256,10 @@ SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ 
     WAIT
     DEFINE GRAM_FONT_F, 1, FontFGfx
     WAIT
+    DEFINE GRAM_STAR1, 1, Star1Gfx
+    WAIT
+    DEFINE GRAM_STAR2, 1, Star2Gfx
+    WAIT
 
     ' Initialize row colors (0-7 only for MODE 1)
     ' Blue, Red, Tan, Green, Yellow - rainbow wave
@@ -271,7 +281,6 @@ SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ 
 ' ============================================
 TitleScreen:
     CLS
-    GameState = 0
     TitleFrame = 0
     TitleMarchDir = 1      ' 1=right, 0=left
     TitleMarchCount = 0    ' Frame counter for march steps
@@ -294,6 +303,11 @@ TitleScreen:
     PRINT AT 34, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
     PRINT AT 35, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
     PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
+
+    ' Generate scrolling starfield on safe rows (3, 4, 8, 9, 11)
+    StarTimer = 0
+    StarTick = 0
+    GOSUB GenerateStars
 
     ' "PRESS FIRE" slides in from edges — don't print here
     WavePhase = 0          ' Color cycle index for PRESS FIRE
@@ -407,13 +421,13 @@ TitleLoop:
             ' Exit to right with wobble: X increases by 4, Y oscillates
             FlyX = FlyX + 4
             FlyPhase = FlyPhase + 1
-            ' Wobble: 4-step cycle → up, center, down, center (±6px)
+            ' Wobble: 4-step cycle → up, center, down, center (±3px)
             IF (FlyPhase AND 3) = 0 THEN
-                FlyY = 50
+                FlyY = 53
             ELSEIF (FlyPhase AND 3) = 1 THEN
                 FlyY = 56
             ELSEIF (FlyPhase AND 3) = 2 THEN
-                FlyY = 62
+                FlyY = 59
             ELSE
                 FlyY = 56
             END IF
@@ -633,6 +647,14 @@ TitleLoop:
     END IF
 SkipPressfire:
 
+    ' Scrolling starfield - update every 5 frames
+    StarTimer = StarTimer + 1
+    IF StarTimer >= 5 THEN
+        StarTimer = 0
+        StarTick = StarTick + 1
+        GOSUB ScrollStars
+    END IF
+
     ' Animation - toggle walk frame every 16 frames via GRAM redefine
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 16 THEN
@@ -682,11 +704,84 @@ DrawAlienGrid: PROCEDURE
     RETURN
 END
 
+' --- GenerateStars: place 16 random stars on safe rows ---
+GenerateStars: PROCEDURE
+    StarCount = 0
+    ' Safe rows: 3(60-79), 4(80-99), 8(160-179), 9(180-199), 11(220-239)
+    FOR LoopVar = 0 TO 15
+        ' Pick a safe row: 0-1=row3, 2-4=row4, 5-7=row8, 8-10=row9, 11-15=row11
+        Col = RANDOM(20)
+        Row = RANDOM(5)
+        IF Row = 0 THEN
+            #StarPos(LoopVar) = 60 + Col       ' Row 3
+        ELSEIF Row = 1 THEN
+            #StarPos(LoopVar) = 80 + Col       ' Row 4
+        ELSEIF Row = 2 THEN
+            #StarPos(LoopVar) = 160 + Col      ' Row 8
+        ELSEIF Row = 3 THEN
+            #StarPos(LoopVar) = 180 + Col      ' Row 9
+        ELSE
+            #StarPos(LoopVar) = 220 + Col      ' Row 11
+        END IF
+        ' Alternate star type: even=slow/dim, odd=fast/bright
+        StarType(LoopVar) = LoopVar AND 1
+        ' Draw the star
+        IF StarType(LoopVar) = 0 THEN
+            PRINT AT #StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
+        ELSE
+            PRINT AT #StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
+        END IF
+        StarCount = StarCount + 1
+    NEXT LoopVar
+    RETURN
+END
+
+' --- ScrollStars: shift all stars left with parallax ---
+ScrollStars: PROCEDURE
+    FOR LoopVar = 0 TO StarCount - 1
+        ' Calculate row and column from BACKTAB position
+        Row = #StarPos(LoopVar) / 20
+        Col = #StarPos(LoopVar) - (Row * 20)
+
+        ' Clear old position
+        PRINT AT #StarPos(LoopVar), 0
+
+        ' Parallax: slow stars move every other tick, fast every tick
+        IF StarType(LoopVar) = 0 THEN
+            ' Slow/dim: move every 2nd tick
+            IF (StarTick AND 1) = 0 THEN
+                IF Col = 0 THEN
+                    Col = 19
+                ELSE
+                    Col = Col - 1
+                END IF
+            END IF
+        ELSE
+            ' Fast/bright: move every tick
+            IF Col = 0 THEN
+                Col = 19
+            ELSE
+                Col = Col - 1
+            END IF
+        END IF
+
+        ' Update position
+        #StarPos(LoopVar) = Row * 20 + Col
+
+        ' Redraw star
+        IF StarType(LoopVar) = 0 THEN
+            PRINT AT #StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
+        ELSE
+            PRINT AT #StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
+        END IF
+    NEXT LoopVar
+    RETURN
+END
+
 ' ============================================
 ' START GAME - Initialize gameplay
 ' ============================================
 StartGame:
-    GameState = 1
     CLS
 
     ' Initialize all aliens as alive (11 bits = $7FF)
@@ -702,9 +797,9 @@ StartGame:
 
     ' Draw score and lives
     PRINT AT 220, "SCORE: 0"
-    ' Lives ship icon as background card (GRAM + green foreground)
-    PRINT AT 236, (GRAM_SHIP * 8) + (COL_GREEN * $200) + $0800
-    PRINT AT 237, "x4"
+    ' Lives ship icon (GRAM card 0, green, Color Stack mode)
+    PRINT AT 236, (GRAM_SHIP * 8) + COL_WHITE + $0800
+    PRINT AT 237 COLOR COL_WHITE, "X4"
 
     ' Initialize player sprite
     GOSUB DrawPlayer
@@ -776,12 +871,19 @@ GameLoop:
     '     END IF
     ' END IF
 
+    ' Animate alien walk frames independently (every 16 frames)
+    ShimmerCount = ShimmerCount + 1
+    IF ShimmerCount >= 16 THEN
+        ShimmerCount = 0
+        AnimFrame = AnimFrame XOR 1
+        GOSUB DrawAliens
+    END IF
+
     ' Update alien march
     MarchCount = MarchCount + 1
     IF MarchCount >= CurrentMarchSpeed THEN
         MarchCount = 0
         GOSUB MarchAliens
-        AnimFrame = AnimFrame XOR 1
         GOSUB DrawAliens
         ' Check if aliens reached the bottom (invasion!)
         ' Bottom alien row = ALIEN_START_Y + AlienOffsetY + ALIEN_ROWS - 1
@@ -815,14 +917,14 @@ GameLoop:
         IF ExplosionTimer = 0 THEN
             PRINT AT #ExplosionPos, 0  ' Clear explosion from screen
         ELSEIF ExplosionTimer > 10 THEN
-            ' Frame 1: tight pop (frames 15-11)
-            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + ExplosionColor + $0800
+            ' Frame 1: tight pop (frames 15-11) - Pink (color 12)
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
         ELSEIF ExplosionTimer > 5 THEN
-            ' Frame 2: expanding scatter (frames 10-6)
-            PRINT AT #ExplosionPos, GRAM_EXPLOSION2 * 8 + ExplosionColor + $0800
+            ' Frame 2: expanding scatter (frames 10-6) - White
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION2 * 8 + COL_WHITE + $0800
         ELSE
-            ' Frame 3: dissipate (frames 5-1)
-            PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + ExplosionColor + $0800
+            ' Frame 3: dissipate (frames 5-1) - White
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + COL_WHITE + $0800
         END IF
     END IF
 
@@ -855,17 +957,17 @@ GameLoop:
                 Lives = Lives - 1
                 ' Update lives display
                 IF Lives = 3 THEN
-                    PRINT AT 237, "x3"
+                    PRINT AT 237 COLOR COL_WHITE, "X3"
                 END IF
                 IF Lives = 2 THEN
-                    PRINT AT 237, "x2"
+                    PRINT AT 237 COLOR COL_WHITE, "X2"
                 END IF
                 IF Lives = 1 THEN
-                    PRINT AT 237, "x1"
+                    PRINT AT 237 COLOR COL_WHITE, "X1"
                 END IF
                 IF Lives = 0 THEN
                     ' Game over
-                    PRINT AT 237, "x0"
+                    PRINT AT 237 COLOR COL_WHITE, "X0"
                     GameOver = 1
                     ShakeTimer = 30  ' Big shake on game over
                     PRINT AT 105, "GAME OVER"
@@ -939,10 +1041,9 @@ MovePlayer: PROCEDURE
         END IF
     END IF
 
-    ' Fire button (any action button)
-    IF CONT.BUTTON THEN
+    ' Fire: side buttons or keypad 1 (auto-fire, works while moving)
+    IF CONT.BUTTON OR CONT.KEY = 1 THEN
         IF BulletActive = 0 THEN
-            ' Fire new bullet from player position
             BulletX = PlayerX + 3  ' Center of ship
             BulletY = PLAYER_Y - 4
             BulletActive = 1
@@ -1082,19 +1183,11 @@ CheckOneColumn: PROCEDURE
                 ' Update score
                 #Score = #Score + 10
 
-                ' Match explosion color to alien type
-                IF AlienGridRow = 0 THEN
-                    ExplosionColor = COL_WHITE   ' Squid
-                ELSEIF AlienGridRow < 3 THEN
-                    ExplosionColor = COL_RED     ' Crab
-                ELSE
-                    ExplosionColor = COL_GREEN   ' Octopus
-                END IF
-
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
                 ExplosionTimer = 15  ' Show for 15 frames (~250ms total)
-                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + ExplosionColor + $0800
+                ' Frame 1 starts pink (color 12 = $1804 for GRAM)
+                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
             END IF
         END IF
     END IF
@@ -1116,16 +1209,16 @@ DrawPlayer: PROCEDURE
     ELSEIF Invincible > 0 THEN
         ' Flash during invincibility (show every other frame)
         IF Invincible AND 4 THEN
-            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_GREEN + $0800
-            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + COL_CYAN + $0800
+            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_WHITE + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + $1800
         ELSE
             SPRITE SPR_PLAYER, 0, 0, 0
             SPRITE SPR_SHIP_ACCENT, 0, 0, 0
         END IF
     ELSE
         ' Normal display - body + accent stacked at same position
-        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_GREEN + $0800
-        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + COL_CYAN + $0800
+        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_WHITE + $0800
+        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + $1800
     END IF
     RETURN
 END
@@ -1357,18 +1450,18 @@ StartNewWave: PROCEDURE
     ' Redraw HUD
     PRINT AT 220, "SCORE:"
     PRINT AT 227, <>#Score
-    PRINT AT 236, (GRAM_SHIP * 8) + (COL_GREEN * $200) + $0800
+    PRINT AT 236, (GRAM_SHIP * 8) + COL_WHITE + $0800
     IF Lives = 4 THEN
-        PRINT AT 237, "x4"
+        PRINT AT 237 COLOR COL_WHITE, "X4"
     END IF
     IF Lives = 3 THEN
-        PRINT AT 237, "x3"
+        PRINT AT 237 COLOR COL_WHITE, "X3"
     END IF
     IF Lives = 2 THEN
-        PRINT AT 237, "x2"
+        PRINT AT 237 COLOR COL_WHITE, "X2"
     END IF
     IF Lives = 1 THEN
-        PRINT AT 237, "x1"
+        PRINT AT 237 COLOR COL_WHITE, "X1"
     END IF
 
     ' Brief pause to show new wave
@@ -1702,6 +1795,27 @@ FontFGfx:
     BITMAP "XX......"
     BITMAP "XX......"
     BITMAP "XX......"
+
+' --- Star dots (single pixel at different positions for variety) ---
+Star1Gfx:
+    BITMAP "........"
+    BITMAP "..X....."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+Star2Gfx:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".....X.."
+    BITMAP "........"
+    BITMAP "........"
 
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:
