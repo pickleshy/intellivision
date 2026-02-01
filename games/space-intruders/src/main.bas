@@ -392,6 +392,11 @@ TitleScreen:
 ' --------------------------------------------
 ' Title Loop - card-step march (no SCROLL)
 ' --------------------------------------------
+    ' Wait for all buttons/keys released before accepting input
+TitleDebounce:
+    WAIT
+    IF CONT.BUTTON OR CONT.KEY < 12 THEN GOTO TitleDebounce
+
 TitleLoop:
     WAIT
 
@@ -890,8 +895,13 @@ GameLoop:
     END IF
 
     ' Skip gameplay if game over
-    IF GameOver THEN
-        IF CONT.BUTTON THEN
+    ' GameOver=1: wait for button release, GameOver=2: ready for new press
+    IF GameOver = 1 THEN
+        IF CONT.BUTTON = 0 AND CONT.KEY = 12 THEN GameOver = 2
+        GOTO GameLoop
+    END IF
+    IF GameOver = 2 THEN
+        IF CONT.BUTTON OR CONT.KEY = 1 THEN
             ' Reset variables and go back to title screen
             GameOver = 0
             Lives = STARTING_LIVES
@@ -976,6 +986,7 @@ GameLoop:
             IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
                 GameOver = 1
                 PLAY OFF
+                SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
                 ShakeTimer = 40  ' Big shake on invasion!
                 PRINT AT 105, "INVASION!"
                 PRINT AT 125, "PRESS FIRE"
@@ -1086,6 +1097,7 @@ GameLoop:
                     ' Game over
                     GameOver = 1
                     PLAY OFF
+                    SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
                     ShakeTimer = 30  ' Big shake on game over
                     PRINT AT 105, "GAME OVER"
                     PRINT AT 125, "PRESS FIRE"
@@ -1868,14 +1880,17 @@ UpdatePowerUp: PROCEDURE
                     #BeamTimer = 300
                     #RapidTimer = 0
                     #DualTimer = 0
+                    IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF TitleColor = 1 THEN
                     #RapidTimer = 300
                     #BeamTimer = 0
                     #DualTimer = 0
+                    IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSE
                     #DualTimer = 300
                     #BeamTimer = 0
                     #RapidTimer = 0
+                    IF VOICE.AVAILABLE THEN VOICE PLAY dual_phrase
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
@@ -2113,6 +2128,15 @@ wave_phrase:
 
 extra_life_phrase:
     VOICE EH, EH, KK1, SS, TT1, RR1, AX, PA2, LL, AY, FF, PA1, 0
+
+beam_phrase:
+    VOICE IH, NN1, KK2, RR1, IY, SS, PA1, SH, AA, TT1, PA1, SS, AY, ZZ, PA1, 0
+
+rapid_phrase:
+    VOICE SS, PP, IY, DD2, PA1, AX, PP, PA1, LL, EY, ZZ, ER1, PA1, 0
+
+dual_phrase:
+    VOICE DD2, UW2, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
 
 ' --------------------------------------------
 ' GenerateGameStars - Place twinkling stars on row 0
