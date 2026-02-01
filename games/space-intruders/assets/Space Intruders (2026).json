@@ -1,0 +1,9 @@
+{
+  "name": "Space Intruders",
+  "nb_players": 1,
+  "editor": "paisleyboxers",
+  "year": 2026,
+  "description": {
+    "en": "IntyBASIC-powered clone of classic Space Invaders. Command a laser cannon at the bottom of the screen, sliding left and right to blast descending waves of alien intruders before they reach the ground. Dodge or shoot their bombs, use shields for temporary cover, and push for higher scores as formations speed up and new attack patterns appear."
+  }
+}
