@@ -182,21 +182,21 @@ si_dnb_slow_loop:
   MUSIC -,   -,   -, M3
   MUSIC -,   -,   -, -
 
-  ' --- Bar 3 (A): heartbeat + a snare anticipation ---
+  ' --- Bar 3 (transition): melody emerges E3->G3->A3->G3 ---
   MUSIC E3,  E2,  -, M1
   MUSIC S,   S,   -, -
   MUSIC -,   -,   -, -
   MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
   MUSIC -,   -,   -, -
-  MUSIC -,   -,   -, -
-  MUSIC -,   -,   -, -
-  MUSIC -,   -,   -, -
-  MUSIC C3,  C2,  -, M1
+  MUSIC A3,  A2,  -, M1
   MUSIC S,   S,   -, -
   MUSIC -,   -,   -, -
   MUSIC -,   -,   -, -
-  MUSIC -,   -,   -, M2
-  MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M2
+  MUSIC S,   S,   -, -
   MUSIC -,   -,   -, -
   MUSIC -,   -,   -, -
 
@@ -267,20 +267,20 @@ si_dnb_mid_loop:
   MUSIC -,   -,   -, -
   MUSIC -,   -,   -, M3
 
-  ' --- Bar 3 (A): groove with snare fill at end ---
+  ' --- Bar 3 (transition): melody walks E3->G3->A3->B3, builds to hook ---
   MUSIC E3,  E2,  -, M1
   MUSIC S,   S,   -, -
   MUSIC -,   -,   -, M3
-  MUSIC -,   G2,  -, -
-  MUSIC -,   S,   -, M2
+  MUSIC G3,  G2,  -, -
+  MUSIC S,   S,   -, M2
   MUSIC -,   -,   -, M3
   MUSIC -,   E2,  -, M1
   MUSIC -,   S,   -, M3
-  MUSIC C3,  C2,  -, M1
+  MUSIC A3,  A2,  -, M1
   MUSIC S,   S,   -, -
   MUSIC -,   -,   -, M3
-  MUSIC -,   D2,  -, -
-  MUSIC -,   S,   -, M2
+  MUSIC B3,  B2,  -, -
+  MUSIC S,   S,   -, M2
   MUSIC -,   -,   -, M3
   MUSIC -,   -,   -, M2
   MUSIC -,   -,   -, M3
@@ -352,21 +352,21 @@ si_dnb_fast_loop:
   MUSIC -,   E2,  -, -
   MUSIC -,   -,   -, M2
 
-  ' --- Bar 3 (A): groove with drum fill leading out ---
+  ' --- Bar 3 (transition): rising riff E3->G3->A3->B3, drum fill out ---
   MUSIC E3X, E2,  -, M1
   MUSIC -,   S,   -, M3
-  MUSIC -,   -,   -, -
+  MUSIC G3X, -,   -, -
   MUSIC -,   G2,  -, M3
   MUSIC -,   S,   -, M2
   MUSIC -,   -,   -, M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,   -, M3
-  MUSIC C3X, C2,  -, -
+  MUSIC A3X, E2,  -, -
   MUSIC -,   S,   -, M3
+  MUSIC -,   C2,  -, -
+  MUSIC B3X, S,   -, M3
   MUSIC -,   -,   -, M1
-  MUSIC -,   D2,  -, M3
+  MUSIC A3X, D2,  -, M3
   MUSIC -,   S,   -, M2
-  MUSIC -,   -,   -, M2
+  MUSIC B3X, -,   -, M2
   MUSIC -,   E2,  -, M1
   MUSIC -,   -,   -, M2
 
@@ -437,19 +437,19 @@ si_dnb_panic_loop:
   MUSIC -,   G2,  -, M1
   MUSIC -,   -,   -, M2
 
-  ' --- Bar 3 (A): with snare roll fill at end ---
+  ' --- Bar 3 (transition): frantic rising E3->G3->A3->B3, snare roll ---
   MUSIC E3X, E2,  -, M1
   MUSIC -,   S,   -, M3
-  MUSIC -,   G2,  -, M3
+  MUSIC G3X, G2,  -, M3
   MUSIC -,   -,   -, M3
-  MUSIC -,   E2,  -, M2
+  MUSIC A3X, E2,  -, M2
   MUSIC -,   S,   -, M3
-  MUSIC -,   G2,  -, M1
+  MUSIC B3X, G2,  -, M1
   MUSIC -,   -,   -, M3
-  MUSIC C3X, C2,  -, M1
-  MUSIC -,   S,   -, M3
-  MUSIC -,   D2,  -, M1
-  MUSIC -,   -,   -, M3
+  MUSIC A3X, C2,  -, M1
+  MUSIC B3X, S,   -, M3
+  MUSIC A3X, D2,  -, M1
+  MUSIC B3X, -,   -, M3
   MUSIC -,   E2,  -, M2
   MUSIC -,   -,   -, M2
   MUSIC -,   G2,  -, M2

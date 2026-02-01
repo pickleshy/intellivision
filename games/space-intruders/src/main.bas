@@ -64,6 +64,7 @@ CONST GRAM_SAUCER_F2 = 42      ' Saucer frame 2 (left window lit)
 CONST GRAM_SAUCER_F3 = 43      ' Saucer frame 3 (middle window lit)
 CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
+CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -84,7 +85,7 @@ CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
 CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
 CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed
-CONST ALIEN_SHOOT_RATE = 90     ' Frames between alien shots
+CONST ALIEN_SHOOT_RATE = 60     ' Frames between alien shots
 CONST RAPID_SPEED    = 3        ' Rapid fire bullet speed (3px/frame)
 CONST RAPID_COOLDOWN = 8        ' Frames between rapid fire shots
 
@@ -100,6 +101,24 @@ CONST COL_CYAN      = 9
 CONST COL_PINK      = 12
 CONST COL_LTBLUE    = 13
 CONST COL_PURPLE    = 15
+
+' Flight engine states
+CONST FLT_IDLE       = 0          ' Engine inactive
+CONST FLT_TRANSITION = 1          ' Moving toward first waypoint
+CONST FLT_FOLLOWING  = 2          ' Following pattern path
+CONST FLT_DONE       = 3          ' Completed all loops
+
+' Flight pattern IDs
+CONST PAT_FIGURE8    = 0          ' Title screen figure-8
+CONST PAT_DIAMOND    = 1          ' Game over diamond orbit
+
+' Angry saucer chase
+CONST SAUCER_CHASE   = 3          ' Saucer state: pursuing player
+CONST SAUCER_ESCAPE  = 4          ' Saucer state: flying off after chase
+CONST CHASE_CHANCE   = 2000       ' 1/N per movement tick (~8% per pass)
+CONST CHASE_SPEED_X  = 2          ' Horizontal tracking speed (px per frame)
+CONST CHASE_DRIFT_Y  = 4          ' Descend 1px every N frames (slow drift down)
+CONST CHASE_FIRE_RATE = 45        ' Frames between saucer shots (~1.3 per second)
 
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
@@ -165,14 +184,14 @@ ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
 #ExplosionPos  = 0              ' Explosion BACKTAB position (screen address)
 FlyX        = 0                 ' Flying sprite X position (from path table)
 FlyY        = 0                 ' Flying sprite Y position (from path table)
-FlyPhase    = 0                 ' Path position index (0-31)
+#FlyPhase    = 0                 ' Path position index (16-bit for >255 waypoints)
 FlySpeed    = 0                 ' Frame counter for path advance
 FlyFrame    = 0                 ' Flying sprite animation frame
 FlyColorIdx = 0                 ' Color cycle index (0-5)
 FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
-FlyLoopCount = 0                ' Number of completed figure-8 loops
+#FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
 ' Starfield variables
 DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
@@ -185,6 +204,7 @@ StarTick    = 0                 ' Tick counter (for slow layer)
 ' TitleFrame reuses TitleFrame (title-only)
 ' TitleMarchDir reuses TitleMarchDir (title-only)
 ' SlidePos reuses SlidePos (title-only)
+PowerUpY    = 0                 ' Power-up capsule Y position (separate from saucer FlyY)
 #PowerTimer = 0                 ' Landing timeout (counts down from 300)
 ' Rapid fire variables (reuse title-screen vars during gameplay)
 ' PowerUpType reuses TitleColor (title-only): 0=beam, 1=rapid fire
@@ -203,6 +223,19 @@ Bullet2Active = 0               ' 1 = bullet 2 flying
 #DualTimer  = 0                 ' Dual laser countdown (300 frames = 5 sec, 0 = normal)
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #NextLife   = 1000              ' Score threshold for next extra life
+#MegaTimer  = 0                 ' Mega beam countdown (300 frames = 5 sec, 0 = normal)
+MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
+MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
+SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
+RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sides)
+RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
+#HighScore  = 0                 ' Session high score (persists until ROM reset)
+ChainCount  = 0                 ' Consecutive alien kills (chain combo, max 5)
+' Flight engine variables
+#FlyPathLen  = 0                 ' Current pattern waypoint count
+FlyStepRate = 0                 ' Frames between waypoint advances
+FlyMaxLoops = 0                 ' 0=infinite, N=stop after N loops
+FlyTransSpd = 0                 ' Pixels per frame during transition
 
 ' --------------------------------------------
 ' Main Program
@@ -301,6 +334,8 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx
     WAIT
+    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+    WAIT
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
     ' Grey/White flash
@@ -331,6 +366,11 @@ ResetToTitle:
     Bullet2Active = 0
     ABulletActive = 0
     #DualTimer = 0
+    #MegaTimer = 0
+    MegaBeamTimer = 0
+    SubWave = 0
+    RevealMode = 0
+    RightRevealCol = ALIEN_COLS - 1
     DeathTimer = 0
     Invincible = 0
     ShakeTimer = 0
@@ -387,24 +427,13 @@ TitleScreen:
     ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at TitleGridCol)
     GOSUB DrawAlienGrid
 
-    ' Flying crab path stored in ROM DATA tables
-    ' Load ROM addresses into 16-bit vars for PEEK access
-    ' VARPTR works with DATA labels in IntyBASIC
-    #PathXAddr = VARPTR FlyPathXData(0)
-    #PathYAddr = VARPTR FlyPathYData(0)
-    ' Color cycle: White → Yellow → Green → Blue → Green → Yellow
+    ' Initialize Zod via flight engine
     FlyColors(0) = 7 : FlyColors(1) = 6 : FlyColors(2) = 5
     FlyColors(3) = 3 : FlyColors(4) = 5 : FlyColors(5) = 6
-    FlyPhase = 0
-    FlySpeed = 0
-    FlyFrame = 0
-    FlyColorIdx = 0
-    FlyColorTimer = 0
-    FlyColor = 7
-    FlyState = 0           ' Start with entry from left
-    FlyLoopCount = 0
-    FlyX = 0               ' Start off-screen top-left
-    FlyY = 0               ' Start at top of screen
+    FlyFrame = 0 : FlyColorIdx = 0 : FlyColorTimer = 0 : FlyColor = 7
+    FlyX = 0 : FlyY = 0   ' Start off-screen top-left
+    LoopVar = PAT_FIGURE8
+    GOSUB FlightStart
 
     ' Start title music (PLAY FULL for full 3-channel theme)
     PLAY FULL
@@ -433,65 +462,46 @@ TitleLoop:
 
     ' --- Flying crab "Zod" state machine ---
     ' States: 0=enter from left, 1=figure-8 loops, 2=exit right, 3=offscreen pause
-    FlySpeed = FlySpeed + 1
-    IF FlySpeed >= 3 THEN
-        FlySpeed = 0
-
-        IF FlyState = 0 THEN
-            ' Enter from top-left: diagonal path to center (84, 56)
+    ' --- Zod flight: engine handles transition + pattern, hand-coded exit/pause ---
+    IF FlyState <= FLT_DONE THEN
+        ' Engine active: transition, following, or just finished
+        GOSUB FlightTick
+        IF FlyState = FLT_DONE THEN
+            FlyState = 4       ' Switch to hand-coded exit wobble
+            #FlyPhase = 0
+        END IF
+    ELSEIF FlyState = 4 THEN
+        ' Exit right with Y wobble (hand-coded)
+        FlySpeed = FlySpeed + 1
+        IF FlySpeed >= 3 THEN
+            FlySpeed = 0
             FlyX = FlyX + 4
-            FlyY = FlyY + 3
-            IF FlyX >= 84 THEN
-                FlyX = 84
-                FlyY = 56         ' Snap to figure-8 start
-                FlyState = 1       ' Start figure-8
-                FlyPhase = 0
-                FlyLoopCount = 0
-            END IF
-
-        ELSEIF FlyState = 1 THEN
-            ' Figure-8 looping
-            FlyPhase = FlyPhase + 1
-            IF FlyPhase >= 64 THEN
-                FlyPhase = 0
-                FlyLoopCount = FlyLoopCount + 1
-                IF FlyLoopCount >= 2 THEN
-                    FlyState = 2   ' Done looping, exit right
-                    FlyX = 84
-                    FlyY = 56
-                END IF
-            END IF
-            IF FlyState = 1 THEN
-                FlyX = PEEK(#PathXAddr + FlyPhase)
-                FlyY = PEEK(#PathYAddr + FlyPhase)
-            END IF
-
-        ELSEIF FlyState = 2 THEN
-            ' Exit to right with wobble: X increases by 4, Y oscillates
-            FlyX = FlyX + 4
-            FlyPhase = FlyPhase + 1
-            ' Wobble: 4-step cycle → up, center, down, center (±3px)
-            IF (FlyPhase AND 3) = 0 THEN
+            #FlyPhase = #FlyPhase + 1
+            IF (#FlyPhase AND 3) = 0 THEN
                 FlyY = 53
-            ELSEIF (FlyPhase AND 3) = 1 THEN
+            ELSEIF (#FlyPhase AND 3) = 1 THEN
                 FlyY = 56
-            ELSEIF (FlyPhase AND 3) = 2 THEN
+            ELSEIF (#FlyPhase AND 3) = 2 THEN
                 FlyY = 59
             ELSE
                 FlyY = 56
             END IF
             IF FlyX > 167 THEN
-                FlyState = 3       ' Offscreen pause
-                FlyPhase = 0       ' Reuse as pause counter
+                FlyState = 5       ' Offscreen pause
+                #FlyPhase = 0
             END IF
-
-        ELSE
-            ' Offscreen pause (~1 sec = 20 steps × 3 frames)
-            FlyPhase = FlyPhase + 1
-            IF FlyPhase >= 20 THEN
-                FlyState = 0       ' Restart: enter from top-left
-                FlyX = 0
-                FlyY = 0
+        END IF
+    ELSE
+        ' FlyState=5: Offscreen pause (~1 sec = 20 steps × 3 frames)
+        FlySpeed = FlySpeed + 1
+        IF FlySpeed >= 3 THEN
+            FlySpeed = 0
+            #FlyPhase = #FlyPhase + 1
+            IF #FlyPhase >= 20 THEN
+                ' Restart: re-enter from top-left
+                FlyX = 0 : FlyY = 0
+                LoopVar = PAT_FIGURE8
+                GOSUB FlightStart
             END IF
         END IF
     END IF
@@ -505,11 +515,10 @@ TitleLoop:
         FlyColor = FlyColors(FlyColorIdx)
     END IF
 
-    ' Draw flying crab (animate + show/hide based on state)
+    ' Draw Zod (or hide if offscreen pause)
     FlyFrame = FlyFrame + 1
     IF FlyFrame >= 16 THEN FlyFrame = 0
-    IF FlyState = 3 THEN
-        ' Hidden during offscreen pause
+    IF FlyState = 5 THEN
         SPRITE SPR_FLYER, 0, 0, 0
     ELSE
         IF FlyFrame < 8 THEN
@@ -591,11 +600,11 @@ TitleLoop:
     END IF
 
     ' "PRESS FIRE" slide-in from edges, then shimmer (GRAM font)
-    ' Wait until flyer begins figure-8 before starting slide-in
-    IF FlyState = 0 THEN GOTO SkipPressfire
+    ' Wait until flyer begins pattern before starting slide-in
+    IF FlyState = FLT_TRANSITION THEN GOTO SkipPressfire
 
-    ' When Zod exits (state 2): rapid flash then disappear
-    IF FlyState = 2 THEN
+    ' When Zod exits (state 4): rapid flash then disappear
+    IF FlyState = 4 THEN
         ' Toggle visible/invisible every 2 frames for rapid blink
         TitleColor = TitleColor + 1
         IF TitleColor >= 4 THEN TitleColor = 0
@@ -620,8 +629,8 @@ TitleLoop:
         GOTO SkipPressfire
     END IF
 
-    ' When Zod is offscreen (state 3): clear text and reset for next cycle
-    IF FlyState = 3 THEN
+    ' When Zod is offscreen (state 5): clear text and reset for next cycle
+    IF FlyState = 5 THEN
         IF SlidePos > 0 THEN
             FOR LoopVar = 200 TO 219
                 PRINT AT LoopVar, 0
@@ -848,6 +857,9 @@ StartGame:
     Level = 1
     CurrentMarchSpeed = MARCH_SPEED_START
     WaveRevealCol = 0             ' Start column sweep from left
+    SubWave = 0
+    RevealMode = 0
+    RightRevealCol = ALIEN_COLS - 1
 
     ' Draw score and lives
     PRINT AT 220, "SCORE: 0"
@@ -855,16 +867,20 @@ StartGame:
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     PRINT AT 237 COLOR COL_WHITE, "X3"
 
-    ' Initialize saucer (inactive, spawn after ~5 seconds)
+    ' Initialize saucer (inactive, random spawn delay 1-4 seconds)
     FlyState = 0
-    FlyPhase = 0  ' Spawn countdown (counts up to threshold)
+    #FlyPhase = 0  ' Spawn countdown (counts up to threshold)
+    #FlyLoopCount = RANDOM(360) + 180  ' Random spawn threshold
     #BeamTimer = 0  ' No beam power-up
     #RapidTimer = 0 ' No rapid fire
     #DualTimer = 0  ' No dual laser
+    #MegaTimer = 0  ' No mega beam
+    MegaBeamTimer = 0
     Bullet2Active = 0
     TitleFrame = 0  ' No power-up drop
     TitleColor = 0  ' First drop is beam
     TitleJitter = 0 ' No fire cooldown
+    ChainCount = 0  ' Reset kill chain
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
@@ -931,7 +947,7 @@ GameLoop:
 
     ' Game Over screen with bolt sweep effect (GameOver=5: release, 6: accept)
     IF GameOver >= 5 THEN
-        ' White bolt sweep across "GAME OVER" text (same technique as title screen)
+        ' White bolt sweep across "GAME OVER" text at row 2 (pos 45)
         ' TitleMarchX = frame counter, advance bolt every 6 frames
         ' TitleJitter = bolt position (0-8 on text, 9-13 gap between sweeps)
         TitleMarchX = TitleMarchX + 1
@@ -939,27 +955,27 @@ GameLoop:
             TitleMarchX = 0
             ' Restore current bolt position to tan and clear sparks
             IF TitleJitter < 9 THEN
-                #Card = PEEK($269 + TitleJitter)
-                PRINT AT 105 + TitleJitter, (#Card AND $EFF8) OR COL_TAN
-                PRINT AT 85 + TitleJitter, 0     ' Clear spark above
-                PRINT AT 125 + TitleJitter, 0    ' Clear spark below
+                #Card = PEEK($22D + TitleJitter)
+                PRINT AT 45 + TitleJitter, (#Card AND $EFF8) OR COL_TAN
+                PRINT AT 25 + TitleJitter, 0     ' Clear spark above (row 1)
+                PRINT AT 65 + TitleJitter, 0     ' Clear spark below (row 3)
             END IF
             ' Advance bolt position
             TitleJitter = TitleJitter + 1
             IF TitleJitter >= 14 THEN TitleJitter = 0
             ' Set new bolt position to white with sparks
             IF TitleJitter < 9 THEN
-                #Card = PEEK($269 + TitleJitter)
-                PRINT AT 105 + TitleJitter, (#Card AND $EFF8) OR COL_WHITE
-                PRINT AT 85 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
-                PRINT AT 125 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
+                #Card = PEEK($22D + TitleJitter)
+                PRINT AT 45 + TitleJitter, (#Card AND $EFF8) OR COL_WHITE
+                PRINT AT 25 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
+                PRINT AT 65 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
             END IF
         END IF
         ' Spark 2-frame animation: switch to trailing frame at frame 3
         IF TitleJitter < 9 THEN
             IF TitleMarchX >= 3 THEN
-                PRINT AT 85 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
-                PRINT AT 125 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
+                PRINT AT 25 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
+                PRINT AT 65 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
             END IF
         END IF
 
@@ -970,11 +986,15 @@ GameLoop:
             WavePhase = WavePhase + 1
             IF WavePhase >= 4 THEN WavePhase = 0
             IF WaveColors(WavePhase) = 0 THEN
-                PRINT AT 165 COLOR COL_TAN, "PRESS FIRE"
+                PRINT AT 205 COLOR COL_TAN, "PRESS FIRE"
             ELSE
-                PRINT AT 165 COLOR COL_WHITE, "PRESS FIRE"
+                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
             END IF
         END IF
+
+        ' --- Zod diamond orbit via flight engine ---
+        GOSUB FlightTick
+        GOSUB ZodRender
 
         ' Button debounce: GameOver=5 waits for release, GameOver=6 accepts press
         IF GameOver = 5 THEN
@@ -1001,14 +1021,40 @@ GameLoop:
         GOSUB DrawAliens
     END IF
 
-    ' Advance wave reveal (sweep columns in from left, 1 col per frame)
-    IF WaveRevealCol < ALIEN_COLS - 1 THEN
-        WaveRevealCol = WaveRevealCol + 1
+    ' Advance wave reveal
+    IF RevealMode = 0 THEN
+        ' Standard left-to-right reveal (Pattern A) or fully revealed
+        IF WaveRevealCol < ALIEN_COLS - 1 THEN
+            WaveRevealCol = WaveRevealCol + 1
+            GOSUB DrawAliens
+        END IF
+    ELSE
+        ' Dual-slide mode (Pattern B) - halves fly in from screen edges
+        ' WaveRevealCol = left group X offset (0→5)
+        ' RightRevealCol = right group X offset (10→5)
+        MarchCount = MarchCount + 1
+        IF MarchCount >= 8 THEN
+            MarchCount = 0
+            IF WaveRevealCol < 5 THEN WaveRevealCol = WaveRevealCol + 1
+            IF RightRevealCol > 5 THEN RightRevealCol = RightRevealCol - 1
+            IF WaveRevealCol >= 5 THEN
+                IF RightRevealCol <= 5 THEN
+                    ' Slide complete - switch to normal march mode
+                    RevealMode = 0
+                    WaveRevealCol = ALIEN_COLS - 1
+                    MarchCount = 0
+                END IF
+            END IF
+        END IF
         GOSUB DrawAliens
     END IF
 
+    ' Check if reveal is complete
+    HitCol = 0
+    IF WaveRevealCol >= ALIEN_COLS - 1 THEN HitCol = 1
+
     ' Update alien march (only after reveal is complete)
-    IF WaveRevealCol >= ALIEN_COLS - 1 THEN
+    IF HitCol THEN
     MarchCount = MarchCount + 1
     IF MarchCount >= CurrentMarchSpeed THEN
         MarchCount = 0
@@ -1029,13 +1075,22 @@ GameLoop:
                 PLAY OFF
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
                 ShakeTimer = 40  ' Big shake on invasion!
-                PRINT AT 105, "INVASION!"
-                PRINT AT 125, "PRESS FIRE"
+                IF #Score > #HighScore THEN #HighScore = #Score
+                PRINT AT 45, "INVASION!"
+                PRINT AT 105 COLOR COL_WHITE, "SCORE "
+                PRINT AT 111, <>#Score
+                IF #Score >= #HighScore THEN
+                    PRINT AT 123 COLOR COL_YELLOW, "NEW HIGH!"
+                ELSE
+                    PRINT AT 122 COLOR COL_YELLOW, "HIGH SCORE "
+                    PRINT AT 133, <>#HighScore
+                END IF
+                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
                 SPRITE SPR_PLAYER, 0, 0, 0
             END IF
         END IF
     END IF
-    END IF ' WaveRevealCol gate
+    END IF ' reveal complete gate
 
     ' Update bullets
     IF BulletActive THEN
@@ -1178,13 +1233,22 @@ GameLoop:
                 SPRITE SPR_SAUCER, 0, 0, 0
                 SPRITE SPR_SAUCER2, 0, 0, 0
                 SPRITE SPR_POWERUP, 0, 0, 0
-                ' "GAME OVER" in tan at row 5 (pos 105), centered
-                PRINT AT 105 COLOR COL_TAN, "GAME OVER"
-                ' "PRESS FIRE" in white at row 8 (pos 165), centered
-                PRINT AT 165 COLOR COL_WHITE, "PRESS FIRE"
-                ' Show final score
-                PRINT AT 187 COLOR COL_WHITE, "SCORE "
-                PRINT AT 193, <>#Score
+                ' Update high score
+                IF #Score > #HighScore THEN #HighScore = #Score
+                ' "GAME OVER" in tan at row 2 col 5, centered
+                PRINT AT 45 COLOR COL_TAN, "GAME OVER"
+                ' Score at row 5, centered
+                PRINT AT 105 COLOR COL_WHITE, "SCORE "
+                PRINT AT 111, <>#Score
+                ' High score at row 6 (always shown)
+                IF #Score >= #HighScore THEN
+                    PRINT AT 123 COLOR COL_YELLOW, "NEW HIGH!"
+                ELSE
+                    PRINT AT 122 COLOR COL_YELLOW, "HIGH SCORE "
+                    PRINT AT 133, <>#HighScore
+                END IF
+                ' "PRESS FIRE" at row 10, centered
+                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
                 ' Voice announcement
                 IF VOICE.AVAILABLE THEN
                     VOICE PLAY game_over_phrase
@@ -1194,6 +1258,14 @@ GameLoop:
                 TitleMarchX = 0
                 WavePhase = 0
                 TitleColor = 0
+                ' Initialize Zod via flight engine (sweep in from right)
+                FlyX = 168 : FlyY = 1
+                FlyFrame = 0 : FlyColor = COL_WHITE
+                FlyColorIdx = 0 : FlyColorTimer = 0
+                FlyColors(0) = 7 : FlyColors(1) = 6 : FlyColors(2) = 5
+                FlyColors(3) = 3 : FlyColors(4) = 5 : FlyColors(5) = 6
+                LoopVar = PAT_DIAMOND
+                GOSUB FlightStart
                 GameOver = 5
             ELSE
                 ' Normal respawn at center with invincibility
@@ -1225,6 +1297,30 @@ GameLoop:
     END IF
     IF TitleJitter > 0 THEN
         TitleJitter = TitleJitter - 1
+    END IF
+    IF #MegaTimer > 0 THEN
+        #MegaTimer = #MegaTimer - 1
+    END IF
+
+    ' Mega beam display countdown + color cycling
+    IF MegaBeamTimer > 0 THEN
+        MegaBeamTimer = MegaBeamTimer - 1
+        ' Color cycle: white → yellow → red over 20 frames
+        IF MegaBeamTimer > 13 THEN
+            LaserColor = COL_WHITE
+        ELSEIF MegaBeamTimer > 6 THEN
+            LaserColor = COL_YELLOW
+        ELSE
+            LaserColor = COL_RED
+        END IF
+        ' Redraw beam with current color
+        FOR LoopVar = 0 TO 10
+            #ScreenPos = LoopVar * 20 + MegaBeamCol
+            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + LaserColor + $0800
+        NEXT LoopVar
+        IF MegaBeamTimer = 0 THEN
+            GOSUB MegaBeamClear
+        END IF
     END IF
 
     ' Update sprites
@@ -1283,7 +1379,21 @@ MovePlayer: PROCEDURE
 
     ' Fire: side buttons or keypad 1 (auto-fire, works while moving)
     IF CONT.BUTTON OR CONT.KEY = 1 THEN
-        IF #DualTimer > 0 THEN
+        IF #MegaTimer > 0 THEN
+            ' Mega beam: instant column blast (reusable for 5 sec)
+            IF MegaBeamTimer = 0 THEN
+                MegaBeamCol = (PlayerX + 3) / 8
+                IF MegaBeamCol > 19 THEN MegaBeamCol = 19
+                MegaBeamTimer = 20
+                GOSUB MegaBeamKill
+                GOSUB MegaBeamDraw
+                ' SFX: loud crackle blast
+                SfxType = 4 : SfxVolume = 15 : #SfxPitch = 0
+                SOUND 2, 0, 15
+                POKE $1F7, 8
+                POKE $1F8, PEEK($1F8) AND $DF
+            END IF
+        ELSEIF #DualTimer > 0 THEN
             ' Dual laser: fire pair when either slot is free
             IF BulletActive = 0 OR Bullet2Active = 0 THEN
                 BulletX = PlayerX        ' Left side of ship
@@ -1322,6 +1432,7 @@ MoveBullet: PROCEDURE
             BulletY = BulletY - RAPID_SPEED
         ELSE
             BulletActive = 0
+            ChainCount = 0   ' Missed — break chain
         END IF
     ELSEIF #DualTimer > 0 THEN
         ' Dual laser: flat 2px/frame (matches bullet 2)
@@ -1329,6 +1440,7 @@ MoveBullet: PROCEDURE
             BulletY = BulletY - 2
         ELSE
             BulletActive = 0
+            ChainCount = 0   ' Missed — break chain
         END IF
     ELSE
         ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
@@ -1341,6 +1453,7 @@ MoveBullet: PROCEDURE
             BulletY = BulletY - LoopVar
         ELSE
             BulletActive = 0
+            ChainCount = 0   ' Missed — break chain
         END IF
     END IF
 
@@ -1456,8 +1569,10 @@ CheckOneColumn: PROCEDURE
                     BulletActive = 0
                 END IF
 
-                ' Update score
-                #Score = #Score + 10
+                ' Chain combo scoring: 10, 20, 30, 40, 50, 50, 50...
+                ChainCount = ChainCount + 1
+                IF ChainCount > 5 THEN ChainCount = 5
+                #Score = #Score + ChainCount * 10
 
                 ' Noise explosion SFX (short punchy crunch)
                 SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
@@ -1564,6 +1679,8 @@ END
 ' AlienShoot - Decide when and where aliens shoot
 ' --------------------------------------------
 AlienShoot: PROCEDURE
+    ' Saucer owns the bullet slot during chase
+    IF FlyState = SAUCER_CHASE THEN RETURN
     ' Only shoot if no alien bullet active
     IF ABulletActive = 0 THEN
         ShootTimer = ShootTimer + 1
@@ -1714,13 +1831,14 @@ MoveBullet2: PROCEDURE
         Bullet2Y = Bullet2Y - 2
     ELSE
         Bullet2Active = 0
+        ChainCount = 0   ' Missed — break chain
     END IF
 
     ' Check collision with aliens via swap
     IF Bullet2Active THEN
         ' Save bullet 1 state into unused title-screen vars
         FlyFrame = BulletX
-        FlyLoopCount = BulletY
+        #FlyLoopCount = BulletY
         FlyColorTimer = BulletActive
         ' Swap bullet 2 into globals
         BulletX = Bullet2X
@@ -1731,7 +1849,7 @@ MoveBullet2: PROCEDURE
         Bullet2Active = BulletActive
         ' Restore bullet 1
         BulletX = FlyFrame
-        BulletY = FlyLoopCount
+        BulletY = #FlyLoopCount
         BulletActive = FlyColorTimer
     END IF
     RETURN
@@ -1795,6 +1913,18 @@ UpdateSfx: PROCEDURE
         IF SfxVolume > 0 THEN
             POKE $1F8, PEEK($1F8) AND $DF ' Bit 5 clear: noise C on
         END IF
+    ELSEIF SfxType = 4 THEN
+        ' Mega beam blast: bright crackle → fade
+        #SfxPitch = 0
+        IF MegaBeamTimer > 0 THEN
+            IF (MegaBeamTimer AND 3) = 0 THEN
+                IF SfxVolume > 1 THEN SfxVolume = SfxVolume - 1
+            END IF
+            POKE $1F7, 8 + (20 - MegaBeamTimer) / 2
+            POKE $1F8, PEEK($1F8) AND $DF
+        ELSE
+            SfxVolume = 0
+        END IF
     ELSE
         ' Alien: fast decay (2 per frame)
         IF SfxVolume > 2 THEN
@@ -1812,139 +1942,61 @@ UpdateSfx: PROCEDURE
     RETURN
 END
 
+' UpdateSaucer moved to Segment 2
+
 ' --------------------------------------------
-' UpdateSaucer - Spawn, move, and check collision for flying saucer
+' MegaBeamKill - Kill all aliens in the beam column
 ' --------------------------------------------
-UpdateSaucer: PROCEDURE
-    IF FlyState = 0 THEN
-        ' Inactive - count up to spawn threshold (~2 seconds)
-        FlyPhase = FlyPhase + 1
-        IF FlyPhase >= 120 THEN
-            ' Spawn! Pick random direction
-            FlyPhase = 0
-            IF RANDOM(2) = 0 THEN
-                ' Fly left to right
-                FlyState = 1
-                FlyX = 0
-            ELSE
-                ' Fly right to left
-                FlyState = 2
-                FlyX = 159
-            END IF
-            FlyY = 8            ' Row 0 (sprites have 8px Y offset on STIC)
-            FlySpeed = 0
-            FlyColor = 4        ' Dark Green
-        END IF
-        RETURN
-    END IF
-
-    ' Active - move saucer
-    FlySpeed = FlySpeed + 1
-    IF FlySpeed >= 2 THEN
-        FlySpeed = 0
-        IF FlyState = 1 THEN
-            FlyX = FlyX + 1
-            IF FlyX > 167 THEN
-                ' Off screen right - deactivate
-                FlyState = 0
-                FlyPhase = 0
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
-                RETURN
-            END IF
-        ELSE
-            IF FlyX > 0 THEN
-                FlyX = FlyX - 1
-            ELSE
-                ' Off screen left - deactivate
-                FlyState = 0
-                FlyPhase = 0
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
-                RETURN
-            END IF
-        END IF
-    END IF
-
-    ' Animate saucer: 4-frame window scan + color cycle
-    FlyPhase = FlyPhase + 1
-    IF FlyPhase >= 24 THEN FlyPhase = 0
-    IF FlyPhase = 0 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerGfx       ' All windows dark
-        FlyColor = 4                            ' Dark Green
-    ELSEIF FlyPhase = 6 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF2Gfx     ' Inner window lit
-        FlyColor = 5                            ' Green
-    ELSEIF FlyPhase = 12 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF3Gfx     ' Outer window lit
-        FlyColor = 4                            ' Dark Green
-    ELSEIF FlyPhase = 18 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF4Gfx     ' Both windows + engine glow
-        FlyColor = 5                            ' Green
-    END IF
-
-    ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
-    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, GRAM_SAUCER * 8 + FlyColor + $0800
-    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, GRAM_SAUCER * 8 + FlyColor + $0800
-
-    ' Check collision with player bullet (16px wide hitbox)
-    IF BulletActive THEN
-        IF BulletY < 14 THEN
-            ' Bullet is in saucer Y range (top of screen)
-            IF BulletX >= FlyX - 4 THEN
-                IF BulletX <= FlyX + 16 THEN
-                    ' HIT the saucer!
-                    BulletActive = 0
-                    FlyState = 0
-                    FlyPhase = 0
-                    DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
-                    SPRITE SPR_SAUCER, 0, 0, 0
-                    SPRITE SPR_SAUCER2, 0, 0, 0
-                    ' Saucer crash SFX (deep rumble + descending pitch)
-                    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-                    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
-                    ' Bonus points
-                    #Score = #Score + 50
-                    ' Drop power-up from saucer position
-                    TitleFrame = 1       ' Falling
-                    TitleMarchDir = FlyX        ' Drop from saucer X
-                    FlyY = 8             ' Start falling from row 0
-                    SlidePos = 0
-                    ' Show explosion at saucer position using BACKTAB
-                    #ExplosionPos = FlyX / 8
-                    ExplosionTimer = 15
-                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+MegaBeamKill: PROCEDURE
+    IF MegaBeamCol >= ALIEN_START_X + AlienOffsetX THEN
+        IF MegaBeamCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
+            AlienGridCol = MegaBeamCol - ALIEN_START_X - AlienOffsetX
+            IF AlienGridCol <= WaveRevealCol THEN
+                ' Build bitmask for this column
+                #Mask = 1
+                IF AlienGridCol > 0 THEN
+                    FOR LoopVar = 1 TO AlienGridCol
+                        #Mask = #Mask * 2
+                    NEXT LoopVar
                 END IF
+                ' Kill alien in every row at this column
+                FOR LoopVar = 0 TO ALIEN_ROWS - 1
+                    IF #AlienRow(LoopVar) AND #Mask THEN
+                        #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
+                        ChainCount = ChainCount + 1
+                        IF ChainCount > 5 THEN ChainCount = 5
+                        #Score = #Score + ChainCount * 10
+                        ' Show explosion at alien position
+                        #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + MegaBeamCol
+                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                    END IF
+                NEXT LoopVar
+                ExplosionTimer = 15
             END IF
         END IF
     END IF
+    RETURN
+END
 
-    ' Check collision with bullet 2 (16px wide hitbox)
-    IF Bullet2Active THEN
-        IF Bullet2Y < 14 THEN
-            IF Bullet2X >= FlyX - 4 THEN
-                IF Bullet2X <= FlyX + 16 THEN
-                    ' HIT the saucer with bullet 2!
-                    Bullet2Active = 0
-                    FlyState = 0
-                    FlyPhase = 0
-                    DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
-                    SPRITE SPR_SAUCER, 0, 0, 0
-                    SPRITE SPR_SAUCER2, 0, 0, 0
-                    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-                    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
-                    #Score = #Score + 50
-                    TitleFrame = 1
-                    TitleMarchDir = FlyX
-                    FlyY = 8
-                    SlidePos = 0
-                    #ExplosionPos = FlyX / 8
-                    ExplosionTimer = 15
-                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
-                END IF
-            END IF
-        END IF
-    END IF
+' --------------------------------------------
+' MegaBeamDraw - Draw beam column on BACKTAB (rows 0-10)
+' --------------------------------------------
+MegaBeamDraw: PROCEDURE
+    FOR LoopVar = 0 TO 10
+        #ScreenPos = LoopVar * 20 + MegaBeamCol
+        PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + COL_WHITE + $0800
+    NEXT LoopVar
+    RETURN
+END
+
+' --------------------------------------------
+' MegaBeamClear - Clear beam column from BACKTAB
+' --------------------------------------------
+MegaBeamClear: PROCEDURE
+    FOR LoopVar = 0 TO 10
+        #ScreenPos = LoopVar * 20 + MegaBeamCol
+        PRINT AT #ScreenPos, 0
+    NEXT LoopVar
     RETURN
 END
 
@@ -1957,22 +2009,25 @@ UpdatePowerUp: PROCEDURE
     ' Set capsule flash colors based on power-up type
     ' Reuse TitleGridCol/TitleMarchCount as temp color vars
     IF TitleColor = 0 THEN
-        TitleGridCol = COL_YELLOW    ' Beam: yellow/white
+        TitleGridCol = COL_BLUE      ' Beam: blue/white
         TitleMarchCount = COL_WHITE
     ELSEIF TitleColor = 1 THEN
-        TitleGridCol = COL_GREEN     ' Rapid: green/blue
-        TitleMarchCount = COL_BLUE
+        TitleGridCol = COL_YELLOW    ' Rapid: yellow/green
+        TitleMarchCount = COL_GREEN
+    ELSEIF TitleColor = 2 THEN
+        TitleGridCol = COL_WHITE     ' Dual: white/tan
+        TitleMarchCount = COL_TAN
     ELSE
-        TitleGridCol = COL_RED       ' Dual: red/tan
+        TitleGridCol = COL_RED       ' Mega: red/tan
         TitleMarchCount = COL_TAN
     END IF
 
     IF TitleFrame = 1 THEN
         ' Falling: move down 2px per frame
-        FlyY = FlyY + 2
-        IF FlyY >= PLAYER_Y THEN
+        PowerUpY = PowerUpY + 2
+        IF PowerUpY >= PLAYER_Y THEN
             ' Landed at player level
-            FlyY = PLAYER_Y
+            PowerUpY = PLAYER_Y
             TitleFrame = 2
             #PowerTimer = 300   ' 5 seconds to pick up
             SlidePos = 0
@@ -1981,9 +2036,9 @@ UpdatePowerUp: PROCEDURE
         SlidePos = SlidePos + 1
         IF SlidePos >= 8 THEN SlidePos = 0
         IF SlidePos < 4 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, FlyY, GRAM_POWERUP * 8 + TitleGridCol + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, GRAM_POWERUP * 8 + TitleGridCol + $0800
         ELSE
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, FlyY, GRAM_POWERUP * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, GRAM_POWERUP * 8 + TitleMarchCount + $0800
         END IF
         RETURN
     END IF
@@ -1998,25 +2053,26 @@ UpdatePowerUp: PROCEDURE
                 ' Picked up! Activate power-up based on type
                 IF TitleColor = 0 THEN
                     #BeamTimer = 300
-                    #RapidTimer = 0
-                    #DualTimer = 0
+                    #RapidTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF TitleColor = 1 THEN
                     #RapidTimer = 300
-                    #BeamTimer = 0
-                    #DualTimer = 0
+                    #BeamTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
-                ELSE
+                ELSEIF TitleColor = 2 THEN
                     #DualTimer = 300
-                    #BeamTimer = 0
-                    #RapidTimer = 0
+                    #BeamTimer = 0 : #RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY dual_phrase
+                ELSE
+                    #MegaTimer = 300
+                    #BeamTimer = 0 : #RapidTimer = 0 : #DualTimer = 0
+                    IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
-                ' Cycle: 0(beam) → 1(rapid) → 2(dual) → 0
+                ' Cycle: 0(beam) → 1(rapid) → 2(dual) → 3(mega) → 0
                 TitleColor = TitleColor + 1
-                IF TitleColor >= 3 THEN TitleColor = 0
+                IF TitleColor >= 4 THEN TitleColor = 0
                 RETURN
             END IF
         END IF
@@ -2089,28 +2145,44 @@ DrawAliens: PROCEDURE
         ' card * 8 + color + $0800 (GRAM flag)
         #Card = AlienCard * 8 + AlienColor + $0800
 
-        ' Draw aliens using PRINT AT (standard IntyBASIC)
-        ' Only draw columns up to WaveRevealCol (sweep-in effect)
-        #Mask = 1
-        FOR Col = 0 TO ALIEN_COLS - 1
-            IF Col <= WaveRevealCol THEN
+        IF RevealMode = 1 THEN
+            ' Slide-in mode: clear row, draw left group and right group at separate offsets
+            FOR Col = 0 TO 19
+                PRINT AT #ScreenPos + Col, 0
+            NEXT Col
+            #Mask = 1
+            FOR Col = 0 TO ALIEN_COLS - 1
                 IF #AlienRow(Row) AND #Mask THEN
-                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
-                ELSE
-                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+                    IF Col < 5 THEN
+                        ' Left group: slides in from left edge
+                        PRINT AT #ScreenPos + WaveRevealCol + Col, #Card
+                    ELSE
+                        ' Right group: slides in from right edge
+                        PRINT AT #ScreenPos + RightRevealCol + Col, #Card
+                    END IF
                 END IF
+                #Mask = #Mask * 2
+            NEXT Col
+        ELSE
+            ' Standard mode: draw with column reveal gating
+            #Mask = 1
+            FOR Col = 0 TO ALIEN_COLS - 1
+                IF Col <= WaveRevealCol THEN
+                    IF #AlienRow(Row) AND #Mask THEN
+                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                    ELSE
+                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+                    END IF
+                END IF
+                #Mask = #Mask * 2
+            NEXT Col
+            ' Clear trail on BOTH edges to handle direction reversals cleanly
+            IF AlienOffsetX > 0 THEN
+                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX - 1, 0
             END IF
-            #Mask = #Mask * 2
-        NEXT Col
-
-        ' Clear trail on BOTH edges to handle direction reversals cleanly
-        ' Left edge: clear if we're not at leftmost position
-        IF AlienOffsetX > 0 THEN
-            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX - 1, 0
-        END IF
-        ' Right edge: clear if we're not at rightmost position
-        IF AlienOffsetX < ALIEN_MAX_X THEN
-            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
+            IF AlienOffsetX < ALIEN_MAX_X THEN
+                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
+            END IF
         END IF
     NEXT Row
     RETURN
@@ -2119,6 +2191,95 @@ END
 ' --------------------------------------------
 ' CheckWaveWin - Check if all aliens are dead
 ' --------------------------------------------
+' --------------------------------------------
+' LoadPatternB - Transition to Pattern B formation
+' --------------------------------------------
+LoadPatternB: PROCEDURE
+    SubWave = 1
+
+    ' Silence any lingering SFX
+    SOUND 2, , 0
+    SfxVolume = 0
+    SfxType = 0
+
+    ' Clear active bullets and sprites
+    BulletActive = 0
+    Bullet2Active = 0
+    ABulletActive = 0
+    MegaBeamTimer = 0
+    SPRITE SPR_PBULLET, 0, 0, 0
+    SPRITE SPR_ABULLET, 0, 0, 0
+    SPRITE SPR_POWERUP, 0, 0, 0
+    SPRITE SPR_SAUCER, 0, 0, 0
+    SPRITE SPR_SAUCER2, 0, 0, 0
+    FlyState = 0
+    #FlyPhase = 0
+    TitleFrame = 0
+
+    ' Reset alien positions (center the grid on screen)
+    AlienOffsetX = 5
+    AlienOffsetY = 0
+    AlienDir = 1
+    MarchCount = 0
+
+    ' Look up which pattern to use for this level
+    LoopVar = (Level - 1) AND 7
+    LoopVar = PatternBIndex(LoopVar)
+    ' Load bitmasks from packed data (each pattern = 5 consecutive words)
+    Col = LoopVar * 5
+    FOR LoopVar = 0 TO ALIEN_ROWS - 1
+        #AlienRow(LoopVar) = PatternBData(Col + LoopVar)
+    NEXT LoopVar
+
+    ' Set dual-slide mode: halves fly in from screen edges
+    RevealMode = 1
+    WaveRevealCol = 0              ' Left group starts at far left
+    RightRevealCol = 10            ' Right group starts at far right
+
+    ' Clear alien area on screen (rows 0-10)
+    FOR LoopVar = 0 TO 10
+        #ScreenPos = LoopVar * 20
+        FOR Col = 0 TO 19
+            PRINT AT #ScreenPos + Col, 0
+        NEXT Col
+    NEXT LoopVar
+
+    ' Redraw HUD (cleared by above loop at row 11)
+    PRINT AT 220, "SCORE:"
+    PRINT AT 227, <>#Score
+    PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
+
+    ' Visual/audio cue: "ALERT!" flash
+    PRINT AT 108 COLOR COL_RED, "ALERT!"
+    SOUND 0, 200, 12
+    FOR LoopVar = 0 TO 20
+        WAIT
+    NEXT LoopVar
+    SOUND 0, 100, 14
+    FOR LoopVar = 0 TO 15
+        WAIT
+    NEXT LoopVar
+    SOUND 0, , 0
+
+    ' Flash-off
+    FOR LoopVar = 0 TO 5
+        IF (LoopVar AND 1) = 0 THEN
+            PRINT AT 108, "      "
+        ELSE
+            PRINT AT 108 COLOR COL_RED, "ALERT!"
+        END IF
+        FOR Row = 0 TO 3
+            WAIT
+        NEXT Row
+    NEXT LoopVar
+    PRINT AT 108, "      "
+
+    RETURN
+END
+
+' --------------------------------------------
+' CheckWaveWin - Check if all aliens defeated
+' --------------------------------------------
 CheckWaveWin: PROCEDURE
     ' Count remaining aliens
     #AliensAlive = 0
@@ -2126,10 +2287,14 @@ CheckWaveWin: PROCEDURE
         #AliensAlive = #AliensAlive + #AlienRow(LoopVar)
     NEXT LoopVar
 
-    ' If no aliens left, wait for explosion to finish then start new wave
+    ' If no aliens left, wait for explosion then advance
     IF #AliensAlive = 0 THEN
         IF ExplosionTimer = 0 THEN
-            GOSUB StartNewWave
+            IF SubWave = 0 THEN
+                GOSUB LoadPatternB
+            ELSE
+                GOSUB StartNewWave
+            END IF
         END IF
     END IF
     RETURN
@@ -2177,6 +2342,8 @@ StartNewWave: PROCEDURE
     Bullet2Active = 0
     ABulletActive = 0
     #DualTimer = 0
+    #MegaTimer = 0
+    MegaBeamTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_FLYER, 0, 0, 0
@@ -2184,11 +2351,14 @@ StartNewWave: PROCEDURE
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
     FlyState = 0
-    FlyPhase = 0
+    #FlyPhase = 0
     TitleFrame = 0
     #RapidTimer = 0
     TitleJitter = 0
     WaveRevealCol = 0             ' Start column sweep from left
+    SubWave = 0
+    RevealMode = 0
+    RightRevealCol = ALIEN_COLS - 1
 
     ' Clear screen (aliens will paint in via game loop)
     CLS
@@ -2252,16 +2422,575 @@ extra_life_phrase:
     VOICE EH, EH, KK1, SS, TT1, RR1, AX, PA2, LL, AY, FF, PA1, 0
 
 beam_phrase:
-    VOICE IH, NN1, KK2, RR1, IY, SS, PA1, SH, AA, TT1, PA1, SS, AY, ZZ, PA1, 0
+    VOICE BB1, IH, GG1, PA1, LL, EY, ZZ, ER1, PA1, 0
 
 rapid_phrase:
-    VOICE SS, PP, IY, DD2, PA1, AX, PP, PA1, LL, EY, ZZ, ER1, PA1, 0
+    VOICE RR1, AA, PP, IH, DD2, PA1, FF, AY, ER1, PA1, 0
 
 dual_phrase:
-    VOICE DD2, UW2, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
+    VOICE DD2, AX, BB1, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
+
+mega_phrase:
+    VOICE MM, EH, GG2, AX, PA1, BB1, IY, MM, PA1, 0
 
 game_over_phrase:
     VOICE GG1, EY, MM, PA2, OW, VV, ER1, PA2, 0
+
+' Saucer primary/secondary colors per power-up type
+' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega)
+SaucerColor1:
+    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_RED
+SaucerColor2:
+    DATA COL_WHITE, COL_GREEN, COL_TAN, COL_TAN
+
+    SEGMENT 2   ' Pattern data in Segment 2 (Seg 1 is full)
+
+' --------------------------------------------
+' UpdateSaucer - Spawn, move, and check collision for flying saucer
+' --------------------------------------------
+UpdateSaucer: PROCEDURE
+    IF FlyState = 0 THEN
+        ' Inactive - count up to random spawn threshold (1-4 seconds)
+        #FlyPhase = #FlyPhase + 1
+        IF #FlyPhase >= #FlyLoopCount THEN
+            ' Spawn! Pick random direction
+            #FlyPhase = 0
+            IF RANDOM(2) = 0 THEN
+                ' Fly left to right
+                FlyState = 1
+                FlyX = 0
+            ELSE
+                ' Fly right to left
+                FlyState = 2
+                FlyX = 159
+            END IF
+            FlyY = 8            ' Row 0 (sprites have 8px Y offset on STIC)
+            FlySpeed = 0
+            FlyColor = 4        ' Dark Green
+            ' Rare chance: saucer spawns angry (1-in-8)
+            IF RANDOM(8) = 0 THEN
+                FlyState = SAUCER_CHASE
+                #FlyLoopCount = 0  ' Drift counter
+                FlyColor = COL_RED
+            END IF
+        END IF
+        RETURN
+    END IF
+
+    ' Chase state: fight to the death — pursue until one is destroyed
+    IF FlyState = SAUCER_CHASE THEN
+        ' If player just died, saucer escapes victorious
+        IF DeathTimer > 0 THEN
+            FlyState = SAUCER_ESCAPE
+            FlySpeed = 0
+            GOTO SaucerAnimate
+        END IF
+        ' Track player X aggressively
+        IF FlyX + 4 < PlayerX THEN
+            FlyX = FlyX + CHASE_SPEED_X
+            IF FlyX > 167 THEN FlyX = 167
+        ELSEIF FlyX > PlayerX + 4 THEN
+            IF FlyX >= CHASE_SPEED_X THEN
+                FlyX = FlyX - CHASE_SPEED_X
+            ELSE
+                FlyX = 0
+            END IF
+        END IF
+        ' Slow descent: 1px every CHASE_DRIFT_Y frames
+        #FlyLoopCount = #FlyLoopCount + 1
+        IF #FlyLoopCount >= CHASE_DRIFT_Y THEN
+            #FlyLoopCount = 0
+            FlyY = FlyY + 1
+        END IF
+        ' Fire at player (reuse alien bullet slot)
+        FlySpeed = FlySpeed + 1
+        IF FlySpeed >= CHASE_FIRE_RATE THEN
+            FlySpeed = 0
+            IF ABulletActive = 0 THEN
+                ABulletActive = 1
+                ABulletX = FlyX + 4   ' Center of saucer
+                ABulletY = FlyY + 8   ' Below saucer
+            END IF
+        END IF
+        ' Body collision: saucer reached player altitude
+        IF FlyY >= PLAYER_Y - 8 THEN
+            IF FlyX >= PlayerX - 8 THEN
+                IF FlyX <= PlayerX + 16 THEN
+                    PlayerHit = 1
+                END IF
+            END IF
+            ' Saucer escapes after reaching bottom (won or missed)
+            FlyState = SAUCER_ESCAPE
+            FlySpeed = 0
+        END IF
+        GOTO SaucerAnimate
+    END IF
+
+    ' Escape state: fly off diagonally (runs every frame)
+    IF FlyState = SAUCER_ESCAPE THEN
+        IF FlyY > 3 THEN
+            FlyY = FlyY - 3
+        ELSE
+            FlyY = 0
+        END IF
+        FlyX = FlyX + 2
+        IF FlyX > 167 THEN
+            FlyState = 0
+            #FlyPhase = 0
+            #FlyLoopCount = RANDOM(360) + 180
+            SPRITE SPR_SAUCER, 0, 0, 0
+            SPRITE SPR_SAUCER2, 0, 0, 0
+            RETURN
+        END IF
+        IF FlyY = 0 THEN
+            FlyState = 0
+            #FlyPhase = 0
+            #FlyLoopCount = RANDOM(360) + 180
+            SPRITE SPR_SAUCER, 0, 0, 0
+            SPRITE SPR_SAUCER2, 0, 0, 0
+            RETURN
+        END IF
+        GOTO SaucerAnimate
+    END IF
+
+    ' Normal movement (FlyState 1 or 2)
+    FlySpeed = FlySpeed + 1
+    IF FlySpeed >= 2 THEN
+        FlySpeed = 0
+        IF FlyState = 1 THEN
+            FlyX = FlyX + 1
+            IF FlyX > 167 THEN
+                ' Off screen right - deactivate
+                FlyState = 0
+                #FlyPhase = 0
+                #FlyLoopCount = RANDOM(360) + 180
+                SPRITE SPR_SAUCER, 0, 0, 0
+                SPRITE SPR_SAUCER2, 0, 0, 0
+                RETURN
+            END IF
+        ELSE
+            IF FlyX > 0 THEN
+                FlyX = FlyX - 1
+            ELSE
+                ' Off screen left - deactivate
+                FlyState = 0
+                #FlyPhase = 0
+                #FlyLoopCount = RANDOM(360) + 180
+                SPRITE SPR_SAUCER, 0, 0, 0
+                SPRITE SPR_SAUCER2, 0, 0, 0
+                RETURN
+            END IF
+        END IF
+        ' (Anger decided at spawn time — see spawn block above)
+    END IF
+
+SaucerAnimate:
+    ' Animate saucer: 4-frame window scan + color based on powerup type
+    #FlyPhase = #FlyPhase + 1
+    IF #FlyPhase >= 24 THEN #FlyPhase = 0
+    IF #FlyPhase = 0 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerGfx       ' All windows dark
+        FlyColor = SaucerColor1(TitleColor)     ' Primary color
+    ELSEIF #FlyPhase = 6 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF2Gfx     ' Inner window lit
+        FlyColor = SaucerColor2(TitleColor)     ' Secondary color
+    ELSEIF #FlyPhase = 12 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF3Gfx     ' Outer window lit
+        FlyColor = SaucerColor1(TitleColor)     ' Primary color
+    ELSEIF #FlyPhase = 18 THEN
+        DEFINE GRAM_SAUCER, 1, SaucerF4Gfx     ' Both windows + engine glow
+        FlyColor = SaucerColor2(TitleColor)     ' Secondary color
+    END IF
+
+    ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
+    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, GRAM_SAUCER * 8 + FlyColor + $0800
+    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, GRAM_SAUCER * 8 + FlyColor + $0800
+
+    ' Check collision with player bullet (Y range follows saucer position)
+    IF BulletActive THEN
+        IF BulletY + 6 >= FlyY THEN
+            IF BulletY <= FlyY + 6 THEN
+                IF BulletX >= FlyX - 4 THEN
+                    IF BulletX <= FlyX + 16 THEN
+                        ' HIT the saucer!
+                        BulletActive = 0
+                        FlyState = 0
+                        #FlyPhase = 0
+                        #FlyLoopCount = RANDOM(360) + 180
+                        DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
+                        SPRITE SPR_SAUCER, 0, 0, 0
+                        SPRITE SPR_SAUCER2, 0, 0, 0
+                        ' Saucer crash SFX (deep rumble + descending pitch)
+                        SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+                        SOUND 2, 150, 15  ' Immediate tone hit on channel 3
+                        ' Bonus points
+                        #Score = #Score + 100
+                        ' Drop power-up from saucer position
+                        TitleFrame = 1       ' Falling
+                        TitleMarchDir = FlyX        ' Drop from saucer X
+                        PowerUpY = FlyY      ' Start falling from saucer Y
+                        SlidePos = 0
+                        ' Show explosion at saucer position using BACKTAB
+                        #ExplosionPos = FlyX / 8
+                        ExplosionTimer = 15
+                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' Check collision with bullet 2 (Y range follows saucer position)
+    IF Bullet2Active THEN
+        IF Bullet2Y + 6 >= FlyY THEN
+            IF Bullet2Y <= FlyY + 6 THEN
+                IF Bullet2X >= FlyX - 4 THEN
+                    IF Bullet2X <= FlyX + 16 THEN
+                        ' HIT the saucer with bullet 2!
+                        Bullet2Active = 0
+                        FlyState = 0
+                        #FlyPhase = 0
+                        #FlyLoopCount = RANDOM(360) + 180
+                        DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
+                        SPRITE SPR_SAUCER, 0, 0, 0
+                        SPRITE SPR_SAUCER2, 0, 0, 0
+                        SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+                        SOUND 2, 150, 15  ' Immediate tone hit on channel 3
+                        #Score = #Score + 100
+                        TitleFrame = 1
+                        TitleMarchDir = FlyX
+                        PowerUpY = FlyY
+                        SlidePos = 0
+                        #ExplosionPos = FlyX / 8
+                        ExplosionTimer = 15
+                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+    RETURN
+END
+
+' Pattern B formations (5 bitmasks per pattern, one per row)
+PatternBData:
+    DATA $100, $082, $044, $028, $010  ' 0: V-shape (chevron pointing down)
+    DATA $010, $038, $07C, $038, $010  ' 1: Diamond
+    DATA $101, $101, $101, $101, $101  ' 2: Walls (left+right columns)
+    DATA $010, $010, $1FF, $010, $010  ' 3: Cross / Plus
+    DATA $155, $0AA, $155, $0AA, $155  ' 4: Checkerboard
+    DATA $010, $028, $044, $082, $101  ' 5: Arrow pointing up
+
+' Which pattern B per level (wraps after 8)
+PatternBIndex:
+    DATA 0, 1, 2, 3, 4, 5, 0, 1
+
+' ============================================
+' Flight Patterns — DATA tables
+' ============================================
+
+' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
+' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
+' High density: every segment = 1px, path IS the curve
+FlightFigure8X:
+    DATA 84, 85, 85, 86, 86, 87, 88, 89
+    DATA 89, 90, 91, 92, 92, 93, 93, 94
+    DATA 95, 95, 96, 96, 97, 98, 98, 99
+    DATA 99, 100, 101, 101, 102, 103, 103, 104
+    DATA 105, 106, 107, 108, 109, 109, 110, 111
+    DATA 112, 113, 114, 115, 115, 116, 117, 118
+    DATA 119, 120, 121, 122, 123, 123, 124, 125
+    DATA 126, 126, 127, 128, 129, 129, 130, 130
+    DATA 130, 131, 131, 132, 132, 132, 133, 133
+    DATA 133, 133, 134, 134, 134, 134, 134, 134
+    DATA 134, 134, 134, 134, 134, 133, 133, 133
+    DATA 133, 132, 132, 132, 131, 131, 130, 130
+    DATA 130, 129, 129, 128, 127, 126, 126, 125
+    DATA 124, 123, 123, 122, 121, 120, 119, 118
+    DATA 117, 116, 115, 115, 114, 113, 112, 111
+    DATA 110, 109, 109, 108, 107, 106, 105, 104
+    DATA 103, 103, 102, 101, 101, 100, 99, 99
+    DATA 98, 98, 97, 96, 96, 95, 95, 94
+    DATA 93, 93, 92, 92, 91, 90, 89, 89
+    DATA 88, 87, 86, 86, 85, 85, 84, 83
+    DATA 83, 82, 82, 81, 80, 79, 79, 78
+    DATA 77, 76, 76, 75, 75, 74, 73, 73
+    DATA 72, 72, 71, 70, 70, 69, 69, 68
+    DATA 67, 67, 66, 65, 65, 64, 63, 62
+    DATA 61, 60, 59, 59, 58, 57, 56, 55
+    DATA 54, 53, 53, 52, 51, 50, 49, 48
+    DATA 47, 46, 45, 45, 44, 43, 42, 42
+    DATA 41, 40, 39, 39, 38, 38, 38, 37
+    DATA 37, 36, 36, 36, 35, 35, 35, 35
+    DATA 34, 34, 34, 34, 34, 34, 34, 34
+    DATA 34, 34, 34, 35, 35, 35, 35, 36
+    DATA 36, 36, 37, 37, 38, 38, 38, 39
+    DATA 39, 40, 41, 42, 42, 43, 44, 45
+    DATA 45, 46, 47, 48, 49, 50, 51, 52
+    DATA 53, 53, 54, 55, 56, 57, 58, 59
+    DATA 59, 60, 61, 62, 63, 64, 65, 65
+    DATA 66, 67, 67, 68, 69, 69, 70, 70
+    DATA 71, 72, 72, 73, 73, 74, 75, 75
+    DATA 76, 76, 77, 78, 79, 79, 80, 81
+    DATA 82, 82, 83, 83
+FlightFigure8Y:
+    DATA 56, 56, 57, 57, 58, 58, 59, 59
+    DATA 60, 60, 61, 61, 62, 62, 63, 63
+    DATA 63, 64, 64, 65, 65, 65, 66, 66
+    DATA 67, 67, 67, 68, 68, 68, 69, 69
+    DATA 70, 70, 71, 71, 71, 72, 72, 72
+    DATA 73, 73, 73, 73, 74, 74, 74, 74
+    DATA 74, 74, 74, 74, 74, 73, 73, 73
+    DATA 73, 72, 72, 71, 71, 70, 70, 69
+    DATA 68, 68, 67, 67, 66, 65, 64, 63
+    DATA 62, 61, 61, 60, 59, 58, 57, 56
+    DATA 55, 54, 53, 52, 51, 51, 50, 49
+    DATA 48, 47, 46, 45, 45, 44, 44, 43
+    DATA 42, 42, 41, 41, 40, 40, 39, 39
+    DATA 39, 39, 38, 38, 38, 38, 38, 38
+    DATA 38, 38, 38, 39, 39, 39, 39, 40
+    DATA 40, 40, 41, 41, 41, 42, 42, 43
+    DATA 43, 44, 44, 44, 45, 45, 45, 46
+    DATA 46, 47, 47, 47, 48, 48, 49, 49
+    DATA 49, 50, 50, 51, 51, 52, 52, 53
+    DATA 53, 54, 54, 55, 55, 56, 56, 56
+    DATA 57, 57, 58, 58, 59, 59, 60, 60
+    DATA 61, 61, 62, 62, 63, 63, 63, 64
+    DATA 64, 65, 65, 65, 66, 66, 67, 67
+    DATA 67, 68, 68, 68, 69, 69, 70, 70
+    DATA 71, 71, 71, 72, 72, 72, 73, 73
+    DATA 73, 73, 74, 74, 74, 74, 74, 74
+    DATA 74, 74, 74, 73, 73, 73, 73, 72
+    DATA 72, 71, 71, 70, 70, 69, 68, 68
+    DATA 67, 67, 66, 65, 64, 63, 62, 61
+    DATA 61, 60, 59, 58, 57, 56, 55, 54
+    DATA 53, 52, 51, 51, 50, 49, 48, 47
+    DATA 46, 45, 45, 44, 44, 43, 42, 42
+    DATA 41, 41, 40, 40, 39, 39, 39, 39
+    DATA 38, 38, 38, 38, 38, 38, 38, 38
+    DATA 38, 39, 39, 39, 39, 40, 40, 40
+    DATA 41, 41, 41, 42, 42, 43, 43, 44
+    DATA 44, 44, 45, 45, 45, 46, 46, 47
+    DATA 47, 47, 48, 48, 49, 49, 49, 50
+    DATA 50, 51, 51, 52, 52, 53, 53, 54
+    DATA 54, 55, 55, 56
+
+' Pattern 1: Organic Orbit (game over, 356 waypoints)
+' x = 78 + 70*cos(t) + 6*cos(3t), y = 19 + 17*sin(t) + 3*sin(2t)
+' High density: every segment = 1px, path IS the curve
+FlightOrbitX:
+    DATA 154, 154, 154, 153, 153, 152, 152, 151
+    DATA 150, 149, 149, 148, 147, 147, 146, 145
+    DATA 145, 144, 143, 143, 142, 141, 140, 140
+    DATA 139, 138, 137, 136, 135, 134, 134, 133
+    DATA 132, 131, 130, 129, 128, 127, 126, 126
+    DATA 125, 124, 123, 122, 121, 121, 120, 119
+    DATA 118, 117, 116, 115, 114, 113, 112, 111
+    DATA 110, 109, 108, 107, 106, 105, 105, 104
+    DATA 103, 102, 101, 100, 99, 98, 97, 96
+    DATA 95, 94, 93, 92, 91, 90, 89, 88
+    DATA 87, 86, 85, 84, 83, 83, 82, 81
+    DATA 80, 79, 78, 77, 76, 75, 74, 74
+    DATA 73, 72, 71, 70, 69, 68, 67, 66
+    DATA 65, 64, 63, 62, 62, 61, 60, 59
+    DATA 58, 57, 56, 55, 54, 53, 52, 51
+    DATA 51, 50, 49, 48, 47, 46, 46, 45
+    DATA 44, 43, 42, 41, 40, 39, 38, 37
+    DATA 36, 35, 35, 34, 33, 32, 31, 30
+    DATA 30, 29, 28, 27, 26, 25, 25, 24
+    DATA 23, 22, 21, 20, 20, 19, 18, 17
+    DATA 16, 15, 14, 13, 12, 11, 10, 9
+    DATA 8, 8, 7, 6, 5, 5, 4, 3
+    DATA 3, 2, 2, 2, 3, 3, 4, 5
+    DATA 5, 6, 7, 8, 8, 9, 10, 11
+    DATA 12, 13, 14, 15, 16, 17, 18, 19
+    DATA 20, 20, 21, 22, 23, 24, 25, 25
+    DATA 26, 27, 28, 29, 30, 30, 31, 32
+    DATA 33, 34, 35, 35, 36, 37, 38, 39
+    DATA 40, 41, 42, 43, 44, 45, 46, 46
+    DATA 47, 48, 49, 50, 51, 51, 52, 53
+    DATA 54, 55, 56, 57, 58, 59, 60, 61
+    DATA 62, 62, 63, 64, 65, 66, 67, 68
+    DATA 69, 70, 71, 72, 73, 74, 74, 75
+    DATA 76, 77, 78, 79, 80, 81, 82, 83
+    DATA 83, 84, 85, 86, 87, 88, 89, 90
+    DATA 91, 92, 93, 94, 95, 96, 97, 98
+    DATA 99, 100, 101, 102, 103, 104, 105, 105
+    DATA 106, 107, 108, 109, 110, 111, 112, 113
+    DATA 114, 115, 116, 117, 118, 119, 120, 121
+    DATA 121, 122, 123, 124, 125, 126, 126, 127
+    DATA 128, 129, 130, 131, 132, 133, 134, 134
+    DATA 135, 136, 137, 138, 139, 140, 140, 141
+    DATA 142, 143, 143, 144, 145, 145, 146, 147
+    DATA 147, 148, 149, 149, 150, 151, 152, 152
+    DATA 153, 153, 154, 154
+FlightOrbitY:
+    DATA 19, 20, 21, 21, 22, 23, 24, 24
+    DATA 25, 25, 26, 26, 26, 27, 27, 27
+    DATA 28, 28, 28, 29, 29, 29, 29, 30
+    DATA 30, 30, 31, 31, 31, 31, 32, 32
+    DATA 32, 32, 33, 33, 33, 33, 33, 34
+    DATA 34, 34, 34, 34, 34, 35, 35, 35
+    DATA 35, 35, 35, 35, 36, 36, 36, 36
+    DATA 36, 36, 36, 36, 36, 36, 37, 37
+    DATA 37, 37, 37, 37, 37, 37, 37, 37
+    DATA 37, 37, 37, 37, 37, 37, 37, 37
+    DATA 37, 37, 37, 37, 37, 36, 36, 36
+    DATA 36, 36, 36, 36, 36, 36, 36, 35
+    DATA 35, 35, 35, 35, 35, 35, 34, 34
+    DATA 34, 34, 34, 34, 33, 33, 33, 33
+    DATA 33, 33, 32, 32, 32, 32, 32, 32
+    DATA 31, 31, 31, 31, 31, 31, 30, 30
+    DATA 30, 30, 30, 30, 29, 29, 29, 29
+    DATA 29, 29, 28, 28, 28, 28, 28, 28
+    DATA 27, 27, 27, 27, 27, 27, 26, 26
+    DATA 26, 26, 26, 26, 25, 25, 25, 25
+    DATA 25, 24, 24, 24, 24, 23, 23, 23
+    DATA 23, 22, 22, 22, 22, 21, 21, 21
+    DATA 20, 20, 19, 18, 18, 17, 17, 17
+    DATA 16, 16, 16, 16, 15, 15, 15, 15
+    DATA 14, 14, 14, 14, 13, 13, 13, 13
+    DATA 13, 12, 12, 12, 12, 12, 12, 11
+    DATA 11, 11, 11, 11, 11, 10, 10, 10
+    DATA 10, 10, 10, 9, 9, 9, 9, 9
+    DATA 9, 8, 8, 8, 8, 8, 8, 7
+    DATA 7, 7, 7, 7, 7, 6, 6, 6
+    DATA 6, 6, 6, 5, 5, 5, 5, 5
+    DATA 5, 4, 4, 4, 4, 4, 4, 3
+    DATA 3, 3, 3, 3, 3, 3, 2, 2
+    DATA 2, 2, 2, 2, 2, 2, 2, 2
+    DATA 1, 1, 1, 1, 1, 1, 1, 1
+    DATA 1, 1, 1, 1, 1, 1, 1, 1
+    DATA 1, 1, 1, 1, 1, 1, 1, 2
+    DATA 2, 2, 2, 2, 2, 2, 2, 2
+    DATA 2, 3, 3, 3, 3, 3, 3, 3
+    DATA 4, 4, 4, 4, 4, 4, 5, 5
+    DATA 5, 5, 5, 6, 6, 6, 6, 7
+    DATA 7, 7, 7, 8, 8, 8, 9, 9
+    DATA 9, 9, 10, 10, 10, 11, 11, 11
+    DATA 12, 12, 12, 13, 13, 14, 14, 15
+    DATA 16, 17, 17, 18
+
+' ============================================
+' Flight Engine Procedures
+' ============================================
+
+' --------------------------------------------
+' FlightStart - Load a pattern and begin transition
+' Input: LoopVar = pattern ID (PAT_FIGURE8, PAT_DIAMOND, etc.)
+' Preserves current FlyX/FlyY as starting position
+' --------------------------------------------
+FlightStart: PROCEDURE
+    IF LoopVar = PAT_FIGURE8 THEN
+        #PathXAddr = VARPTR FlightFigure8X(0)
+        #PathYAddr = VARPTR FlightFigure8Y(0)
+        #FlyPathLen = 316
+        FlyStepRate = 2
+        FlyMaxLoops = 2
+        FlyTransSpd = 1
+    ELSEIF LoopVar = PAT_DIAMOND THEN
+        #PathXAddr = VARPTR FlightOrbitX(0)
+        #PathYAddr = VARPTR FlightOrbitY(0)
+        #FlyPathLen = 356
+        FlyStepRate = 2
+        FlyMaxLoops = 0       ' Infinite
+        FlyTransSpd = 2
+    END IF
+    FlyState = FLT_TRANSITION
+    #FlyPhase = 0
+    FlySpeed = 0
+    #FlyLoopCount = 0
+    RETURN
+    END
+
+' --------------------------------------------
+' FlightTick - Per-frame flight engine update
+' Updates FlyX, FlyY. Sets FlyState to FLT_DONE when loops complete.
+' --------------------------------------------
+FlightTick: PROCEDURE
+    IF FlyState = FLT_IDLE THEN RETURN
+    IF FlyState >= FLT_DONE THEN RETURN
+
+    IF FlyState = FLT_TRANSITION THEN
+        ' Move toward first waypoint each frame
+        Col = PEEK(#PathXAddr)    ' Target X
+        Row = PEEK(#PathYAddr)    ' Target Y
+        ' Step X toward target
+        IF FlyX < Col THEN
+            FlyX = FlyX + FlyTransSpd
+            IF FlyX > Col THEN FlyX = Col
+        ELSEIF FlyX > Col THEN
+            IF FlyX >= FlyTransSpd THEN
+                FlyX = FlyX - FlyTransSpd
+            ELSE
+                FlyX = 0
+            END IF
+            IF FlyX < Col THEN FlyX = Col
+        END IF
+        ' Step Y toward target
+        IF FlyY < Row THEN
+            FlyY = FlyY + FlyTransSpd
+            IF FlyY > Row THEN FlyY = Row
+        ELSEIF FlyY > Row THEN
+            IF FlyY >= FlyTransSpd THEN
+                FlyY = FlyY - FlyTransSpd
+            ELSE
+                FlyY = 0
+            END IF
+            IF FlyY < Row THEN FlyY = Row
+        END IF
+        ' Check if arrived at target
+        IF FlyX = Col THEN
+            IF FlyY = Row THEN
+                FlyState = FLT_FOLLOWING
+                #FlyPhase = 0
+                FlySpeed = 0
+            END IF
+        END IF
+        RETURN
+    END IF
+
+    ' FLT_FOLLOWING: traverse high-density curve
+    ' FlyStepRate = waypoints to advance per frame (speed control)
+    #FlyPhase = #FlyPhase + FlyStepRate
+    IF #FlyPhase >= #FlyPathLen THEN
+        #FlyPhase = 0
+        #FlyLoopCount = #FlyLoopCount + 1
+        IF FlyMaxLoops > 0 THEN
+            IF #FlyLoopCount >= FlyMaxLoops THEN
+                FlyState = FLT_DONE
+                RETURN
+            END IF
+        END IF
+    END IF
+    FlyX = PEEK(#PathXAddr + #FlyPhase)
+    FlyY = PEEK(#PathYAddr + #FlyPhase)
+    RETURN
+    END
+
+' --------------------------------------------
+' ZodRender - Draw Zod with wing flap + color cycle
+' Called each frame during game over screen
+' --------------------------------------------
+ZodRender: PROCEDURE
+    FlyFrame = FlyFrame + 1
+    IF FlyFrame >= 16 THEN FlyFrame = 0
+    FlyColorTimer = FlyColorTimer + 1
+    IF FlyColorTimer >= 24 THEN
+        FlyColorTimer = 0
+        FlyColorIdx = FlyColorIdx + 1
+        IF FlyColorIdx >= 6 THEN FlyColorIdx = 0
+        FlyColor = FlyColors(FlyColorIdx)
+    END IF
+    IF FlyFrame < 8 THEN
+        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F1 * 8 + FlyColor + $0800
+    ELSE
+        SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F2 * 8 + FlyColor + $0800
+    END IF
+    RETURN
+    END
+
+    SEGMENT 1   ' Back to Segment 1 for graphics data
 
 ' --------------------------------------------
 ' Graphics Data
@@ -2680,6 +3409,17 @@ PowerUpGfx:
     BITMAP "..XXXX.."
     BITMAP "........"
 
+' Mega beam solid block (fills entire card)
+MegaBeamGfx:
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:
     BITMAP "........"
@@ -2833,29 +3573,7 @@ ExplosionGfx3:
     BITMAP "X......."
     BITMAP "........"
 
-' ============================================
-' Flying Crab Path Data (ROM, saves 128 RAM vars)
-' ============================================
-' Figure-8 Lissajous: X = 84 + 50*sin(t), Y = 56 + 18*sin(2t)
-FlyPathXData:
-    DATA 84, 89, 94, 99, 103, 108, 112, 116
-    DATA 119, 123, 126, 128, 130, 132, 133, 134
-    DATA 134, 134, 133, 132, 130, 128, 126, 123
-    DATA 119, 116, 112, 108, 103, 99, 94, 89
-    DATA 84, 79, 74, 69, 65, 60, 56, 52
-    DATA 49, 45, 42, 40, 38, 36, 35, 34
-    DATA 34, 34, 35, 36, 38, 40, 42, 45
-    DATA 49, 52, 56, 60, 65, 69, 74, 79
-
-FlyPathYData:
-    DATA 56, 60, 63, 66, 69, 71, 73, 74
-    DATA 74, 74, 73, 71, 69, 66, 63, 60
-    DATA 56, 52, 49, 46, 43, 41, 39, 38
-    DATA 38, 38, 39, 41, 43, 46, 49, 52
-    DATA 56, 60, 63, 66, 69, 71, 73, 74
-    DATA 74, 74, 73, 71, 69, 66, 63, 60
-    DATA 56, 52, 49, 46, 43, 41, 39, 38
-    DATA 38, 38, 39, 41, 43, 46, 49, 52
+' (Figure-8 path data moved to Segment 2 — see Flight Patterns section)
 
 ' ============================================
 ' Music Data - "Intruder Drive" theme
