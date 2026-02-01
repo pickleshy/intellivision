@@ -77,7 +77,6 @@ CONST ALIEN_ROWS    = 5         ' 5 rows of aliens
 CONST ALIEN_START_X = 0         ' Starting column on screen (leftmost)
 CONST ALIEN_START_Y = 1         ' Starting row on screen
 CONST ALIEN_MAX_X   = 11        ' Maximum X offset before reversing (20 - 9)
-' CONST MARCH_SPEED_START = 160   ' Starting frames between march steps
 CONST MARCH_SPEED_START = 60   ' Starting frames between march steps
 CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
 
@@ -113,13 +112,11 @@ CONST SPR_HIT       = $0100     ' Enable collision detection
 ' Variables
 ' --------------------------------------------
 DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, needs 16-bit)
-DIM RowColors(5)                ' 5-color cycle for row shimmer (colors 1-6 only)
 ' FlyPathX/Y moved to ROM DATA tables (see Segment 1) to save 128 8-bit vars
 DIM FlyColors(6)               ' Color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
 PlayerX     = 80                ' Player X position (center)
 AnimFrame   = 0                 ' Animation frame (0 or 1)
-' (FrameCount, ColorPhase removed - unused)
 ShimmerCount = 0                ' Frame counter for shimmer updates
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
 AlienOffsetY = 0                ' Alien grid Y offset (drops down)
@@ -153,11 +150,9 @@ Row         = 0                 ' Row counter for drawing
 Col         = 0                 ' Column counter for drawing
 AlienCard   = 0                 ' Current alien GRAM card
 AlienColor  = 0                 ' Current alien color
-' (ColorIndex removed - unused)
 #ScreenPos  = 0                 ' Screen position (16-bit for multiplication)
 #Mask       = 0                 ' Bitmask for checking alive aliens
 #Card       = 0                 ' Card value for PRINT
-' (GameState removed - unused)
 TitleColor  = 0                 ' Color index for title sprite shimmer
 TitleFrame  = 0                 ' Animation frame for title alien
 ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
@@ -306,14 +301,6 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx
     WAIT
-
-    ' Initialize row colors (0-7 only for MODE 1)
-    ' Blue, Red, Tan, Green, Yellow - rainbow wave
-    RowColors(0) = 1   ' Blue
-    RowColors(1) = 2   ' Red
-    RowColors(2) = 3   ' Tan
-    RowColors(3) = 5   ' Green
-    RowColors(4) = 6   ' Yellow
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
     ' Grey/White flash
@@ -938,19 +925,6 @@ GameLoop:
     IF DeathTimer = 0 THEN
         GOSUB MovePlayer
     END IF
-
-    ' DIAGNOSTIC: Shimmer disabled - testing basic alien display first
-    ' ShimmerCount = ShimmerCount + 1
-    ' IF ShimmerCount >= 10 THEN
-    '     ShimmerCount = 0
-    '     ColorPhase = ColorPhase + 1
-    '     IF ColorPhase >= 5 THEN
-    '         ColorPhase = 0
-    '     END IF
-    '     IF MarchCount < CurrentMarchSpeed - 1 THEN
-    '         GOSUB DrawAliens
-    '     END IF
-    ' END IF
 
     ' Animate alien walk frames independently (every 16 frames)
     ShimmerCount = ShimmerCount + 1
@@ -2139,67 +2113,6 @@ dual_phrase:
     VOICE DD2, UW2, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
 
 ' --------------------------------------------
-' GenerateGameStars - Place twinkling stars on row 0
-' --------------------------------------------
-GenerateGameStars: PROCEDURE
-    StarCount = 0
-    StarTimer = 0
-    StarTick = 0
-    ' Place 6 stars on row 0 (positions 0-19)
-    FOR LoopVar = 0 TO 5
-        Col = RANDOM(20)
-        StarPos(LoopVar) = Col           ' Row 0
-        StarType(LoopVar) = LoopVar AND 1
-        IF StarType(LoopVar) = 0 THEN
-            PRINT AT Col, GRAM_STAR1 * 8 + 4 + $0800
-        ELSE
-            PRINT AT Col, GRAM_STAR2 * 8 + 7 + $0800
-        END IF
-        StarCount = StarCount + 1
-    NEXT LoopVar
-    ' Place 6 stars on row 10 (positions 200-219)
-    FOR LoopVar = 6 TO 11
-        Col = RANDOM(20)
-        StarPos(LoopVar) = 200 + Col     ' Row 10
-        StarType(LoopVar) = LoopVar AND 1
-        IF StarType(LoopVar) = 0 THEN
-            PRINT AT 200 + Col, GRAM_STAR1 * 8 + 4 + $0800
-        ELSE
-            PRINT AT 200 + Col, GRAM_STAR2 * 8 + 7 + $0800
-        END IF
-        StarCount = StarCount + 1
-    NEXT LoopVar
-    RETURN
-END
-
-' --------------------------------------------
-' TwinkleStars - Toggle one star on/off every 4 frames
-' --------------------------------------------
-TwinkleStars: PROCEDURE
-    StarTimer = StarTimer + 1
-    IF StarTimer >= 4 THEN
-        StarTimer = 0
-        ' Toggle current star visible/invisible
-        #Card = PEEK($200 + StarPos(StarTick))
-        IF #Card = 0 THEN
-            ' Star is off - turn it back on
-            IF StarType(StarTick) = 0 THEN
-                PRINT AT StarPos(StarTick), GRAM_STAR1 * 8 + 4 + $0800
-            ELSE
-                PRINT AT StarPos(StarTick), GRAM_STAR2 * 8 + 7 + $0800
-            END IF
-        ELSE
-            ' Star is on - turn it off
-            PRINT AT StarPos(StarTick), 0
-        END IF
-        ' Advance to next star
-        StarTick = StarTick + 1
-        IF StarTick >= StarCount THEN StarTick = 0
-    END IF
-    RETURN
-END
-
-' --------------------------------------------
 ' Graphics Data
 ' --------------------------------------------
 ShipGfx:
@@ -2971,89 +2884,6 @@ si_loop:
 ' Channel 3 free for SFX via SOUND 2
 ' Tempo: 11=slow, 7=mid, 5=fast, 4=panic
 ' ============================================================
-
-' ------------------------------------------------------------
-' Slow - "invaders far away" (~55 BPM)
-' ------------------------------------------------------------
-si_dnb_slow:
-  DATA 11
-
-si_dnb_slow_loop:
-
-  ' --- Bar 1 (A): E3/C3 heartbeat ---
-  MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-
-  ' --- Bar 2 (A): heartbeat + hat ---
-  MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-
-  ' --- Bar 3 (A): heartbeat + snare anticipation ---
-  MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M2
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-
-  ' --- Bar 4 (B): G4/D4 synth hook ---
-  MUSIC G4,  G2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC D4,  A2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M2
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  -
-
-  MUSIC JUMP si_dnb_slow_loop
-
 
 ' ------------------------------------------------------------
 ' Mid - "breakbeat emerging" (~107 BPM)

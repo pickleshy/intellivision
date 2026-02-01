@@ -688,3 +688,156 @@ When helping with IntyBASIC development:
 10. **Verify bit formats in the .asm output** - Never trust documentation (including this file) over the compiled assembly. When doing BACKTAB manipulation, PEEK/POKE, or bit masking, always build first and check the .asm to confirm exact values and bit positions. See "Verifying Bit Formats via Assembly Output" above.
 
 11. **Color Stack mode only supports colors 0-7 in foreground** - The 3-bit FG color field means only Black(0), Blue(1), Red(2), Tan(3), Dark Green(4), Green(5), Yellow(6), White(7). Pastel colors (8-15) require bit 12 set, which changes the BACKTAB word interpretation. Stick to 0-7 for `PRINT AT COLOR` text and BACKTAB card foregrounds.
+
+## Critical Runtime Bugs (Debugged in Space Intruders)
+
+These bugs were found through extensive debugging sessions and are easy to reintroduce. Future sessions should check for these patterns proactively.
+
+### NEVER use GOTO to exit a FOR loop
+
+IntyBASIC FOR/NEXT loops push state onto the R4 stack. Using GOTO to break out of a FOR loop **leaks stack space every iteration**. This causes a delayed crash — the game runs fine for minutes, then corrupts memory and resets.
+
+```basic
+' BAD — stack leak every time this runs:
+FOR Row = 4 TO 0 STEP -1
+    IF #AlienRow(Row) THEN
+        GOTO DoneChecking       ' LEAKS! FOR state never cleaned up
+    END IF
+NEXT Row
+DoneChecking:
+
+' GOOD — use a sentinel variable, let the loop finish:
+FoundRow = 255
+FOR Row = 4 TO 0 STEP -1
+    IF #AlienRow(Row) THEN
+        IF FoundRow = 255 THEN FoundRow = Row
+    END IF
+NEXT Row
+```
+
+**Symptom:** Game works for 1-3 minutes, then crashes/resets to title screen. Saucer or other ISR-driven elements may still animate while gameplay is frozen.
+
+### Sprite-to-BACKTAB coordinate offset (8 pixels)
+
+Sprite coordinates have an **8-pixel offset** from BACKTAB card positions. BACKTAB column 0 starts at sprite X=8, BACKTAB row 0 starts at sprite Y=8. This is confirmed by `PLAYER_MIN_X = 8` aligning the player sprite with the left edge of the BACKTAB grid.
+
+```basic
+' Converting sprite position to BACKTAB card:
+backtab_col = (sprite_x - 8) / 8
+backtab_row = (sprite_y - 8) / 8
+
+' Converting BACKTAB card to sprite position:
+sprite_x = backtab_col * 8 + 8
+sprite_y = backtab_row * 8 + 8
+```
+
+**Symptom:** Collision detection is off by 1 row and 1 column. Bullets appear to pass through aliens. Explosions appear at the wrong position.
+
+### 8-bit variable unsigned underflow
+
+IntyBASIC 8-bit variables are unsigned (0-255). Decrementing past 0 wraps to 255, not -1. This is especially dangerous with dynamic calculations:
+
+```basic
+' BAD — if Offset is 0 and MinCol is 5:
+IF Offset + MinCol > 0 THEN     ' 0 + 5 = 5 > 0, TRUE
+    Offset = Offset - 1          ' 0 - 1 = 255! Wraps to 255!
+END IF
+
+' GOOD — guard against underflow explicitly:
+IF Offset > 0 THEN
+    IF Offset + MinCol > 0 THEN
+        Offset = Offset - 1
+    ELSE
+        ' Reverse direction instead
+    END IF
+ELSE
+    ' Can't go lower, reverse
+END IF
+```
+
+**Symptom:** PRINT AT with position 255+ writes past BACKTAB ($200-$2EF) into system RAM, corrupting variables. Game freezes or resets. May appear to work initially then crash when the variable reaches 0.
+
+### PLAY SIMPLE conflicts with SOUND 4 (noise register)
+
+`PLAY SIMPLE` (and `PLAY FULL`) use an ISR that writes PSG registers **every frame during WAIT**. The drum channel overwrites `SOUND 4` (noise mix register `$1F8`). Any noise-based SFX set via `SOUND 4` will be killed on the next WAIT.
+
+```basic
+' BAD — noise SFX immediately overwritten by drum ISR:
+SOUND 4, 8, 4          ' Set noise — killed next WAIT!
+
+' GOOD — use tone-based SFX on channel 3 (SOUND 2) instead:
+SOUND 2, 200, 12       ' Tone on channel 3, not overwritten by PLAY SIMPLE
+```
+
+**Workaround:** Use `PLAY SIMPLE` (not FULL) and keep all SFX on channel 3 (`SOUND 2`). PLAY SIMPLE leaves channel 3 free for game use. Avoid `SOUND 4` entirely during music playback.
+
+### Don't reinitialize PLAY mode from inside a PROCEDURE
+
+Calling `PLAY SIMPLE` or `PLAY FULL` from inside a nested GOSUB/PROCEDURE can corrupt the ISR or stack state. Set the PLAY mode once at a top-level context (e.g., before entering the game loop), then only switch songs from inside procedures.
+
+```basic
+' BAD — reinitializing PLAY from inside nested procedure:
+StartNewWave: PROCEDURE
+    PLAY SIMPLE              ' Crashes! Already in PLAY SIMPLE
+    PLAY si_dnb_fast
+    RETURN
+END
+
+' GOOD — just switch the song:
+StartNewWave: PROCEDURE
+    PLAY si_dnb_fast         ' Fine — mode already set at StartGame
+    RETURN
+END
+```
+
+### SFX must be silenced manually during non-game-loop WAITs
+
+If your game loop calls `UpdateSfx` to decay sound effects, that decay **stops running** during any sequence that uses its own WAIT loops (wave transitions, breather pauses, death sequences). The last SFX will sustain at full volume through the entire sequence.
+
+```basic
+' At the start of any transition with WAIT loops:
+SOUND 2, , 0           ' Silence channel 3
+SfxVolume = 0          ' Reset SFX state
+SfxType = 0
+```
+
+### VOICE INIT must be gated on VOICE.AVAILABLE
+
+`VOICE INIT` accesses Intellivoice hardware registers. If the emulator is not running with `--voice=1` (or on real hardware without the Intellivoice module), this can crash. Always gate it:
+
+```basic
+IF VOICE.AVAILABLE THEN
+    VOICE INIT
+END IF
+```
+
+`VOICE.AVAILABLE` safely detects hardware presence without initialization. `VOICE PLAY` and `VOICE NUMBER` are also safe to gate this way — they silently no-op if voice is unavailable.
+
+### Button debounce at state transitions
+
+When transitioning between game states (gameplay → game over → title screen → gameplay), the fire button is often still held from the previous state. Without debounce, the player blows through screens instantly.
+
+```basic
+' Two-phase debounce pattern:
+' Phase 1: Wait for release
+IF GameState = WAIT_RELEASE THEN
+    IF CONT.BUTTON = 0 THEN GameState = WAIT_PRESS
+    GOTO MainLoop
+END IF
+' Phase 2: Accept new press
+IF GameState = WAIT_PRESS THEN
+    IF CONT.BUTTON THEN
+        ' Handle press
+    END IF
+END IF
+```
+
+### PRINT AT position bounds
+
+BACKTAB is 240 entries (positions 0-239, address $200-$2EF). `PRINT AT` with position >= 240 writes to system RAM beyond BACKTAB, silently corrupting variables or stack. Always validate computed positions, especially when using dynamic offsets:
+
+```basic
+' Dangerous: dynamic offset could push past BACKTAB
+PRINT AT #ScreenPos + AlienOffsetX + Col, #Card
+' If AlienOffsetX wrapped to 255, this writes to garbage memory
+```
