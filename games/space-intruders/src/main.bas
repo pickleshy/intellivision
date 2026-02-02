@@ -230,6 +230,8 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #MegaTimer  = 0                 ' Mega beam countdown (300 frames = 5 sec, 0 = normal)
 MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
+AutoFire    = 0                 ' Auto-fire toggle (0=off, 1=on)
+Key1Held    = 0                 ' Debounce flag for keypad 1
 SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
 RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sides)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
@@ -373,6 +375,8 @@ ResetToTitle:
     #DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
+    AutoFire = 0
+    Key1Held = 0
     SubWave = 0
     RevealMode = 0
     RightRevealCol = ALIEN_COLS - 1
@@ -1374,8 +1378,23 @@ MovePlayer: PROCEDURE
         END IF
     END IF
 
-    ' Fire: side buttons or keypad 1 (auto-fire, works while moving)
-    IF CONT.BUTTON OR CONT.KEY = 1 THEN
+    ' Keypad 1: toggle auto-fire (with debounce)
+    IF CONT.KEY = 1 THEN
+        IF Key1Held = 0 THEN
+            Key1Held = 1
+            AutoFire = 1 - AutoFire
+            IF AutoFire THEN
+                IF VOICE.AVAILABLE THEN VOICE PLAY auto_on_phrase
+            ELSE
+                IF VOICE.AVAILABLE THEN VOICE PLAY auto_off_phrase
+            END IF
+        END IF
+    ELSE
+        Key1Held = 0
+    END IF
+
+    ' Fire: side buttons or auto-fire
+    IF CONT.BUTTON OR AutoFire THEN
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
@@ -2502,6 +2521,12 @@ mega_phrase:
 
 game_over_phrase:
     VOICE GG1, EY, MM, PA2, OW, VV, ER1, PA2, 0
+
+auto_on_phrase:
+    VOICE AO, TT2, OW, PA2, AO, NN1, PA1, 0
+
+auto_off_phrase:
+    VOICE AO, TT2, OW, PA2, AO, FF, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
 ' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega)
