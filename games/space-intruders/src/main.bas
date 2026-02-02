@@ -122,6 +122,7 @@ CONST PAT_DIAMOND    = 1          ' Game over diamond orbit
 ' Angry saucer chase
 CONST SAUCER_CHASE   = 3          ' Saucer state: pursuing player
 CONST SAUCER_ESCAPE  = 4          ' Saucer state: flying off after chase
+CONST SAUCER_SWIRL   = 5          ' Saucer state: circular swirl before chase
 CONST CHASE_CHANCE   = 2000       ' 1/N per movement tick (~8% per pass)
 CONST CHASE_SPEED_X  = 2          ' Horizontal tracking speed (px per frame)
 CONST CHASE_DRIFT_Y  = 4          ' Descend 1px every N frames (slow drift down)
@@ -134,6 +135,10 @@ CONST ROGUE_DIVE       = 2
 CONST ROGUE_COOLDOWN   = 180      ' ~3 sec between trigger checks
 CONST ROGUE_SHAKE_TIME = 30       ' 0.5 sec shake telegraph
 CONST ROGUE_CHANCE     = 12       ' 1-in-12 per check
+
+' Capture wingman constants
+CONST CAPTURE_FIRE_RATE = 90      ' Frames between allied hitscan shots (~1.5 sec)
+CONST CAPTURE_ORBIT_R   = 6      ' Orbit radius (pixels)
 
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
@@ -210,6 +215,8 @@ FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
 FlyAngry    = 0                 ' 1=saucer will turn hostile at midpoint
+FlyCenterX  = 0                 ' Saucer swirl circle center X
+FlyCenterY  = 0                 ' Saucer swirl circle center Y
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
 ' Starfield variables
@@ -261,6 +268,20 @@ RogueColor     = 0                 ' Color for alien type
 RogueDivePhase = 0                 ' Circle step index (0-31) or 255=exit
 RogueCenterX   = 0                 ' Circle center X during dive
 RogueCenterY   = 0                 ' Circle center Y during dive
+' Capture wingman variables
+CaptureActive  = 0                 ' 1 = wingman alive and orbiting
+CaptureCard    = 0                 ' GRAM card of captured alien type
+CaptureColor   = 0                 ' Color of captured alien type
+CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
+CaptureTimer   = 0                 ' Countdown to next hitscan shot
+Key0Held       = 0                 ' Debounce: 1 = keypad 0 was held last frame
+CapBulletActive = 0                ' 1 = wingman bullet in flight
+CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
+CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
+' Wave color palette (set at start of each wave from DATA table)
+WaveColor0     = 6                 ' Squid color (row 0) — default yellow
+WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
+WaveColor2     = 5                 ' Octopus color (rows 3-4) — default green
 
 ' Flight engine variables
 #FlyPathLen  = 0                 ' Current pattern waypoint count
@@ -406,6 +427,7 @@ ResetToTitle:
     BulletActive = 0
     ABulletActive = 0 : ABulFrame = 0
     RogueState = 0 : RogueTimer = 0
+    CaptureActive = 0 : CapBulletActive = 0 : Key0Held = 0
     #DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
@@ -901,8 +923,9 @@ StartGame:
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
 
-    ' Initialize level and march speed
+    ' Initialize level, march speed, and wave 1 palette
     Level = 1
+    WaveColor0 = 6 : WaveColor1 = 1 : WaveColor2 = 5  ' Yellow / Blue / Green
     BaseMarchSpeed = MARCH_SPEED_START
     CurrentMarchSpeed = MARCH_SPEED_START
     MusicGear = 0
@@ -932,6 +955,7 @@ StartGame:
     TitleJitter = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
     RogueState = 0 : RogueTimer = 0
+    CaptureActive = 0 : CapBulletActive = 0
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
@@ -1119,6 +1143,7 @@ GameLoop:
                 ABulletActive = 0
                 BulletActive = 0
                 RogueState = 0 : RogueTimer = 0
+                CaptureActive = 0 : CapBulletActive = 0
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
                 SPRITE SPR_PLAYER, 0, 0, 0
                 SPRITE SPR_SHIP_ACCENT, 0, 0, 0
@@ -1172,6 +1197,9 @@ GameLoop:
 
     ' Update power-up drop/pickup
     GOSUB UpdatePowerUp
+
+    ' Update captured wingman
+    IF CaptureActive THEN GOSUB UpdateCapture
 
     ' Update rogue alien
     IF RogueState = ROGUE_IDLE THEN
@@ -1271,9 +1299,11 @@ GameLoop:
                 #BeamTimer = 0 : #RapidTimer = 0
                 #DualTimer = 0 : #MegaTimer = 0
                 ABulletActive = 0
-                ' Cancel active rogue alien
+                ' Cancel active rogue alien and wingman
                 RogueState = ROGUE_IDLE : RogueTimer = 0
                 SPRITE SPR_FLYER, 0, 0, 0
+                CaptureActive = 0 : CapBulletActive = 0
+                SPRITE SPR_POWERUP, 0, 0, 0
                 IF Lives = 0 THEN
                     ' Pre-game-over: play death explosion, then aliens crawl
                     GameOver = 3
@@ -1304,6 +1334,7 @@ GameLoop:
                 GameOver = 4
             ELSEIF GameOver = 4 THEN
                 ' Alien crawl done — fancy Game Over screen
+                CaptureActive = 0 : CapBulletActive = 0
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
                 ' Game-over music: intensity matches how far the player got
                 IF Level >= 5 THEN
@@ -1493,6 +1524,32 @@ MovePlayer: PROCEDURE
         END IF
     ELSE
         Key1Held = 0
+    END IF
+
+    ' Keypad 0: capture rogue alien during dogfight (with debounce)
+    IF CONT.KEY = 0 THEN
+        IF Key0Held = 0 THEN
+            Key0Held = 1
+            IF RogueDivePhase = 254 THEN
+                IF CaptureActive = 0 THEN
+                    ' Capture the rogue alien as wingman
+                    CaptureActive = 1
+                    CaptureCard = RogueCard
+                    CaptureColor = RogueColor
+                    CaptureStep = 0
+                    CaptureTimer = CAPTURE_FIRE_RATE
+                    ' Cancel rogue — it's now captured
+                    RogueState = ROGUE_IDLE
+                    RogueTimer = 0
+                    SPRITE SPR_FLYER, 0, 0, 0
+                    ' Capture SFX: rising tone
+                    SfxType = 2 : SfxVolume = 14 : #SfxPitch = 400
+                    SOUND 2, 400, 14
+                END IF
+            END IF
+        END IF
+    ELSE
+        Key0Held = 0
     END IF
 
     ' Fire: side buttons or auto-fire
@@ -2323,17 +2380,16 @@ DrawAliens: PROCEDURE
         IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
         #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
 
-        ' Determine which alien type for this row
-        ' Use DIFFERENT COLORS per type to diagnose issues
+        ' Determine which alien type and wave color for this row
         IF Row = 0 THEN
             AlienCard = GRAM_ALIEN1 + AnimFrame
-            AlienColor = 6  ' Yellow for squid (row 0)
+            AlienColor = WaveColor0  ' Squid color (wave palette)
         ELSEIF Row < 3 THEN
             AlienCard = GRAM_ALIEN2 + AnimFrame
-            AlienColor = 1  ' Blue for crab (rows 1-2)
+            AlienColor = WaveColor1  ' Crab color (wave palette)
         ELSE
             AlienCard = GRAM_ALIEN3 + AnimFrame
-            AlienColor = 5  ' Green for octopus (rows 3-4)
+            AlienColor = WaveColor2  ' Octopus color (wave palette)
         END IF
 
         ' Color Stack mode - SAME format as sprites!
@@ -2399,11 +2455,12 @@ LoadPatternB: PROCEDURE
     SfxVolume = 0
     SfxType = 0
 
-    ' Clear active bullets, rogue, and sprites
+    ' Clear active bullets, rogue, wingman, and sprites
     BulletActive = 0
     ABulletActive = 0
     MegaBeamTimer = 0
     RogueState = 0 : RogueTimer = 0
+    CaptureActive = 0 : CapBulletActive = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_FLYER, 0, 0, 0
@@ -2516,6 +2573,12 @@ StartNewWave: PROCEDURE
     ' Increment level
     Level = Level + 1
 
+    ' Set wave color palette (cycles through 6 palettes)
+    LoopVar = (Level - 1) - ((Level - 1) / 6) * 6  ' MOD 6
+    WaveColor0 = WavePalette0(LoopVar)
+    WaveColor1 = WavePalette1(LoopVar)
+    WaveColor2 = WavePalette2(LoopVar)
+
     ' Set base march speed for this wave (faster each wave)
     IF BaseMarchSpeed > MARCH_SPEED_MIN + 10 THEN
         BaseMarchSpeed = BaseMarchSpeed - 10
@@ -2550,6 +2613,7 @@ StartNewWave: PROCEDURE
     #MegaTimer = 0
     MegaBeamTimer = 0
     RogueState = 0 : RogueTimer = 0
+    CaptureActive = 0 : CapBulletActive = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_FLYER, 0, 0, 0
@@ -2669,6 +2733,139 @@ PowerUpWeights:
     SEGMENT 2   ' Pattern data in Segment 2 (Seg 1 is full)
 
 ' --------------------------------------------
+' UpdateCapture - Orbit captured wingman around player ship
+' --------------------------------------------
+UpdateCapture: PROCEDURE
+    ' Advance orbit step every 2 frames (16-step circle, slower orbit)
+    IF (CaptureTimer AND 1) = 0 THEN
+        CaptureStep = CaptureStep + 1
+        IF CaptureStep >= 16 THEN CaptureStep = 0
+    END IF
+
+    ' Compute orbit position centered on player
+    RogueX = PlayerX - 4 + CaptureOrbitDX(CaptureStep) - CAPTURE_ORBIT_R
+    RogueY = PLAYER_Y - 12 + CaptureOrbitDY(CaptureStep) - CAPTURE_ORBIT_R
+
+    ' Clamp X to valid sprite range
+    IF RogueX > 200 THEN RogueX = 0  ' unsigned underflow guard
+    IF RogueX > 160 THEN RogueX = 160
+
+    ' Render wingman (skip if power-up capsule is using the sprite)
+    IF TitleFrame = 0 THEN
+        SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, (CaptureCard + AnimFrame) * 8 + CaptureColor + $0800
+    END IF
+
+    ' Fire timer — launch upward bullet
+    IF CaptureTimer > 0 THEN
+        CaptureTimer = CaptureTimer - 1
+    ELSE
+        CaptureTimer = CAPTURE_FIRE_RATE
+        IF CapBulletActive = 0 THEN
+            ' Launch visible upward bullet from wingman position
+            CapBulletCol = (RogueX - 8) / 8
+            IF CapBulletCol > 19 THEN CapBulletCol = 19
+            CapBulletRow = (RogueY - 8) / 8
+            IF CapBulletRow > 11 THEN CapBulletRow = 11
+            CapBulletActive = 1
+            ' SFX: soft pew on channel 3
+            SfxType = 1 : SfxVolume = 6 : #SfxPitch = 500
+            SOUND 2, 500, 6
+        END IF
+    END IF
+
+    ' Update capture bullet (move up one row per frame)
+    IF CapBulletActive THEN
+        ' Clear previous tile
+        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        IF #ScreenPos < 240 THEN
+            IF #ScreenPos > 19 THEN PRINT AT #ScreenPos, 0
+        END IF
+
+        ' Move up
+        IF CapBulletRow = 0 THEN
+            ' Reached top of screen, deactivate
+            CapBulletActive = 0
+            GOTO CapBulletDone
+        END IF
+        CapBulletRow = CapBulletRow - 1
+
+        ' Check for alien hit at new position
+        GOSUB CaptureHitscan
+
+        ' Draw bullet tile if still active
+        IF CapBulletActive THEN
+            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+            IF #ScreenPos < 240 THEN
+                PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_GREEN + $0800
+            END IF
+        END IF
+    END IF
+CapBulletDone:
+    RETURN
+END
+
+' --------------------------------------------
+' CaptureHitscan - Check if wingman bullet hit an alien at current row
+' Uses CapBulletRow/CapBulletCol to check current position
+' --------------------------------------------
+CaptureHitscan: PROCEDURE
+    ' Check if bullet is in the alien grid area
+    HitCol = CapBulletCol
+    IF HitCol < ALIEN_START_X + AlienOffsetX THEN RETURN
+    IF HitCol >= ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN RETURN
+    AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
+
+    ' Can't hit unrevealed columns during wave sweep-in
+    IF AlienGridCol > WaveRevealCol THEN RETURN
+
+    ' Check if this BACKTAB row corresponds to an alien grid row
+    IF CapBulletRow < ALIEN_START_Y + AlienOffsetY THEN RETURN
+    AlienGridRow = CapBulletRow - ALIEN_START_Y - AlienOffsetY
+    IF AlienGridRow >= ALIEN_ROWS THEN RETURN
+
+    ' Calculate bitmask for this column
+    #Mask = 1
+    IF AlienGridCol > 0 THEN
+        FOR LoopVar = 1 TO AlienGridCol
+            #Mask = #Mask * 2
+        NEXT LoopVar
+    END IF
+
+    ' Check if alien is alive at this position
+    IF (#AlienRow(AlienGridRow) AND #Mask) = 0 THEN RETURN
+
+    ' HIT! Kill the alien
+    #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
+
+    ' Clear BACKTAB tile (bullet tile will also be cleared)
+    #ScreenPos = CapBulletRow * 20 + HitCol
+    IF #ScreenPos < 240 THEN
+        PRINT AT #ScreenPos, 0
+    END IF
+
+    ' Score +10
+    #Score = #Score + 10
+
+    ' Deactivate bullet (it hit something)
+    CapBulletActive = 0
+
+    ' Brief explosion visual
+    IF #ScreenPos < 220 THEN
+        IF ExplosionTimer > 0 THEN
+            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+        END IF
+        #ExplosionPos = #ScreenPos
+        ExplosionTimer = 10
+        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_GREEN + $0800
+    END IF
+
+    ' SFX: soft zap on channel 3
+    SfxType = 1 : SfxVolume = 8 : #SfxPitch = 300
+    SOUND 2, 300, 8
+    RETURN
+END
+
+' --------------------------------------------
 ' RoguePickAlien - Pick a random edge-column alien to go rogue
 ' --------------------------------------------
 RoguePickAlien: PROCEDURE
@@ -2731,16 +2928,16 @@ RoguePickAlien: PROCEDURE
 
     RogueRow = HitRow
 
-    ' Set alien type/color based on row
+    ' Set alien type/color based on row (uses wave palette)
     IF RogueRow = 0 THEN
         RogueCard = GRAM_ALIEN1
-        RogueColor = 6
+        RogueColor = WaveColor0
     ELSEIF RogueRow < 3 THEN
         RogueCard = GRAM_ALIEN2
-        RogueColor = 1
+        RogueColor = WaveColor1
     ELSE
         RogueCard = GRAM_ALIEN3
-        RogueColor = 5
+        RogueColor = WaveColor2
     END IF
 
     RogueState = ROGUE_SHAKE
@@ -2813,19 +3010,34 @@ RogueUpdate: PROCEDURE
             GOTO RogueDiveRender
         END IF
 
-        ' Attack mode: home toward player then exit
+        ' Dogfight chase: track player aggressively
         IF RogueDivePhase = 254 THEN
-            RogueTimer = RogueTimer + 1
-            ' Home X toward player (1px per frame)
-            IF RogueX < PlayerX THEN
-                RogueX = RogueX + 1
-            ELSEIF RogueX > PlayerX THEN
-                IF RogueX > 0 THEN RogueX = RogueX - 1
+            ' If player died, escape off-screen
+            IF DeathTimer > 0 THEN
+                RogueDivePhase = 255
+                GOTO RogueDiveRender
             END IF
-            ' Descend toward player
-            RogueY = RogueY + 1
-            ' Fire once early in attack run
-            IF RogueTimer = 8 THEN
+            RogueTimer = RogueTimer + 1
+            ' Track player X aggressively (2px per frame)
+            IF RogueX + 4 < PlayerX THEN
+                RogueX = RogueX + 2
+                IF RogueX > 160 THEN RogueX = 160
+            ELSEIF RogueX > PlayerX + 4 THEN
+                IF RogueX >= 2 THEN
+                    RogueX = RogueX - 2
+                ELSE
+                    RogueX = 0
+                END IF
+            END IF
+            ' Slow descent: 1px every 4 frames
+            RogueCol = RogueCol + 1
+            IF RogueCol >= 4 THEN
+                RogueCol = 0
+                RogueY = RogueY + 1
+            END IF
+            ' Fire periodically (~1 per second)
+            IF RogueTimer >= 60 THEN
+                RogueTimer = 0
                 IF ABulletActive = 0 THEN
                     IF FlyState <> SAUCER_CHASE THEN
                         ABulletX = RogueX + 3
@@ -2858,18 +3070,20 @@ RogueUpdate: PROCEDURE
         RogueX = RogueCenterX + RogueCircleDX(RogueDivePhase) - 12
         RogueY = RogueCenterY + RogueCircleDY(RogueDivePhase) - 12
 
-        ' Break from circle into attack run after 1+ loops and near player line
+        ' Break from circle into dogfight after 1+ loops and near player line
         IF RogueCol >= 32 THEN
             IF RogueCenterY >= 68 THEN
                 RogueDivePhase = 254
                 RogueTimer = 0
+                RogueCol = 0  ' Reuse as drift counter in chase
             END IF
         END IF
-        ' Safety: if sprite too low, go straight to attack
+        ' Safety: if sprite too low, go straight to chase
         IF RogueY >= 100 THEN
             IF RogueDivePhase < 32 THEN
                 RogueDivePhase = 254
                 RogueTimer = 0
+                RogueCol = 0
             END IF
         END IF
 
@@ -2945,6 +3159,42 @@ UpdateSaucer: PROCEDURE
             END IF
         END IF
         RETURN
+    END IF
+
+    ' Swirl state: circular pattern before entering chase
+    IF FlyState = SAUCER_SWIRL THEN
+        ' If player died, escape
+        IF DeathTimer > 0 THEN
+            FlyState = SAUCER_ESCAPE
+            FlySpeed = 0
+            GOTO SaucerAnimate
+        END IF
+
+        ' Advance circle step every 2 frames
+        FlySpeed = FlySpeed + 1
+        IF (FlySpeed AND 1) = 0 THEN
+            FlyColorTimer = FlyColorTimer + 1
+            IF FlyColorTimer >= 32 THEN FlyColorTimer = 0
+            #FlyLoopCount = #FlyLoopCount + 1
+        END IF
+
+        ' Drift center down 1px every 4 frames
+        IF (FlySpeed AND 3) = 0 THEN
+            FlyCenterY = FlyCenterY + 1
+        END IF
+
+        ' Compute sprite position from center + circle offset
+        FlyX = FlyCenterX + RogueCircleDX(FlyColorTimer) - 12
+        FlyY = FlyCenterY + RogueCircleDY(FlyColorTimer) - 12
+
+        ' After 2 full loops (64 steps), transition to chase
+        IF #FlyLoopCount >= 64 THEN
+            FlyState = SAUCER_CHASE
+            #FlyLoopCount = 0
+            FlySpeed = 0
+        END IF
+
+        GOTO SaucerAnimate
     END IF
 
     ' Chase state: fight to the death — pursue until one is destroyed
@@ -3068,8 +3318,12 @@ UpdateSaucer: PROCEDURE
             IF FlyX >= 72 THEN
                 IF FlyX <= 88 THEN
                     FlyAngry = 0
-                    FlyState = SAUCER_CHASE
-                    #FlyLoopCount = 0  ' Reset drift counter
+                    FlyState = SAUCER_SWIRL
+                    FlyCenterX = FlyX
+                    FlyCenterY = FlyY + 12
+                    FlyColorTimer = 24  ' Start at top of circle
+                    #FlyLoopCount = 0
+                    FlySpeed = 0
                     FlyColor = COL_RED
                 END IF
             END IF
@@ -3169,6 +3423,25 @@ RogueCircleDY:
     DATA 24, 24, 23, 22, 20, 19, 17, 14
     DATA 12, 10, 7, 5, 4, 2, 1, 0
     DATA 0, 0, 1, 2, 4, 5, 7, 10
+
+' Capture wingman orbit offsets (16 steps, radius 6, bias 6)
+' Step 0 = rightmost, step 4 = bottom, step 8 = left, step 12 = top
+CaptureOrbitDX:
+    DATA 12, 11, 10, 8, 6, 4, 2, 1
+    DATA 0, 1, 2, 4, 6, 8, 10, 11
+
+CaptureOrbitDY:
+    DATA 6, 8, 10, 11, 12, 11, 10, 8
+    DATA 6, 4, 2, 1, 0, 1, 2, 4
+
+' Wave color palettes (6 palettes, indexed by (Level-1) MOD 6)
+' Each palette: squid (row 0), crab (rows 1-2), octopus (rows 3-4)
+WavePalette0:
+    DATA 6, 7, 5, 2, 1, 3  ' Squid colors:  Yel, Wht, Grn, Red, Blu, Tan
+WavePalette1:
+    DATA 1, 2, 3, 7, 5, 6  ' Crab colors:   Blu, Red, Tan, Wht, Grn, Yel
+WavePalette2:
+    DATA 5, 6, 1, 3, 2, 7  ' Octopus colors: Grn, Yel, Blu, Tan, Red, Wht
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
@@ -3471,7 +3744,7 @@ ZodRender: PROCEDURE
     RETURN
     END
 
-    SEGMENT 1   ' Back to Segment 1 for graphics data
+    SEGMENT 2   ' Graphics data in Segment 2 (Seg 1 full)
 
 ' --------------------------------------------
 ' Graphics Data
