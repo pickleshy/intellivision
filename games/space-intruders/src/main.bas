@@ -70,6 +70,8 @@ CONST GRAM_CAP_F1  = 48         ' Capsule animation frame 1
 CONST GRAM_CAP_F2  = 49         ' Capsule animation frame 2
 CONST GRAM_CAP_F3  = 50         ' Capsule animation frame 3
 CONST GRAM_CAP_F4  = 51         ' Capsule animation frame 4
+CONST GRAM_ZIGZAG1 = 52         ' Zigzag bolt frame 1
+CONST GRAM_ZIGZAG2 = 53         ' Zigzag bolt frame 2
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -89,8 +91,8 @@ CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
 ' Bullet constants
 CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
-CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed
-CONST ALIEN_SHOOT_RATE = 60     ' Frames between alien shots
+CONST ALIEN_BULLET_SPEED = 1    ' Alien bullet speed (pixels per frame)
+CONST ALIEN_SHOOT_RATE = 30     ' Frames between alien shots
 CONST RAPID_SPEED    = 3        ' Rapid fire bullet speed (3px/frame)
 CONST RAPID_COOLDOWN = 8        ' Frames between rapid fire shots
 
@@ -125,6 +127,14 @@ CONST CHASE_SPEED_X  = 2          ' Horizontal tracking speed (px per frame)
 CONST CHASE_DRIFT_Y  = 4          ' Descend 1px every N frames (slow drift down)
 CONST CHASE_FIRE_RATE = 45        ' Frames between saucer shots (~1.3 per second)
 
+' Rogue alien constants
+CONST ROGUE_IDLE       = 0
+CONST ROGUE_SHAKE      = 1
+CONST ROGUE_DIVE       = 2
+CONST ROGUE_COOLDOWN   = 180      ' ~3 sec between trigger checks
+CONST ROGUE_SHAKE_TIME = 30       ' 0.5 sec shake telegraph
+CONST ROGUE_CHANCE     = 12       ' 1-in-12 per check
+
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
 
@@ -154,6 +164,7 @@ LaserColor  = 0                 ' Current laser color (calculated each frame)
 ABulletX    = 0                 ' Alien bullet X position
 ABulletY    = 0                 ' Alien bullet Y position
 ABulletActive = 0               ' 1 = alien bullet flying
+ABulFrame   = 0                 ' Animation frame toggle (0 or 1)
 ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 #Score      = 0                 ' Player score
@@ -198,6 +209,7 @@ FlyColorIdx = 0                 ' Color cycle index (0-5)
 FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
+FlyAngry    = 0                 ' 1=saucer will turn hostile at midpoint
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
 ' Starfield variables
@@ -237,6 +249,19 @@ RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sid
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
 #HighScore  = 0                 ' Session high score (persists until ROM reset)
 ChainCount  = 0                 ' Consecutive alien kills (chain combo, max 5)
+' Rogue alien variables
+RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
+RogueTimer     = 0                 ' Cooldown / countdown timer
+RogueRow       = 0                 ' Grid row (0-4)
+RogueCol       = 0                 ' Grid column (0 or 8)
+RogueX         = 0                 ' Sprite X (pixels)
+RogueY         = 0                 ' Sprite Y (pixels)
+RogueCard      = 0                 ' GRAM card for alien type
+RogueColor     = 0                 ' Color for alien type
+RogueDivePhase = 0                 ' Circle step index (0-31) or 255=exit
+RogueCenterX   = 0                 ' Circle center X during dive
+RogueCenterY   = 0                 ' Circle center Y during dive
+
 ' Flight engine variables
 #FlyPathLen  = 0                 ' Current pattern waypoint count
 FlyStepRate = 0                 ' Frames between waypoint advances
@@ -344,6 +369,8 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     WAIT
     DEFINE GRAM_QUAD, 1, QuadGfx
     WAIT
+    DEFINE GRAM_ZIGZAG1, 1, ZigzagF1Gfx
+    WAIT
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
     ' Grey/White flash
@@ -377,7 +404,8 @@ ResetToTitle:
     AlienDir = 1
     MarchCount = 0
     BulletActive = 0
-    ABulletActive = 0
+    ABulletActive = 0 : ABulFrame = 0
+    RogueState = 0 : RogueTimer = 0
     #DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
@@ -899,9 +927,12 @@ StartGame:
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     TitleFrame = 0  ' No power-up drop
-    TitleColor = 0  ' First drop is beam
+    ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=quad(2), 3=mega(1) out of 8
+    TitleColor = PowerUpWeights(RANDOM(8))
     TitleJitter = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
+    RogueState = 0 : RogueTimer = 0
+    SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
@@ -951,19 +982,6 @@ GameLoop:
         END IF
     ELSE
         SCROLL 0, 0  ' Reset to normal when done
-    END IF
-
-    ' Skip gameplay if game over
-    ' GameOver=1: wait for button release, GameOver=2: ready for new press
-    IF GameOver = 1 THEN
-        IF CONT.BUTTON = 0 AND CONT.KEY = 12 THEN GameOver = 2
-        GOTO GameLoop
-    END IF
-    IF GameOver = 2 THEN
-        IF CONT.BUTTON OR CONT.KEY = 1 THEN
-            GOTO ResetToTitle
-        END IF
-        GOTO GameLoop
     END IF
 
     ' Game Over screen with bolt sweep effect (GameOver=5: release, 6: accept)
@@ -1054,7 +1072,7 @@ GameLoop:
         ' WaveRevealCol = left group X offset (0→5)
         ' RightRevealCol = right group X offset (10→5)
         MarchCount = MarchCount + 1
-        IF MarchCount >= 8 THEN
+        IF MarchCount >= 4 THEN
             MarchCount = 0
             IF WaveRevealCol < 5 THEN WaveRevealCol = WaveRevealCol + 1
             IF RightRevealCol > 5 THEN RightRevealCol = RightRevealCol - 1
@@ -1089,40 +1107,26 @@ GameLoop:
                 IF HitRow = 255 THEN HitRow = Row
             END IF
         NEXT Row
-        ' Check invasion threshold (row 10 = HUD area)
+        ' Check invasion threshold (aliens reached ship baseline)
         IF HitRow < 255 THEN
+          IF GameOver = 0 THEN
             IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
-                GameOver = 1
+                ' Invasion! Skip straight to game over with brief shake
+                Lives = 0
+                GameOver = 4
+                DeathTimer = 30
+                ShakeTimer = 30
+                ABulletActive = 0
+                BulletActive = 0
+                RogueState = 0 : RogueTimer = 0
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
-                ' Game-over music: intensity matches how far the player got
-                IF Level >= 5 THEN
-                    PLAY si_dnb_panic
-                ELSEIF Level >= 3 THEN
-                    PLAY si_dnb_fast
-                ELSEIF Level >= 2 THEN
-                    PLAY si_dnb_mid
-                ELSE
-                    PLAY si_dnb_slow
-                END IF
-                ShakeTimer = 40  ' Big shake on invasion!
-                IF #Score > #HighScore THEN #HighScore = #Score
-                PRINT AT 45, "INVASION!"
-                PRINT AT 105 COLOR COL_WHITE, "SCORE "
-                PRINT AT 111, <>#Score
-                IF #Score >= #HighScore THEN
-                    PRINT AT 123 COLOR COL_YELLOW, "NEW HIGH!"
-                ELSE
-                    PRINT AT 122 COLOR COL_YELLOW, "HIGH SCORE "
-                    PRINT AT 133, <>#HighScore
-                END IF
-                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
                 SPRITE SPR_PLAYER, 0, 0, 0
                 SPRITE SPR_SHIP_ACCENT, 0, 0, 0
-                ' Clear HUD row (score/lives already shown above)
-                FOR LoopVar = 220 TO 239
-                    PRINT AT LoopVar, 0
-                NEXT LoopVar
+                SPRITE SPR_PBULLET, 0, 0, 0
+                SPRITE SPR_ABULLET, 0, 0, 0
+                SPRITE SPR_FLYER, 0, 0, 0
             END IF
+          END IF
         END IF
     END IF
     END IF ' reveal complete gate
@@ -1144,8 +1148,9 @@ GameLoop:
     ' 15 total frames: 5 per animation frame (~83ms each, ~250ms total)
     IF ExplosionTimer > 0 THEN
         ExplosionTimer = ExplosionTimer - 1
+        IF #ExplosionPos < 220 THEN
         IF ExplosionTimer = 0 THEN
-            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0  ' Clear (protect HUD)
+            PRINT AT #ExplosionPos, 0  ' Clear
         ELSEIF ExplosionTimer > 10 THEN
             ' Frame 1: tight pop (frames 15-11) - Pink (color 12)
             PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -1155,6 +1160,7 @@ GameLoop:
         ELSE
             ' Frame 3: dissipate (frames 5-1) - White
             PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + COL_WHITE + $0800
+        END IF
         END IF
     END IF
 
@@ -1166,6 +1172,23 @@ GameLoop:
 
     ' Update power-up drop/pickup
     GOSUB UpdatePowerUp
+
+    ' Update rogue alien
+    IF RogueState = ROGUE_IDLE THEN
+        RogueTimer = RogueTimer + 1
+        IF RogueTimer >= ROGUE_COOLDOWN THEN
+            RogueTimer = 0
+            IF DeathTimer = 0 THEN
+                IF WaveRevealCol >= ALIEN_COLS - 1 THEN
+                    IF RANDOM(ROGUE_CHANCE) = 0 THEN
+                        GOSUB RoguePickAlien
+                    END IF
+                END IF
+            END IF
+        END IF
+    ELSE
+        GOSUB RogueUpdate
+    END IF
 
     ' Check bullet-vs-bullet collision
     IF BulletActive THEN
@@ -1179,8 +1202,43 @@ GameLoop:
                             ' Bullets collide! Destroy both
                             BulletActive = 0
                             ABulletActive = 0
+                            SPRITE SPR_PBULLET, 0, 0, 0
+                            SPRITE SPR_ABULLET, 0, 0, 0
                             ' Small score bonus for the skillful shot
                             #Score = #Score + 5
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' Check player bullet vs rogue alien
+    IF BulletActive THEN
+        IF RogueState = ROGUE_DIVE THEN
+            IF BulletY >= RogueY - 4 THEN
+                IF BulletY <= RogueY + 8 THEN
+                    IF BulletX >= RogueX - 4 THEN
+                        IF BulletX <= RogueX + 10 THEN
+                            BulletActive = 0
+                            SPRITE SPR_PBULLET, 0, 0, 0
+                            RogueState = ROGUE_IDLE
+                            RogueTimer = 0
+                            SPRITE SPR_FLYER, 0, 0, 0
+                            #Score = #Score + 50
+                            ChainCount = ChainCount + 1
+                            IF ChainCount > 5 THEN ChainCount = 5
+                            SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
+                            SOUND 2, 180, 14
+                            ' Show explosion at rogue position
+                            IF ExplosionTimer > 0 THEN
+                                IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                            END IF
+                            #ExplosionPos = (RogueY - 8) / 8 * 20 + (RogueX - 8) / 8
+                            IF #ExplosionPos < 220 THEN
+                                ExplosionTimer = 15
+                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                            END IF
                         END IF
                     END IF
                 END IF
@@ -1195,18 +1253,27 @@ GameLoop:
                 PlayerHit = 0
                 Lives = Lives - 1
                 ' Update lives display (show extra lives remaining)
-                IF Lives = 3 THEN
+                IF Lives >= 6 THEN
+                    PRINT AT 237 COLOR COL_WHITE, "X"
+                    PRINT AT 238, <> (Lives - 1)
+                ELSEIF Lives = 5 THEN
+                    PRINT AT 237 COLOR COL_WHITE, "X4"
+                ELSEIF Lives = 4 THEN
+                    PRINT AT 237 COLOR COL_WHITE, "X3"
+                ELSEIF Lives = 3 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X2"
-                END IF
-                IF Lives = 2 THEN
+                ELSEIF Lives = 2 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X1"
-                END IF
-                IF Lives = 1 THEN
+                ELSEIF Lives = 1 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X0"
                 END IF
                 ' Lose all power-ups on death (mega laser too)
                 #BeamTimer = 0 : #RapidTimer = 0
                 #DualTimer = 0 : #MegaTimer = 0
+                ABulletActive = 0
+                ' Cancel active rogue alien
+                RogueState = ROGUE_IDLE : RogueTimer = 0
+                SPRITE SPR_FLYER, 0, 0, 0
                 IF Lives = 0 THEN
                     ' Pre-game-over: play death explosion, then aliens crawl
                     GameOver = 3
@@ -1657,7 +1724,9 @@ CheckOneColumn: PROCEDURE
                 #ExplosionPos = HitRow * 20 + HitCol
                 ExplosionTimer = 15  ' Show for 15 frames (~250ms total)
                 ' Frame 1 starts pink (color 12 = $1804 for GRAM)
-                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                IF #ExplosionPos < 220 THEN
+                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                END IF
             END IF
         END IF
     END IF
@@ -1757,16 +1826,15 @@ END
 ' AlienShoot - Decide when and where aliens shoot
 ' --------------------------------------------
 AlienShoot: PROCEDURE
-    ' Saucer owns the bullet slot during chase
+    ' Saucer owns the bullet during chase
     IF FlyState = SAUCER_CHASE THEN RETURN
-    ' Only shoot if no alien bullet active
-    IF ABulletActive = 0 THEN
-        ShootTimer = ShootTimer + 1
-        IF ShootTimer >= ALIEN_SHOOT_RATE THEN
-            ShootTimer = 0
+    ShootTimer = ShootTimer + 1
+    IF ShootTimer >= ALIEN_SHOOT_RATE THEN
+        ShootTimer = 0
+        IF ABulletActive = 0 THEN
             ' Pick random column
             ShootCol = RANDOM(ALIEN_COLS)
-            ' Find bottom-most alien in that column
+            ' Find bottom-most alien in that column and spawn bullet
             GOSUB FindShooter
         END IF
     END IF
@@ -1774,7 +1842,7 @@ AlienShoot: PROCEDURE
 END
 
 ' --------------------------------------------
-' FindShooter - Find bottom alien in ShootCol to shoot
+' FindShooter - Find bottom alien in ShootCol, fire bullet
 ' --------------------------------------------
 FindShooter: PROCEDURE
     ' Calculate bitmask for this column
@@ -1794,8 +1862,6 @@ FindShooter: PROCEDURE
         END IF
     NEXT Row
     IF HitRow < 255 THEN
-        ' Found an alien - fire from its position
-        ' Calculate pixel position: card position * 8 + offset for center
         ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 3
         ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 8
         ABulletActive = 1
@@ -1804,52 +1870,52 @@ FindShooter: PROCEDURE
 END
 
 ' --------------------------------------------
-' MoveAlienBullet - Move alien bullet down and check player hit
+' MoveAlienBullet - Move alien bullet down + check player collision
 ' --------------------------------------------
 MoveAlienBullet: PROCEDURE
     ABulletY = ABulletY + ALIEN_BULLET_SPEED
+    ABulFrame = 1 - ABulFrame   ' Toggle zigzag animation frame
 
-    ' Check collision with player FIRST (before off-screen check)
-    ' Wide hitbox: Y range 70-100, X range PlayerX-8 to PlayerX+16
-    IF ABulletY >= 70 THEN
-        IF ABulletY <= 100 THEN
-            IF DeathTimer = 0 THEN
-            IF Invincible = 0 THEN
-            IF ABulletX >= PlayerX - 8 THEN
-                IF ABulletX <= PlayerX + 16 THEN
-                    ' HIT! Player is hit
-                    PlayerHit = 1
-                    ABulletActive = 0
-                    ' White noise explosion (pure noise, Astrosmash-style boom)
-                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
-                    SOUND 2, 0, 15           ' Channel C volume max (no tone)
-                    POKE $1F7, 14            ' Noise period (deep boom)
-                    POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only (bit 5 clear)
-                    RETURN
+    ' Check if bullet went off screen
+    IF ABulletY >= 104 THEN
+        ABulletActive = 0
+        SPRITE SPR_ABULLET, 0, 0, 0
+        RETURN
+    END IF
+
+    ' Check player collision
+    IF DeathTimer = 0 THEN
+        IF Invincible = 0 THEN
+            IF ABulletY >= PLAYER_Y - 4 THEN
+                IF ABulletY <= PLAYER_Y + 8 THEN
+                    IF ABulletX >= PlayerX - 2 THEN
+                        IF ABulletX <= PlayerX + 10 THEN
+                            PlayerHit = 1
+                            ABulletActive = 0
+                            SPRITE SPR_ABULLET, 0, 0, 0
+                            SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                            SOUND 2, 0, 15
+                            POKE $1F7, 14
+                            POKE $1F8, PEEK($1F8) AND $DF
+                        END IF
+                    END IF
                 END IF
-            END IF
-            END IF
             END IF
         END IF
     END IF
-
-    ' Check if off screen (after collision check)
-    IF ABulletY > 100 THEN
-        ABulletActive = 0
-    END IF
-
     RETURN
 END
 
 ' --------------------------------------------
-' DrawAlienBullet - Update alien bullet sprite
+' DrawAlienBullet - Draw alien bullet sprite with color phase animation
 ' --------------------------------------------
 DrawAlienBullet: PROCEDURE
     IF ABulletActive THEN
-        SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_BULLET * 8 + COL_YELLOW + $0800
-    ELSE
-        ' Hide alien bullet sprite
-        SPRITE SPR_ABULLET, 0, 0, 0
+        IF ABulFrame THEN
+            SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_WHITE + $0800
+        ELSE
+            SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_YELLOW + $0800
+        END IF
     END IF
     RETURN
 END
@@ -2060,7 +2126,9 @@ MegaBeamKill: PROCEDURE
                             IF ChainCount > 5 THEN ChainCount = 5
                             #Score = #Score + ChainCount * 10
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
-                            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                            IF #ExplosionPos < 220 THEN
+                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                            END IF
                         END IF
                     NEXT LoopVar
                     ExplosionTimer = 15
@@ -2193,9 +2261,8 @@ UpdatePowerUp: PROCEDURE
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
-                ' Cycle: 0(beam) → 1(rapid) → 2(dual) → 3(mega) → 0
-                TitleColor = TitleColor + 1
-                IF TitleColor >= 4 THEN TitleColor = 0
+                ' Weighted random next power-up type
+                TitleColor = PowerUpWeights(RANDOM(8))
                 RETURN
             END IF
         END IF
@@ -2260,10 +2327,10 @@ DrawAliens: PROCEDURE
         ' Use DIFFERENT COLORS per type to diagnose issues
         IF Row = 0 THEN
             AlienCard = GRAM_ALIEN1 + AnimFrame
-            AlienColor = 7  ' White for squid (row 0)
+            AlienColor = 6  ' Yellow for squid (row 0)
         ELSEIF Row < 3 THEN
             AlienCard = GRAM_ALIEN2 + AnimFrame
-            AlienColor = 2  ' Red for crab (rows 1-2)
+            AlienColor = 1  ' Blue for crab (rows 1-2)
         ELSE
             AlienCard = GRAM_ALIEN3 + AnimFrame
             AlienColor = 5  ' Green for octopus (rows 3-4)
@@ -2328,15 +2395,18 @@ LoadPatternB: PROCEDURE
 
     ' Silence any lingering SFX
     SOUND 2, , 0
+    POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
     SfxVolume = 0
     SfxType = 0
 
-    ' Clear active bullets and sprites
+    ' Clear active bullets, rogue, and sprites
     BulletActive = 0
     ABulletActive = 0
     MegaBeamTimer = 0
+    RogueState = 0 : RogueTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
+    SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
@@ -2378,7 +2448,7 @@ LoadPatternB: PROCEDURE
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
 
     ' Visual/audio cue: "ALERT!" flash
-    PRINT AT 108 COLOR COL_RED, "ALERT!"
+    PRINT AT 107 COLOR COL_RED, "ALERT!"
     SOUND 2, 200, 12
     FOR LoopVar = 0 TO 20
         WAIT
@@ -2392,15 +2462,15 @@ LoadPatternB: PROCEDURE
     ' Flash-off
     FOR LoopVar = 0 TO 5
         IF (LoopVar AND 1) = 0 THEN
-            PRINT AT 108, "      "
+            PRINT AT 107, "      "
         ELSE
-            PRINT AT 108 COLOR COL_RED, "ALERT!"
+            PRINT AT 107 COLOR COL_RED, "ALERT!"
         END IF
         FOR Row = 0 TO 3
             WAIT
         NEXT Row
     NEXT LoopVar
-    PRINT AT 108, "      "
+    PRINT AT 107, "      "
 
     RETURN
 END
@@ -2409,11 +2479,17 @@ END
 ' CheckWaveWin - Check if all aliens defeated
 ' --------------------------------------------
 CheckWaveWin: PROCEDURE
+    ' Don't trigger wave win during game over sequence
+    IF GameOver > 0 THEN RETURN
+
     ' Count remaining aliens
     #AliensAlive = 0
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AliensAlive = #AliensAlive + #AlienRow(LoopVar)
     NEXT LoopVar
+
+    ' Count active rogue as alive
+    IF RogueState >= ROGUE_DIVE THEN #AliensAlive = #AliensAlive + 1
 
     ' If no aliens left, wait for explosion then advance
     IF #AliensAlive = 0 THEN
@@ -2473,6 +2549,7 @@ StartNewWave: PROCEDURE
     ABulletActive = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
+    RogueState = 0 : RogueTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_FLYER, 0, 0, 0
@@ -2495,18 +2572,25 @@ StartNewWave: PROCEDURE
     PRINT AT 220, "SCORE:"
     PRINT AT 227, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
-    IF Lives = 4 THEN
+    IF Lives >= 6 THEN
+        PRINT AT 237 COLOR COL_WHITE, "X"
+        PRINT AT 238, <> (Lives - 1)
+    ELSEIF Lives = 5 THEN
+        PRINT AT 237 COLOR COL_WHITE, "X4"
+    ELSEIF Lives = 4 THEN
         PRINT AT 237 COLOR COL_WHITE, "X3"
-    END IF
-    IF Lives = 3 THEN
+    ELSEIF Lives = 3 THEN
         PRINT AT 237 COLOR COL_WHITE, "X2"
-    END IF
-    IF Lives = 2 THEN
+    ELSEIF Lives = 2 THEN
         PRINT AT 237 COLOR COL_WHITE, "X1"
-    END IF
-    IF Lives = 1 THEN
+    ELSEIF Lives = 1 THEN
         PRINT AT 237 COLOR COL_WHITE, "X0"
     END IF
+
+    ' Silence any lingering SFX before transition WAITs
+    SOUND 2, , 0
+    POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
+    SfxVolume = 0 : SfxType = 0
 
     ' Phase A: Breather pause (blank screen + HUD only)
     FOR LoopVar = 0 TO 30
@@ -2577,7 +2661,258 @@ SaucerColor1:
 SaucerColor2:
     DATA COL_WHITE, COL_GREEN, COL_TAN, COL_TAN
 
+' Power-up weighted distribution (8 slots)
+' beam=2/8(25%), rapid=3/8(37.5%), quad=2/8(25%), mega=1/8(12.5%)
+PowerUpWeights:
+    DATA 0, 0, 1, 1, 1, 2, 2, 3
+
     SEGMENT 2   ' Pattern data in Segment 2 (Seg 1 is full)
+
+' --------------------------------------------
+' RoguePickAlien - Pick a random edge-column alien to go rogue
+' --------------------------------------------
+RoguePickAlien: PROCEDURE
+    ' Pick left or right edge
+    RogueCol = 0
+    IF RANDOM(2) = 1 THEN RogueCol = ALIEN_COLS - 1
+
+    ' Calculate bitmask for this column
+    #Mask = 1
+    IF RogueCol > 0 THEN
+        FOR LoopVar = 1 TO RogueCol
+            #Mask = #Mask * 2
+        NEXT LoopVar
+    END IF
+
+    ' Count alive aliens in this column
+    HitRow = 0
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        IF #AlienRow(Row) AND #Mask THEN
+            HitRow = HitRow + 1
+        END IF
+    NEXT Row
+
+    ' If none found, try the other edge
+    IF HitRow = 0 THEN
+        IF RogueCol = 0 THEN
+            RogueCol = ALIEN_COLS - 1
+        ELSE
+            RogueCol = 0
+        END IF
+        #Mask = 1
+        IF RogueCol > 0 THEN
+            FOR LoopVar = 1 TO RogueCol
+                #Mask = #Mask * 2
+            NEXT LoopVar
+        END IF
+        HitRow = 0
+        FOR Row = 0 TO ALIEN_ROWS - 1
+            IF #AlienRow(Row) AND #Mask THEN
+                HitRow = HitRow + 1
+            END IF
+        NEXT Row
+    END IF
+
+    IF HitRow = 0 THEN RETURN  ' No edge aliens alive
+
+    ' Pick a random alive row (sentinel pattern)
+    LoopVar = RANDOM(HitRow)
+    HitRow = 255
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        IF #AlienRow(Row) AND #Mask THEN
+            IF LoopVar = 0 THEN
+                IF HitRow = 255 THEN HitRow = Row
+            END IF
+            IF LoopVar > 0 THEN LoopVar = LoopVar - 1
+        END IF
+    NEXT Row
+
+    IF HitRow = 255 THEN RETURN
+
+    RogueRow = HitRow
+
+    ' Set alien type/color based on row
+    IF RogueRow = 0 THEN
+        RogueCard = GRAM_ALIEN1
+        RogueColor = 6
+    ELSEIF RogueRow < 3 THEN
+        RogueCard = GRAM_ALIEN2
+        RogueColor = 1
+    ELSE
+        RogueCard = GRAM_ALIEN3
+        RogueColor = 5
+    END IF
+
+    RogueState = ROGUE_SHAKE
+    RogueTimer = ROGUE_SHAKE_TIME
+    RETURN
+END
+
+' --------------------------------------------
+' RogueUpdate - Update rogue alien (shake, dive, collision)
+' --------------------------------------------
+RogueUpdate: PROCEDURE
+    ' --- SHAKE STATE ---
+    IF RogueState = ROGUE_SHAKE THEN
+        RogueTimer = RogueTimer - 1
+
+        ' Flash alien's BACKTAB tile between normal and white
+        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + RogueRow) * 20
+        #ScreenPos = #ScreenPos + ALIEN_START_X + AlienOffsetX + RogueCol
+        IF #ScreenPos < 220 THEN
+            IF RogueTimer AND 4 THEN
+                #Card = (RogueCard + AnimFrame) * 8 + COL_WHITE + $0800
+            ELSE
+                #Card = (RogueCard + AnimFrame) * 8 + RogueColor + $0800
+            END IF
+            PRINT AT #ScreenPos, #Card
+        END IF
+
+        IF RogueTimer = 0 THEN
+            ' Remove from grid
+            #Mask = 1
+            IF RogueCol > 0 THEN
+                FOR LoopVar = 1 TO RogueCol
+                    #Mask = #Mask * 2
+                NEXT LoopVar
+            END IF
+            #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR #Mask
+
+            ' Clear BACKTAB tile
+            IF #ScreenPos < 220 THEN
+                PRINT AT #ScreenPos, 0
+            END IF
+
+            ' Set up circle center (12px below alien's grid position)
+            RogueCenterX = (ALIEN_START_X + AlienOffsetX + RogueCol) * 8 + 8
+            RogueCenterY = (ALIEN_START_Y + AlienOffsetY + RogueRow) * 8 + 8 + 12
+            ' Sprite starts at top of circle (step 24: offset +0, -12)
+            RogueX = RogueCenterX
+            RogueY = RogueCenterY - 12
+
+            RogueState = ROGUE_DIVE
+            RogueDivePhase = 24   ' Start at top of circle
+            RogueCol = 0          ' Reuse as step counter during dive
+            RogueTimer = 0
+        END IF
+        RETURN
+    END IF
+
+    ' --- DIVE STATE (circular spiral) ---
+    IF RogueState = ROGUE_DIVE THEN
+
+        ' Exit mode: straight down off screen
+        IF RogueDivePhase = 255 THEN
+            RogueY = RogueY + 2
+            IF RogueY >= 112 THEN
+                RogueState = ROGUE_IDLE
+                RogueTimer = 0
+                SPRITE SPR_FLYER, 0, 0, 0
+                RETURN
+            END IF
+            GOTO RogueDiveRender
+        END IF
+
+        ' Attack mode: home toward player then exit
+        IF RogueDivePhase = 254 THEN
+            RogueTimer = RogueTimer + 1
+            ' Home X toward player (1px per frame)
+            IF RogueX < PlayerX THEN
+                RogueX = RogueX + 1
+            ELSEIF RogueX > PlayerX THEN
+                IF RogueX > 0 THEN RogueX = RogueX - 1
+            END IF
+            ' Descend toward player
+            RogueY = RogueY + 1
+            ' Fire once early in attack run
+            IF RogueTimer = 8 THEN
+                IF ABulletActive = 0 THEN
+                    IF FlyState <> SAUCER_CHASE THEN
+                        ABulletX = RogueX + 3
+                        ABulletY = RogueY + 8
+                        ABulletActive = 1
+                    END IF
+                END IF
+            END IF
+            ' Past the player zone: switch to exit
+            IF RogueY >= PLAYER_Y + 10 THEN RogueDivePhase = 255
+            GOTO RogueDiveRender
+        END IF
+
+        ' === Circular spiral phase ===
+
+        ' Advance circle step every 2 frames
+        RogueTimer = RogueTimer + 1
+        IF (RogueTimer AND 1) = 0 THEN
+            RogueDivePhase = RogueDivePhase + 1
+            IF RogueDivePhase >= 32 THEN RogueDivePhase = 0
+            RogueCol = RogueCol + 1
+        END IF
+
+        ' Drift center down 1px every 2 frames (spiral effect)
+        IF (RogueTimer AND 1) = 0 THEN
+            RogueCenterY = RogueCenterY + 1
+        END IF
+
+        ' Compute actual sprite position from center + circle offset
+        RogueX = RogueCenterX + RogueCircleDX(RogueDivePhase) - 12
+        RogueY = RogueCenterY + RogueCircleDY(RogueDivePhase) - 12
+
+        ' Break from circle into attack run after 1+ loops and near player line
+        IF RogueCol >= 32 THEN
+            IF RogueCenterY >= 68 THEN
+                RogueDivePhase = 254
+                RogueTimer = 0
+            END IF
+        END IF
+        ' Safety: if sprite too low, go straight to attack
+        IF RogueY >= 100 THEN
+            IF RogueDivePhase < 32 THEN
+                RogueDivePhase = 254
+                RogueTimer = 0
+            END IF
+        END IF
+
+        ' Fire bullet at bottom of circle (step 8, closest to player)
+        IF RogueDivePhase = 8 THEN
+            IF (RogueTimer AND 1) = 0 THEN
+                IF ABulletActive = 0 THEN
+                    IF FlyState <> SAUCER_CHASE THEN
+                        ABulletX = RogueX + 3
+                        ABulletY = RogueY + 8
+                        ABulletActive = 1
+                    END IF
+                END IF
+            END IF
+        END IF
+
+RogueDiveRender:
+        ' Render rogue sprite
+        SPRITE SPR_FLYER, RogueX + $0200, RogueY, (RogueCard + AnimFrame) * 8 + RogueColor + $0800
+
+        ' Body collision with player
+        IF DeathTimer = 0 THEN
+            IF Invincible = 0 THEN
+                IF RogueY >= PLAYER_Y - 6 THEN
+                    IF RogueY <= PLAYER_Y + 6 THEN
+                        IF RogueX >= PlayerX - 6 THEN
+                            IF RogueX <= PlayerX + 8 THEN
+                                PlayerHit = 1
+                                RogueState = ROGUE_IDLE
+                                RogueTimer = 0
+                                SPRITE SPR_FLYER, 0, 0, 0
+                                SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
+                                SOUND 2, 100, 15
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+        RETURN
+    END IF
+    RETURN
+END
 
 ' --------------------------------------------
 ' UpdateSaucer - Spawn, move, and check collision for flying saucer
@@ -2600,12 +2935,13 @@ UpdateSaucer: PROCEDURE
             END IF
             FlyY = 8            ' Row 0 (sprites have 8px Y offset on STIC)
             FlySpeed = 0
+            FlyColorTimer = 0
             FlyColor = 4        ' Dark Green
-            ' Rare chance: saucer spawns angry (1-in-8)
+            ' Rare chance: saucer will go hostile at midpoint (1-in-8)
             IF RANDOM(8) = 0 THEN
-                FlyState = SAUCER_CHASE
-                #FlyLoopCount = 0  ' Drift counter
-                FlyColor = COL_RED
+                FlyAngry = 1
+            ELSE
+                FlyAngry = 0
             END IF
         END IF
         RETURN
@@ -2636,14 +2972,14 @@ UpdateSaucer: PROCEDURE
             #FlyLoopCount = 0
             FlyY = FlyY + 1
         END IF
-        ' Fire at player (reuse alien bullet slot)
+        ' Fire at player
         FlySpeed = FlySpeed + 1
         IF FlySpeed >= CHASE_FIRE_RATE THEN
             FlySpeed = 0
             IF ABulletActive = 0 THEN
+                ABulletX = FlyX + 4
+                ABulletY = FlyY + 8
                 ABulletActive = 1
-                ABulletX = FlyX + 4   ' Center of saucer
-                ABulletY = FlyY + 8   ' Below saucer
             END IF
         END IF
         ' Body collision: saucer reached player altitude
@@ -2717,7 +3053,27 @@ UpdateSaucer: PROCEDURE
                 RETURN
             END IF
         END IF
-        ' (Anger decided at spawn time — see spawn block above)
+        ' Normal saucer fires occasionally (slower than chase mode)
+        FlyColorTimer = FlyColorTimer + 1
+        IF FlyColorTimer >= 90 THEN
+            FlyColorTimer = 0
+            IF ABulletActive = 0 THEN
+                ABulletX = FlyX + 4
+                ABulletY = FlyY + 8
+                ABulletActive = 1
+            END IF
+        END IF
+        ' Midpoint check: angry saucer goes hostile at ~50% across screen
+        IF FlyAngry THEN
+            IF FlyX >= 72 THEN
+                IF FlyX <= 88 THEN
+                    FlyAngry = 0
+                    FlyState = SAUCER_CHASE
+                    #FlyLoopCount = 0  ' Reset drift counter
+                    FlyColor = COL_RED
+                END IF
+            END IF
+        END IF
     END IF
 
 SaucerAnimate:
@@ -2799,6 +3155,20 @@ PatternBIndex:
 ' ============================================
 ' Flight Patterns — DATA tables
 ' ============================================
+
+' Rogue alien circular flight offsets (32 steps, radius 12, bias 12)
+' Step 0 = rightmost (3 o'clock), step 8 = bottom, step 16 = left, step 24 = top
+RogueCircleDX:
+    DATA 24, 24, 23, 22, 20, 19, 17, 14
+    DATA 12, 10, 7, 5, 4, 2, 1, 0
+    DATA 0, 0, 1, 2, 4, 5, 7, 10
+    DATA 12, 14, 17, 19, 20, 22, 23, 24
+
+RogueCircleDY:
+    DATA 12, 14, 17, 19, 20, 22, 23, 24
+    DATA 24, 24, 23, 22, 20, 19, 17, 14
+    DATA 12, 10, 7, 5, 4, 2, 1, 0
+    DATA 0, 0, 1, 2, 4, 5, 7, 10
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
@@ -3549,6 +3919,17 @@ CapsuleF4Gfx:
     BITMAP ".X....X."
     BITMAP ".XXXXXX."
     BITMAP "..XXXX.."
+
+' Alien laser frame 1 (thin line, slight wobble)
+ZigzagF1Gfx:
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "...X...."
 
 ' Mega beam solid block (fills entire card)
 MegaBeamGfx:
