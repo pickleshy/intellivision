@@ -1113,7 +1113,7 @@ GameLoop:
     IF ExplosionTimer > 0 THEN
         ExplosionTimer = ExplosionTimer - 1
         IF ExplosionTimer = 0 THEN
-            PRINT AT #ExplosionPos, 0  ' Clear explosion from screen
+            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0  ' Clear (protect HUD)
         ELSEIF ExplosionTimer > 10 THEN
             ' Frame 1: tight pop (frames 15-11) - Pink (color 12)
             PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -1302,10 +1302,26 @@ GameLoop:
         #MegaTimer = #MegaTimer - 1
     END IF
 
-    ' Mega beam display countdown + color cycling
+    ' Mega beam display countdown + sweep-up from turret + color cycling
+    ' Beam follows ship movement and kills aliens it sweeps over
     IF MegaBeamTimer > 0 THEN
         MegaBeamTimer = MegaBeamTimer - 1
-        ' Color cycle: white → yellow → red over 20 frames
+        ' Clear old beam column before updating position
+        FOR LoopVar = 0 TO 8
+            #ScreenPos = LoopVar * 20 + MegaBeamCol
+            PRINT AT #ScreenPos, 0
+        NEXT LoopVar
+        ' Track ship position: recalculate beam column each frame
+        MegaBeamCol = (PlayerX + 3) / 8
+        IF MegaBeamCol > 19 THEN MegaBeamCol = 19
+        ' Kill aliens in new column position
+        GOSUB MegaBeamKill
+        ' Calculate beam top row: sweeps UP from row 8 (above ship turret)
+        ' Frames elapsed = 20 - MegaBeamTimer. Sweep 2 rows/frame.
+        Col = (20 - MegaBeamTimer) * 2
+        IF Col > 8 THEN Col = 8
+        Col = 8 - Col
+        ' Color cycle: white → yellow → red
         IF MegaBeamTimer > 13 THEN
             LaserColor = COL_WHITE
         ELSEIF MegaBeamTimer > 6 THEN
@@ -1313,8 +1329,8 @@ GameLoop:
         ELSE
             LaserColor = COL_RED
         END IF
-        ' Redraw beam with current color
-        FOR LoopVar = 0 TO 10
+        ' Draw beam from top row (Col) down to row 8 (above ship turret)
+        FOR LoopVar = Col TO 8
             #ScreenPos = LoopVar * 20 + MegaBeamCol
             PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + LaserColor + $0800
         NEXT LoopVar
@@ -1948,30 +1964,64 @@ END
 ' MegaBeamKill - Kill all aliens in the beam column
 ' --------------------------------------------
 MegaBeamKill: PROCEDURE
-    IF MegaBeamCol >= ALIEN_START_X + AlienOffsetX THEN
-        IF MegaBeamCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
-            AlienGridCol = MegaBeamCol - ALIEN_START_X - AlienOffsetX
-            IF AlienGridCol <= WaveRevealCol THEN
-                ' Build bitmask for this column
-                #Mask = 1
-                IF AlienGridCol > 0 THEN
-                    FOR LoopVar = 1 TO AlienGridCol
-                        #Mask = #Mask * 2
-                    NEXT LoopVar
-                END IF
-                ' Kill alien in every row at this column
-                FOR LoopVar = 0 TO ALIEN_ROWS - 1
-                    IF #AlienRow(LoopVar) AND #Mask THEN
-                        #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
-                        ChainCount = ChainCount + 1
-                        IF ChainCount > 5 THEN ChainCount = 5
-                        #Score = #Score + ChainCount * 10
-                        ' Show explosion at alien position
-                        #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + MegaBeamCol
-                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+    ' Kill aliens in beam column AND adjacent column (brutal 16px hitbox)
+    FOR HitRow = 0 TO 1
+        IF HitRow = 0 THEN
+            HitCol = MegaBeamCol
+        ELSE
+            HitCol = MegaBeamCol + 1
+        END IF
+        IF HitCol >= ALIEN_START_X + AlienOffsetX THEN
+            IF HitCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
+                AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
+                IF AlienGridCol <= WaveRevealCol THEN
+                    ' Build bitmask for this column
+                    #Mask = 1
+                    IF AlienGridCol > 0 THEN
+                        FOR LoopVar = 1 TO AlienGridCol
+                            #Mask = #Mask * 2
+                        NEXT LoopVar
                     END IF
-                NEXT LoopVar
+                    ' Kill alien in every row at this column
+                    FOR LoopVar = 0 TO ALIEN_ROWS - 1
+                        IF #AlienRow(LoopVar) AND #Mask THEN
+                            #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
+                            ChainCount = ChainCount + 1
+                            IF ChainCount > 5 THEN ChainCount = 5
+                            #Score = #Score + ChainCount * 10
+                            #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
+                            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                        END IF
+                    NEXT LoopVar
+                    ExplosionTimer = 15
+                END IF
+            END IF
+        END IF
+    NEXT HitRow
+    ' Kill saucer if beam overlaps it (beam = 16px from MegaBeamCol*8)
+    IF FlyState > 0 THEN
+        #ScreenPos = MegaBeamCol * 8
+        ' Saucer spans FlyX to FlyX+15, beam spans #ScreenPos to #ScreenPos+15
+        IF #ScreenPos + 15 >= FlyX THEN
+            IF #ScreenPos <= FlyX + 15 THEN
+                ' Destroy saucer
+                FlyState = 0
+                #FlyPhase = 0
+                #FlyLoopCount = RANDOM(360) + 180
+                DEFINE GRAM_SAUCER, 1, SaucerGfx
+                SPRITE SPR_SAUCER, 0, 0, 0
+                SPRITE SPR_SAUCER2, 0, 0, 0
+                SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+                SOUND 2, 150, 15
+                #Score = #Score + 100
+                ' Drop power-up from saucer position
+                TitleFrame = 1
+                TitleMarchDir = FlyX
+                PowerUpY = FlyY
+                SlidePos = 0
+                #ExplosionPos = FlyX / 8
                 ExplosionTimer = 15
+                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
             END IF
         END IF
     END IF
@@ -1979,13 +2029,12 @@ MegaBeamKill: PROCEDURE
 END
 
 ' --------------------------------------------
-' MegaBeamDraw - Draw beam column on BACKTAB (rows 0-10)
+' MegaBeamDraw - Draw beam column on BACKTAB (starts at row 8, above ship)
 ' --------------------------------------------
 MegaBeamDraw: PROCEDURE
-    FOR LoopVar = 0 TO 10
-        #ScreenPos = LoopVar * 20 + MegaBeamCol
-        PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + COL_WHITE + $0800
-    NEXT LoopVar
+    ' Start with just the beam origin row (row 8, above ship turret)
+    #ScreenPos = 8 * 20 + MegaBeamCol
+    PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + COL_WHITE + $0800
     RETURN
 END
 
@@ -1993,7 +2042,7 @@ END
 ' MegaBeamClear - Clear beam column from BACKTAB
 ' --------------------------------------------
 MegaBeamClear: PROCEDURE
-    FOR LoopVar = 0 TO 10
+    FOR LoopVar = 0 TO 8
         #ScreenPos = LoopVar * 20 + MegaBeamCol
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
@@ -2115,17 +2164,22 @@ END
 ' --------------------------------------------
 DrawAliens: PROCEDURE
     ' Clear ALL rows above current alien position (handles multiple drops)
+    ' Cap at row 10 to protect HUD on row 11
     IF AlienOffsetY > 0 THEN
         FOR ClearRow = 0 TO AlienOffsetY - 1
-            #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
-            FOR Col = 0 TO 19
-                PRINT AT #ScreenPos + Col, 0
-            NEXT Col
+            IF ALIEN_START_Y + ClearRow < 11 THEN
+                #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
+                FOR Col = 0 TO 19
+                    PRINT AT #ScreenPos + Col, 0
+                NEXT Col
+            END IF
         NEXT ClearRow
     END IF
 
     ' Draw aliens and clear trail in ONE pass (no flicker)
     FOR Row = 0 TO ALIEN_ROWS - 1
+        ' Skip if this row would land on the HUD (row 11 = positions 220+)
+        IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
         #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
 
         ' Determine which alien type for this row
@@ -2184,6 +2238,7 @@ DrawAliens: PROCEDURE
                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
             END IF
         END IF
+        END IF  ' row < 11 (protect HUD)
     NEXT Row
     RETURN
 END
