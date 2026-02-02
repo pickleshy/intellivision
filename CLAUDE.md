@@ -841,3 +841,74 @@ BACKTAB is 240 entries (positions 0-239, address $200-$2EF). `PRINT AT` with pos
 PRINT AT #ScreenPos + AlienOffsetX + Col, #Card
 ' If AlienOffsetX wrapped to 255, this writes to garbage memory
 ```
+
+### RETURN inside FOR loops is equally dangerous as GOTO
+
+The original bug documentation covers `GOTO` out of FOR loops, but `RETURN` inside a FOR loop causes the **exact same R4 stack leak**. This was found in `FindShooter` where `RETURN` was used to exit early when a shooter was found — leaking stack space on every alien shot (~1/sec), crashing the game after 1-3 minutes.
+
+```basic
+' BAD — RETURN leaks FOR state just like GOTO:
+FindShooter: PROCEDURE
+    FOR Row = 4 TO 0 STEP -1
+        IF #AlienRow(Row) AND #Mask THEN
+            ABulletActive = 1
+            RETURN               ' LEAKS! Same as GOTO out of FOR
+        END IF
+    NEXT Row
+    RETURN
+END
+
+' GOOD — sentinel variable, let loop finish:
+FindShooter: PROCEDURE
+    HitRow = 255
+    FOR Row = 4 TO 0 STEP -1
+        IF #AlienRow(Row) AND #Mask THEN
+            IF HitRow = 255 THEN HitRow = Row
+        END IF
+    NEXT Row
+    IF HitRow < 255 THEN
+        ABulletActive = 1
+    END IF
+    RETURN
+END
+```
+
+**Rule: ANY early exit from a FOR loop (GOTO, RETURN, or implicit fall-through) leaks the R4 stack. Always use a sentinel variable and let the loop run to completion.**
+
+### Unsigned underflow in collision comparisons
+
+When comparing sprite positions with subtracted offsets, 8-bit unsigned underflow can silently break collision detection:
+
+```basic
+' BAD — if ABulletX < 6, this wraps to 250+:
+IF BulletX >= ABulletX - 6 THEN  ' collision check
+
+' GOOD — guard the subtraction:
+IF ABulletX >= 6 THEN
+    IF BulletX >= ABulletX - 6 THEN  ' safe
+    END IF
+END IF
+
+' Also applies to pickup checks:
+' BAD — if PowerUpX < 12, wraps to 244+:
+IF PlayerX >= PowerUpX - 12 THEN  ' pickup range
+```
+
+**Symptom:** Collisions or pickups silently fail near the left/top edge of the screen. No crash, but gameplay events are missed. The comparison evaluates against 244-255 instead of a small negative number, so the condition is never true.
+
+### Saucer explosion position ignores Y during chase
+
+When the saucer is destroyed during a chase dive, the explosion BACKTAB position is calculated as `FlyX / 8` (column only), ignoring `FlyY`. The explosion always renders at row 0 regardless of the saucer's actual vertical position. To fix, include the row: `#ExplosionPos = (FlyY - 8) / 8 * 20 + (FlyX - 8) / 8`. Also guard against `FlyX / 8 >= 20` which wraps to the next BACKTAB row.
+
+### Collision state guards checklist
+
+Any code that sets `PlayerHit = 1` or triggers death SFX must check:
+1. `DeathTimer = 0` — player is not already dying
+2. `Invincible = 0` — player is not in post-respawn invincibility
+
+Locations to guard (in Space Intruders):
+- Alien bullet collision in `MoveAlienBullet`
+- Saucer chase body collision in `UpdateSaucer`
+- Any future collision source (e.g., alien reaching player row)
+
+**Symptom without guards:** Death explosion SFX plays and sustains during invincibility, even though the downstream `PlayerHit` check correctly ignores the hit. The SFX triggers at the collision site before the state check.

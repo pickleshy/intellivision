@@ -360,6 +360,12 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
 ' (shared by GameOver=2 and GameOver=6)
 ' ============================================
 ResetToTitle:
+    PLAY OFF
+    ' Silence all PSG channels (PLAY OFF stops ISR but leaves registers hot)
+    SOUND 0, , 0
+    SOUND 1, , 0
+    SOUND 2, , 0
+    POKE $1F8, $3F  ' Disable all tone + noise
     GameOver = 0
     Lives = STARTING_LIVES
     Level = 1
@@ -740,6 +746,11 @@ SkipPressfire:
 
     ' Check for fire button to start game
     IF CONT.BUTTON THEN
+        ' Silence any lingering PSG state before gameplay
+        SOUND 0, , 0
+        SOUND 1, , 0
+        SOUND 2, , 0
+        POKE $1F8, $3F  ' Disable all tone + noise channels
         ' Start gameplay music (slow for wave 1)
         PLAY SIMPLE
         PLAY VOLUME 12
@@ -1082,8 +1093,17 @@ GameLoop:
         IF HitRow < 255 THEN
             IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
                 GameOver = 1
-                PLAY OFF
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                ' Game-over music: intensity matches how far the player got
+                IF Level >= 5 THEN
+                    PLAY si_dnb_panic
+                ELSEIF Level >= 3 THEN
+                    PLAY si_dnb_fast
+                ELSEIF Level >= 2 THEN
+                    PLAY si_dnb_mid
+                ELSE
+                    PLAY si_dnb_slow
+                END IF
                 ShakeTimer = 40  ' Big shake on invasion!
                 IF #Score > #HighScore THEN #HighScore = #Score
                 PRINT AT 45, "INVASION!"
@@ -1097,6 +1117,11 @@ GameLoop:
                 END IF
                 PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
                 SPRITE SPR_PLAYER, 0, 0, 0
+                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+                ' Clear HUD row (score/lives already shown above)
+                FOR LoopVar = 220 TO 239
+                    PRINT AT LoopVar, 0
+                NEXT LoopVar
             END IF
         END IF
     END IF
@@ -1212,8 +1237,17 @@ GameLoop:
                 GameOver = 4
             ELSEIF GameOver = 4 THEN
                 ' Alien crawl done — fancy Game Over screen
-                PLAY OFF
                 SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                ' Game-over music: intensity matches how far the player got
+                IF Level >= 5 THEN
+                    PLAY si_dnb_panic
+                ELSEIF Level >= 3 THEN
+                    PLAY si_dnb_fast
+                ELSEIF Level >= 2 THEN
+                    PLAY si_dnb_mid
+                ELSE
+                    PLAY si_dnb_slow
+                END IF
                 ShakeTimer = 0
                 SCROLL 0, 0
                 CLS
@@ -1260,6 +1294,7 @@ GameLoop:
                 LoopVar = PAT_DIAMOND
                 GOSUB FlightStart
                 GameOver = 5
+                GOTO GameLoop
             ELSE
                 ' Normal respawn at center with invincibility
                 PlayerX = 80
@@ -1751,17 +1786,20 @@ FindShooter: PROCEDURE
     END IF
 
     ' Search from bottom row up for an alive alien
+    ' NOTE: Must NOT use RETURN/GOTO to exit FOR loop (R4 stack leak)
+    HitRow = 255
     FOR Row = ALIEN_ROWS - 1 TO 0 STEP -1
         IF #AlienRow(Row) AND #Mask THEN
-            ' Found an alien - fire from its position
-            ' Calculate pixel position: card position * 8 + offset for center
-            ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 3
-            ABulletY = (ALIEN_START_Y + AlienOffsetY + Row) * 8 + 8
-            ABulletActive = 1
-            RETURN
+            IF HitRow = 255 THEN HitRow = Row
         END IF
     NEXT Row
-    ' No alien in this column - don't shoot
+    IF HitRow < 255 THEN
+        ' Found an alien - fire from its position
+        ' Calculate pixel position: card position * 8 + offset for center
+        ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 3
+        ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 8
+        ABulletActive = 1
+    END IF
     RETURN
 END
 
@@ -1775,6 +1813,8 @@ MoveAlienBullet: PROCEDURE
     ' Wide hitbox: Y range 70-100, X range PlayerX-8 to PlayerX+16
     IF ABulletY >= 70 THEN
         IF ABulletY <= 100 THEN
+            IF DeathTimer = 0 THEN
+            IF Invincible = 0 THEN
             IF ABulletX >= PlayerX - 8 THEN
                 IF ABulletX <= PlayerX + 16 THEN
                     ' HIT! Player is hit
@@ -1787,6 +1827,8 @@ MoveAlienBullet: PROCEDURE
                     POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only (bit 5 clear)
                     RETURN
                 END IF
+            END IF
+            END IF
             END IF
         END IF
     END IF
@@ -2606,10 +2648,12 @@ UpdateSaucer: PROCEDURE
         END IF
         ' Body collision: saucer reached player altitude
         IF FlyY >= PLAYER_Y - 8 THEN
+            IF Invincible = 0 THEN
             IF FlyX >= PlayerX - 8 THEN
                 IF FlyX <= PlayerX + 16 THEN
                     PlayerHit = 1
                 END IF
+            END IF
             END IF
             ' Saucer escapes after reaching bottom (won or missed)
             FlyState = SAUCER_ESCAPE
@@ -4498,3 +4542,345 @@ si_bg_panic_loop:
   MUSIC -,   E2,  -, M2
 
   MUSIC JUMP si_bg_panic_loop
+
+
+' ============================================================
+' GAME OVER MUSIC — DnB heartbeat tracks (4 gears)
+' Heartbeat pulse + walking bass + synth stabs
+' Distinct from gameplay music (si_bg_* = amen break + acid 303)
+' ============================================================
+
+' ------------------------------------------------------------
+' Slow - "contemplative heartbeat"
+' Tempo 11 (~55 BPM) - gentle pulse for early game over
+' ------------------------------------------------------------
+si_dnb_slow:
+  DATA 11
+
+si_dnb_slow_loop:
+
+  ' --- Bar 1 (A): E3/C3 heartbeat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 2 (A): same heartbeat, add a hat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 3 (transition): melody emerges E3->G3->A3->G3 ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC A3,  A2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M2
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 4 (B): high stabs G4/D4 — gentle synth hook ---
+  MUSIC G4,  G2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC D4,  A2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+
+  MUSIC JUMP si_dnb_slow_loop
+
+
+' ------------------------------------------------------------
+' Mid - "breakbeat emerging"
+' Tempo 7 (~107 BPM) - half-time DnB feel
+' ------------------------------------------------------------
+si_dnb_mid:
+  DATA 7
+
+si_dnb_mid_loop:
+
+  ' --- Bar 1 (A): heartbeat + bass phrase + breakbeat ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   D2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+
+  ' --- Bar 2 (A): same groove ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC C3,  C2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   D2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+
+  ' --- Bar 3 (transition): melody walks E3->G3->A3->B3, builds to hook ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC G3,  G2,  -, -
+  MUSIC S,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC A3,  A2,  -, M1
+  MUSIC S,   S,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC B3,  B2,  -, -
+  MUSIC S,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+
+  ' --- Bar 4 (B): high stabs G4/E4 over walking bass — synth hook ---
+  MUSIC G4X, G2,  -, M1
+  MUSIC -,   S,   -, -
+  MUSIC E4X, -,   -, M3
+  MUSIC -,   A2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC G4X, -,   -, M3
+  MUSIC -,   G2,  -, -
+  MUSIC -,   S,   -, M3
+  MUSIC D4X, B2,  -, M1
+  MUSIC -,   S,   -, -
+  MUSIC E4X, -,   -, M3
+  MUSIC -,   A2,  -, -
+  MUSIC -,   S,   -, M2
+  MUSIC G4X, -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+
+  MUSIC JUMP si_dnb_mid_loop
+
+
+' ------------------------------------------------------------
+' Fast - "full DnB"
+' Tempo 5 (~180 BPM) - classic DnB territory
+' ------------------------------------------------------------
+si_dnb_fast:
+  DATA 5
+
+si_dnb_fast_loop:
+
+  ' --- Bar 1 (A): full amen groove ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,   -, M3
+  MUSIC C3X, C2,  -, -
+  MUSIC -,   S,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   D2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 2 (A): same groove ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,   -, M3
+  MUSIC C3X, C2,  -, -
+  MUSIC -,   S,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   D2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 3 (transition): rising riff E3->G3->A3->B3, drum fill out ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC G3X, -,   -, -
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC A3X, E2,  -, -
+  MUSIC -,   S,   -, M3
+  MUSIC -,   C2,  -, -
+  MUSIC B3X, S,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC A3X, D2,  -, M3
+  MUSIC -,   S,   -, M2
+  MUSIC B3X, -,   -, M2
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 4 (B): piercing stabs G4/E5 — synth riff over breakdown ---
+  MUSIC G4X, G2,  -, -
+  MUSIC -,   S,   -, -
+  MUSIC E5X, A2,  -, M3
+  MUSIC -,   S,   -, -
+  MUSIC D4X, B2,  -, -
+  MUSIC -,   S,   -, -
+  MUSIC E5X, A2,  -, M3
+  MUSIC -,   S,   -, -
+  MUSIC G4X, G2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC E5X, -,   -, M2
+  MUSIC -,   A2,  -, M3
+  MUSIC D4X, S,   -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC G4X, E2,  -, M2
+  MUSIC -,   -,   -, M2
+
+  MUSIC JUMP si_dnb_fast_loop
+
+
+' ------------------------------------------------------------
+' Panic - "final descent"
+' Tempo 4 (~225 BPM) - frantic, relentless
+' ------------------------------------------------------------
+si_dnb_panic:
+  DATA 4
+
+si_dnb_panic_loop:
+
+  ' --- Bar 1 (A): driving amen ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC C3X, C2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   D2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 2 (A): same ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC C3X, C2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC -,   D2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   S,   -, M3
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 3 (transition): frantic rising E3->G3->A3->B3, snare roll ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   S,   -, M3
+  MUSIC G3X, G2,  -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC A3X, E2,  -, M2
+  MUSIC -,   S,   -, M3
+  MUSIC B3X, G2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC A3X, C2,  -, M1
+  MUSIC B3X, S,   -, M3
+  MUSIC A3X, D2,  -, M1
+  MUSIC B3X, -,   -, M3
+  MUSIC -,   E2,  -, M2
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M2
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 4 (B): frantic arpeggios G4/E5/G5 — synth panic ---
+  MUSIC G4X, G2,  -, M1
+  MUSIC E5X, S,   -, M3
+  MUSIC G5X, A2,  -, M3
+  MUSIC E5X, -,   -, M3
+  MUSIC D4X, B2,  -, M2
+  MUSIC E5X, S,   -, M3
+  MUSIC G5X, C3,  -, M1
+  MUSIC E5X, S,   -, M3
+  MUSIC G4X, B2,  -, M1
+  MUSIC E5X, S,   -, M3
+  MUSIC G5X, A2,  -, M1
+  MUSIC E5X, -,   -, M3
+  MUSIC D4X, G2,  -, M2
+  MUSIC G4X, S,   -, M3
+  MUSIC E5X, E2,  -, M1
+  MUSIC G5X, -,   -, M2
+
+  MUSIC JUMP si_dnb_panic_loop
