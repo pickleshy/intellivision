@@ -65,6 +65,7 @@ CONST GRAM_SAUCER_F3 = 43      ' Saucer frame 3 (middle window lit)
 CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
 CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
+CONST GRAM_QUAD    = 47         ' Quad laser (4 thin vertical lines)
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -216,11 +217,8 @@ PowerUpY    = 0                 ' Power-up capsule Y position (separate from sau
 SfxVolume   = 0                 ' Current decay volume (0 = silent)
 SfxType     = 0                 ' 0=none, 1=alien explode, 2=saucer explode, 3=player death
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
-' Dual laser variables
-Bullet2X    = 0                 ' Second bullet X position
-Bullet2Y    = 0                 ' Second bullet Y position
-Bullet2Active = 0               ' 1 = bullet 2 flying
-#DualTimer  = 0                 ' Dual laser countdown (300 frames = 5 sec, 0 = normal)
+' Quad laser variables
+#DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #NextLife   = 1000              ' Score threshold for next extra life
 #MegaTimer  = 0                 ' Mega beam countdown (300 frames = 5 sec, 0 = normal)
@@ -336,6 +334,8 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     WAIT
     DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
     WAIT
+    DEFINE GRAM_QUAD, 1, QuadGfx
+    WAIT
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
     ' Grey/White flash
@@ -363,7 +363,6 @@ ResetToTitle:
     AlienDir = 1
     MarchCount = 0
     BulletActive = 0
-    Bullet2Active = 0
     ABulletActive = 0
     #DualTimer = 0
     #MegaTimer = 0
@@ -731,10 +730,10 @@ SkipPressfire:
 
     ' Check for fire button to start game
     IF CONT.BUTTON THEN
-        ' Start gameplay music (mid tempo default)
+        ' Start gameplay music (slow for wave 1)
         PLAY SIMPLE
         PLAY VOLUME 12
-        PLAY si_dnb_mid
+        PLAY si_bg_slow
         SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
         GOTO StartGame
     END IF
@@ -876,7 +875,6 @@ StartGame:
     #DualTimer = 0  ' No dual laser
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
-    Bullet2Active = 0
     TitleFrame = 0  ' No power-up drop
     TitleColor = 0  ' First drop is beam
     TitleJitter = 0 ' No fire cooldown
@@ -1096,9 +1094,6 @@ GameLoop:
     IF BulletActive THEN
         GOSUB MoveBullet
     END IF
-    IF Bullet2Active THEN
-        GOSUB MoveBullet2
-    END IF
 
     ' Alien shooting logic
     GOSUB AlienShoot
@@ -1156,23 +1151,6 @@ GameLoop:
         END IF
     END IF
 
-    ' Check bullet 2 vs alien bullet collision
-    IF Bullet2Active THEN
-        IF ABulletActive THEN
-            IF Bullet2X >= ABulletX - 6 THEN
-                IF Bullet2X <= ABulletX + 6 THEN
-                    IF Bullet2Y >= ABulletY - 8 THEN
-                        IF Bullet2Y <= ABulletY + 8 THEN
-                            Bullet2Active = 0
-                            ABulletActive = 0
-                            #Score = #Score + 5
-                        END IF
-                    END IF
-                END IF
-            END IF
-        END IF
-    END IF
-
     ' Check if player was hit (only if not already dying or invincible)
     IF PlayerHit THEN
         IF DeathTimer = 0 THEN
@@ -1189,6 +1167,9 @@ GameLoop:
                 IF Lives = 1 THEN
                     PRINT AT 237 COLOR COL_WHITE, "X0"
                 END IF
+                ' Lose all power-ups on death (mega laser too)
+                #BeamTimer = 0 : #RapidTimer = 0
+                #DualTimer = 0 : #MegaTimer = 0
                 IF Lives = 0 THEN
                     ' Pre-game-over: play death explosion, then aliens crawl
                     GameOver = 3
@@ -1286,15 +1267,8 @@ GameLoop:
     GOSUB CheckWaveWin
 
     ' Tick down power-up timers
-    IF #BeamTimer > 0 THEN
-        #BeamTimer = #BeamTimer - 1
-    END IF
-    IF #RapidTimer > 0 THEN
-        #RapidTimer = #RapidTimer - 1
-    END IF
-    IF #DualTimer > 0 THEN
-        #DualTimer = #DualTimer - 1
-    END IF
+    ' Beam, Rapid, Dual persist until death (no countdown)
+    ' Only MegaTimer counts down (5-second window)
     IF TitleJitter > 0 THEN
         TitleJitter = TitleJitter - 1
     END IF
@@ -1342,7 +1316,6 @@ GameLoop:
     ' Update sprites
     GOSUB DrawPlayer
     GOSUB DrawBullet
-    GOSUB DrawBullet2
     GOSUB DrawAlienBullet
 
     ' Update score display
@@ -1410,14 +1383,11 @@ MovePlayer: PROCEDURE
                 POKE $1F8, PEEK($1F8) AND $DF
             END IF
         ELSEIF #DualTimer > 0 THEN
-            ' Dual laser: fire pair when either slot is free
-            IF BulletActive = 0 OR Bullet2Active = 0 THEN
-                BulletX = PlayerX        ' Left side of ship
+            ' Quad laser: single center bullet with wide hitbox
+            IF BulletActive = 0 THEN
+                BulletX = PlayerX + 3  ' Center of ship
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
-                Bullet2X = PlayerX + 6   ' Right side of ship
-                Bullet2Y = PLAYER_Y - 4
-                Bullet2Active = 1
             END IF
         ELSE
             ' Normal/beam/rapid: single center shot
@@ -1451,7 +1421,7 @@ MoveBullet: PROCEDURE
             ChainCount = 0   ' Missed — break chain
         END IF
     ELSEIF #DualTimer > 0 THEN
-        ' Dual laser: flat 2px/frame (matches bullet 2)
+        ' Quad laser: flat 2px/frame
         IF BulletY > BULLET_TOP + 2 THEN
             BulletY = BulletY - 2
         ELSE
@@ -1529,6 +1499,29 @@ CheckRowForHit: PROCEDURE
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
+            ELSEIF #DualTimer > 0 THEN
+                ' Quad laser: 4 spread columns (~24px wide kill zone)
+                IF BulletX >= 16 THEN
+                    HitCol = (BulletX - 16) / 8
+                    GOSUB CheckOneColumn
+                END IF
+
+                IF BulletActive THEN
+                    IF BulletX >= 10 THEN
+                        HitCol = (BulletX - 10) / 8
+                        GOSUB CheckOneColumn
+                    END IF
+                END IF
+
+                IF BulletActive THEN
+                    HitCol = (BulletX - 4) / 8
+                    GOSUB CheckOneColumn
+                END IF
+
+                IF BulletActive THEN
+                    HitCol = (BulletX + 2) / 8
+                    GOSUB CheckOneColumn
+                END IF
             ELSE
                 ' Normal bullet: subtract 8 for sprite-to-BACKTAB offset
                 IF BulletX >= 9 THEN
@@ -1594,6 +1587,10 @@ CheckOneColumn: PROCEDURE
                 SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
                 SOUND 2, 200, 12  ' Immediate tone hit on channel 3
 
+                ' Clear previous explosion tile if still active
+                IF ExplosionTimer > 0 THEN
+                    IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                END IF
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
                 ExplosionTimer = 15  ' Show for 15 frames (~250ms total)
@@ -1681,6 +1678,9 @@ DrawBullet: PROCEDURE
             ELSE
                 SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
             END IF
+        ELSEIF #DualTimer > 0 THEN
+            ' Quad laser mode: 4-line pattern sprite
+            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + LaserColor + $0800
         ELSE
             SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + LaserColor + $0800
         END IF
@@ -1839,52 +1839,6 @@ MarchAliens: PROCEDURE
 END
 
 ' --------------------------------------------
-' MoveBullet2 - Move second bullet and check collisions via swap
-' --------------------------------------------
-MoveBullet2: PROCEDURE
-    ' Move up at 2px/frame (dual laser is a power-up, should feel fast)
-    IF Bullet2Y > BULLET_TOP + 2 THEN
-        Bullet2Y = Bullet2Y - 2
-    ELSE
-        Bullet2Active = 0
-        ChainCount = 0   ' Missed — break chain
-    END IF
-
-    ' Check collision with aliens via swap
-    IF Bullet2Active THEN
-        ' Save bullet 1 state into unused title-screen vars
-        FlyFrame = BulletX
-        #FlyLoopCount = BulletY
-        FlyColorTimer = BulletActive
-        ' Swap bullet 2 into globals
-        BulletX = Bullet2X
-        BulletY = Bullet2Y
-        BulletActive = Bullet2Active
-        GOSUB CheckBulletHit
-        ' Copy results back to bullet 2
-        Bullet2Active = BulletActive
-        ' Restore bullet 1
-        BulletX = FlyFrame
-        BulletY = #FlyLoopCount
-        BulletActive = FlyColorTimer
-    END IF
-    RETURN
-END
-
-' --------------------------------------------
-' DrawBullet2 - Draw second bullet on SPR_FLYER
-' (must be called AFTER DrawBullet so LaserColor is set)
-' --------------------------------------------
-DrawBullet2: PROCEDURE
-    IF Bullet2Active THEN
-        SPRITE SPR_FLYER, Bullet2X + $0200, Bullet2Y, GRAM_BULLET * 8 + LaserColor + $0800
-    ELSE
-        SPRITE SPR_FLYER, 0, 0, 0
-    END IF
-    RETURN
-END
-
-' --------------------------------------------
 ' UpdateSfx - Noise channel explosion with attack-decay
 ' --------------------------------------------
 UpdateSfx: PROCEDURE
@@ -2019,6 +1973,10 @@ MegaBeamKill: PROCEDURE
                 TitleMarchDir = FlyX
                 PowerUpY = FlyY
                 SlidePos = 0
+                ' Clear previous explosion tile if still active
+                IF ExplosionTimer > 0 THEN
+                    IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                END IF
                 #ExplosionPos = FlyX / 8
                 ExplosionTimer = 15
                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -2101,17 +2059,17 @@ UpdatePowerUp: PROCEDURE
             IF PlayerX <= TitleMarchDir + 12 THEN
                 ' Picked up! Activate power-up based on type
                 IF TitleColor = 0 THEN
-                    #BeamTimer = 300
+                    #BeamTimer = 1
                     #RapidTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF TitleColor = 1 THEN
-                    #RapidTimer = 300
+                    #RapidTimer = 1
                     #BeamTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF TitleColor = 2 THEN
-                    #DualTimer = 300
+                    #DualTimer = 1
                     #BeamTimer = 0 : #RapidTimer = 0 : #MegaTimer = 0
-                    IF VOICE.AVAILABLE THEN VOICE PLAY dual_phrase
+                    IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
                 ELSE
                     #MegaTimer = 300
                     #BeamTimer = 0 : #RapidTimer = 0 : #DualTimer = 0
@@ -2259,7 +2217,6 @@ LoadPatternB: PROCEDURE
 
     ' Clear active bullets and sprites
     BulletActive = 0
-    Bullet2Active = 0
     ABulletActive = 0
     MegaBeamTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -2306,15 +2263,15 @@ LoadPatternB: PROCEDURE
 
     ' Visual/audio cue: "ALERT!" flash
     PRINT AT 108 COLOR COL_RED, "ALERT!"
-    SOUND 0, 200, 12
+    SOUND 2, 200, 12
     FOR LoopVar = 0 TO 20
         WAIT
     NEXT LoopVar
-    SOUND 0, 100, 14
+    SOUND 2, 100, 14
     FOR LoopVar = 0 TO 15
         WAIT
     NEXT LoopVar
-    SOUND 0, , 0
+    SOUND 2, , 0
 
     ' Flash-off
     FOR LoopVar = 0 TO 5
@@ -2367,11 +2324,15 @@ StartNewWave: PROCEDURE
     ' Increment level
     Level = Level + 1
 
-    ' Switch music gear based on difficulty (already in PLAY SIMPLE from StartGame)
-    IF Level = 3 THEN
-        PLAY si_dnb_fast
-    ELSEIF Level = 5 THEN
-        PLAY si_dnb_panic
+    ' Switch music gear based on wave level
+    IF Level >= 5 THEN
+        PLAY si_bg_panic
+    ELSEIF Level >= 3 THEN
+        PLAY si_bg_fast
+    ELSEIF Level >= 2 THEN
+        PLAY si_bg_mid
+    ELSE
+        PLAY si_bg_slow
     END IF
 
     ' Speed up aliens (reduce march delay)
@@ -2392,11 +2353,9 @@ StartNewWave: PROCEDURE
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
 
-    ' Clear any active bullets
+    ' Clear any active bullets (power-ups persist until death)
     BulletActive = 0
-    Bullet2Active = 0
     ABulletActive = 0
-    #DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -2408,7 +2367,6 @@ StartNewWave: PROCEDURE
     FlyState = 0
     #FlyPhase = 0
     TitleFrame = 0
-    #RapidTimer = 0
     TitleJitter = 0
     WaveRevealCol = 0             ' Start column sweep from left
     SubWave = 0
@@ -2482,8 +2440,8 @@ beam_phrase:
 rapid_phrase:
     VOICE RR1, AA, PP, IH, DD2, PA1, FF, AY, ER1, PA1, 0
 
-dual_phrase:
-    VOICE DD2, AX, BB1, AX, LL, PA1, LL, EY, ZZ, ER1, PA1, 0
+quad_phrase:
+    VOICE KK2, WW, AO, DD1, PA1, LL, EY, ZZ, ER1, ZZ, PA1, 0
 
 mega_phrase:
     VOICE MM, EH, GG2, AX, PA1, BB1, IY, MM, PA1, 0
@@ -2685,6 +2643,10 @@ SaucerAnimate:
                         TitleMarchDir = FlyX        ' Drop from saucer X
                         PowerUpY = FlyY      ' Start falling from saucer Y
                         SlidePos = 0
+                        ' Clear previous explosion tile if still active
+                        IF ExplosionTimer > 0 THEN
+                            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                        END IF
                         ' Show explosion at saucer position using BACKTAB
                         #ExplosionPos = FlyX / 8
                         ExplosionTimer = 15
@@ -2695,35 +2657,6 @@ SaucerAnimate:
         END IF
     END IF
 
-    ' Check collision with bullet 2 (Y range follows saucer position)
-    IF Bullet2Active THEN
-        IF Bullet2Y + 6 >= FlyY THEN
-            IF Bullet2Y <= FlyY + 6 THEN
-                IF Bullet2X >= FlyX - 4 THEN
-                    IF Bullet2X <= FlyX + 16 THEN
-                        ' HIT the saucer with bullet 2!
-                        Bullet2Active = 0
-                        FlyState = 0
-                        #FlyPhase = 0
-                        #FlyLoopCount = RANDOM(360) + 180
-                        DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
-                        SPRITE SPR_SAUCER, 0, 0, 0
-                        SPRITE SPR_SAUCER2, 0, 0, 0
-                        SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-                        SOUND 2, 150, 15  ' Immediate tone hit on channel 3
-                        #Score = #Score + 100
-                        TitleFrame = 1
-                        TitleMarchDir = FlyX
-                        PowerUpY = FlyY
-                        SlidePos = 0
-                        #ExplosionPos = FlyX / 8
-                        ExplosionTimer = 15
-                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
-                    END IF
-                END IF
-            END IF
-        END IF
-    END IF
     RETURN
 END
 
@@ -3475,6 +3408,17 @@ MegaBeamGfx:
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
 
+' Quad laser (4 thin lines spread across 8px)
+QuadGfx:
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:
     BITMAP "........"
@@ -3804,255 +3748,644 @@ si_loop:
   MUSIC JUMP si_loop
 
 ' ============================================================
-' DNB GAMEPLAY MUSIC (PLAY SIMPLE format: ch1, ch2, drums)
-' Channel 3 free for SFX via SOUND 2
-' Tempo: 11=slow, 7=mid, 5=fast, 4=panic
+' 8-BAR LOOP: AMEN BREAK → ACID 303
+'
+' Source: "Amen, Brother" by The Winstons (1969)
+'         + TB-303 acid bass line style (Phuture, Hardfloor)
+'
+' Bars 1-2: Amen drums + sub-bass (groove foundation)
+' Bar 3:    Hook enters — rising E3->G3->A3
+' Bar 4:    Hook resolves — G3->E3
+' Bars 5-7: Acid section — 303 riff on ch1, four-on-floor drums
+' Bar 8:    Strip-back — riff drops, turnaround to amen
+'
+' Ch1 = hook (bars 3-4) / 303 acid riff (bars 5-7)
+' Ch2 = sub-bass (E2 locked with kicks)
+' Drums = amen (bars 1-4), four-on-floor + hats (bars 5-8)
+' PLAY SIMPLE: Channel 3 free for SFX via SOUND 2
 ' ============================================================
 
+    SEGMENT 2   ' Gameplay music in Segment 2 (Seg 1 too full)
+
 ' ------------------------------------------------------------
-' Mid - "breakbeat emerging" (~107 BPM)
+' Slow - "invaders far away"
+' Tempo 11 (~55 BPM) - sparse, deliberate
 ' ------------------------------------------------------------
-si_dnb_mid:
+si_bg_slow:
+  DATA 11
+
+si_bg_slow_loop:
+
+  ' --- Bar 1: drums + bass only ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 2: drums + bass, snare enters ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 3: hook enters — E3...G3...A3 ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M3
+  MUSIC S,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC A3,  A2,  -, M1
+  MUSIC S,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 4: hook resolves — G3...E3, turnaround ---
+  MUSIC G3,  G2,  -, M1
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC E3,  E2,  -, -
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+
+  ' --- Bar 5: acid intro — sparse E3 stabs, four-on-floor ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC G3X, -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 6: acid develops — D4 enters ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC D4X, -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC G3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 7: acid peak — full 303 sequence ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC G3X, -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC D4X, -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, -
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, -
+  MUSIC E3X, -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+
+  ' --- Bar 8: strip-back — riff drops, turnaround ---
+  MUSIC E3,  E2,  -, M1
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+
+  MUSIC JUMP si_bg_slow_loop
+
+
+' ------------------------------------------------------------
+' Mid - "breakbeat emerging" — MAIN GAMEPLAY THEME
+' Tempo 7 (~107 BPM) - classic amen groove
+' ------------------------------------------------------------
+si_bg_mid:
   DATA 7
 
-si_dnb_mid_loop:
+si_bg_mid_loop:
 
-  ' --- Bar 1 (A): heartbeat + bass phrase + breakbeat ---
+  ' --- Bar 1: amen + bass (no melody) ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 2: same (groove locks) ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 3: hook enters — E3...G3...A3 rising ---
   MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   G2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
+  MUSIC S,   -,   -, -
   MUSIC -,   E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   D2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC G3,  G2,  -, M3
+  MUSIC S,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC A3,  A2,  -, M1
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
 
-  ' --- Bar 2 (A): same groove ---
+  ' --- Bar 4: hook resolves — G3...E3, turnaround ---
+  MUSIC G3,  G2,  -, M1
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC E3,  E2,  -, M2
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   E2,  -, M1
+
+  ' --- Bar 5: acid intro — 303 enters, four-on-floor kicks ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+
+  ' --- Bar 6: acid develops — D4 tension ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC E3X, -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E4X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+
+  ' --- Bar 7: acid peak — full 303 riff, insistent ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC G3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC G3X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E3X, E2,  -, M1
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E4X, -,   -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+
+  ' --- Bar 8: strip-back — riff drops out, turnaround to amen ---
   MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   G2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
+  MUSIC S,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   E2,  -, -
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
   MUSIC -,   E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   D2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   -,  -,  M3
 
-  ' --- Bar 3 (A): groove with snare fill ---
-  MUSIC E3,  E2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   G2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC C3,  C2,  -, M1
-  MUSIC S,   S,  -,  -
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   D2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   -,  -,  M2
-  MUSIC -,   -,  -,  M3
-
-  ' --- Bar 4 (B): G4/E4 stabs over walking bass ---
-  MUSIC G4X, G2,  -, M1
-  MUSIC -,   S,  -,  -
-  MUSIC E4X, -,  -,  M3
-  MUSIC -,   A2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC G4X, -,  -,  M3
-  MUSIC -,   G2,  -, -
-  MUSIC -,   S,  -,  M3
-  MUSIC D4X, B2,  -, M1
-  MUSIC -,   S,  -,  -
-  MUSIC E4X, -,  -,  M3
-  MUSIC -,   A2,  -, -
-  MUSIC -,   S,  -,  M2
-  MUSIC G4X, -,  -,  M3
-  MUSIC -,   E2,  -, M1
-  MUSIC -,   -,  -,  M3
-
-  MUSIC JUMP si_dnb_mid_loop
+  MUSIC JUMP si_bg_mid_loop
 
 
 ' ------------------------------------------------------------
-' Fast - "full DnB" (~180 BPM)
+' Fast - "full DnB"
+' Tempo 5 (~180 BPM) - amen + hat ride
 ' ------------------------------------------------------------
-si_dnb_fast:
+si_bg_fast:
   DATA 5
 
-si_dnb_fast_loop:
+si_bg_fast_loop:
 
-  ' --- Bar 1 (A): full amen groove ---
-  MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, -
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  M1
-  MUSIC -,   D2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,  -,  M2
-
-  ' --- Bar 2 (A): same groove ---
-  MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, -
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  M1
-  MUSIC -,   D2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,  -,  M2
-
-  ' --- Bar 3 (A): groove with drum fill ---
-  MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  -
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, -
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, -
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   -,  -,  M1
-  MUSIC -,   D2,  -, M3
-  MUSIC -,   S,  -,  M2
-  MUSIC -,   -,  -,  M2
+  ' --- Bar 1: amen + bass + hat ride (no melody) ---
   MUSIC -,   E2,  -, M1
-  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
 
-  ' --- Bar 4 (B): G4/E5 piercing stabs ---
-  MUSIC G4X, G2,  -, -
-  MUSIC -,   S,  -,  -
-  MUSIC E5X, A2,  -, M3
-  MUSIC -,   S,  -,  -
-  MUSIC D4X, B2,  -, -
-  MUSIC -,   S,  -,  -
-  MUSIC E5X, A2,  -, M3
-  MUSIC -,   S,  -,  -
-  MUSIC G4X, G2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC E5X, -,  -,  M2
-  MUSIC -,   A2,  -, M3
-  MUSIC D4X, S,  -,  M1
-  MUSIC -,   -,  -,  M3
-  MUSIC G4X, E2,  -, M2
-  MUSIC -,   -,  -,  M2
+  ' --- Bar 2: same ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
 
-  MUSIC JUMP si_dnb_fast_loop
+  ' --- Bar 3: hook — E3X...G3X...A3X staccato ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC G3X, G2,  -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC A3X, A2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+
+  ' --- Bar 4: hook resolves — G3X...E3X, breakdown ---
+  MUSIC G3X, G2,  -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 5: acid — 303 rapid fire, four-on-floor ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, E2,  -, M1
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+
+  ' --- Bar 6: acid — D4 and E4 octave jump ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E4X, -,   -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, E2,  -, M1
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M2
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+
+  ' --- Bar 7: acid peak — relentless 303 ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC G3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M2
+  MUSIC G3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E4X, E2,  -, M1
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M2
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+
+  ' --- Bar 8: strip-back — riff dies, turnaround ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, -
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   E2,  -, M1
+
+  MUSIC JUMP si_bg_fast_loop
 
 
 ' ------------------------------------------------------------
-' Panic - "final descent" (~225 BPM)
+' Panic - "final descent"
+' Tempo 4 (~225 BPM) - relentless
 ' ------------------------------------------------------------
-si_dnb_panic:
+si_bg_panic:
   DATA 4
 
-si_dnb_panic_loop:
+si_bg_panic_loop:
 
-  ' --- Bar 1 (A): driving amen ---
+  ' --- Bar 1: amen + bass, no melody ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 2: same ---
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   G2,  -, M1
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+
+  ' --- Bar 3: urgent hook — E3X...A3X...B3X ---
   MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   D2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M1
-  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC A3X, A2,  -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M2
+  MUSIC B3X, B2,  -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M2
 
-  ' --- Bar 2 (A): same ---
+  ' --- Bar 4: hook crashes down — A3X...E3X, chaos ---
+  MUSIC A3X, A2,  -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
   MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   D2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M1
-  MUSIC -,   -,  -,  M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
 
-  ' --- Bar 3 (A): with snare roll fill ---
+  ' --- Bar 5: acid frenzy — every 16th is a note ---
   MUSIC E3X, E2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M3
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   G2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC C3X, C2,  -, M1
-  MUSIC -,   S,  -,  M3
-  MUSIC -,   D2,  -, M1
-  MUSIC -,   -,  -,  M3
-  MUSIC -,   E2,  -, M2
-  MUSIC -,   -,  -,  M2
-  MUSIC -,   G2,  -, M2
-  MUSIC -,   -,  -,  M2
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, E2,  -, M1
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E4X, -,   -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, M3
 
-  ' --- Bar 4 (B): G4/E5/G5 frantic arpeggios ---
-  MUSIC G4X, G2,  -, M1
-  MUSIC E5X, S,  -,  M3
-  MUSIC G5X, A2,  -, M3
-  MUSIC E5X, -,  -,  M3
-  MUSIC D4X, B2,  -, M2
-  MUSIC E5X, S,  -,  M3
-  MUSIC G5X, C3,  -, M1
-  MUSIC E5X, S,  -,  M3
-  MUSIC G4X, B2,  -, M1
-  MUSIC E5X, S,  -,  M3
-  MUSIC G5X, A2,  -, M1
-  MUSIC E5X, -,  -,  M3
-  MUSIC D4X, G2,  -, M2
-  MUSIC G4X, S,  -,  M3
-  MUSIC E5X, E2,  -, M1
-  MUSIC G5X, -,  -,  M2
+  ' --- Bar 6: acid chaos — octave jumps, chromatic ---
+  MUSIC E4X, E2,  -, M1
+  MUSIC E3X, -,   -, M3
+  MUSIC D4X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC G3X, -,   -, M2
+  MUSIC D4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC D4X, E2,  -, M1
+  MUSIC E3X, -,   -, M3
+  MUSIC G3X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M2
+  MUSIC D4X, -,   -, M3
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M3
 
-  MUSIC JUMP si_dnb_panic_loop
+  ' --- Bar 7: acid maximum — unrelenting 303 ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC G3X, -,   -, M3
+  MUSIC D4X, -,   -, M1
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M2
+  MUSIC D4X, -,   -, M3
+  MUSIC G3X, -,   -, M1
+  MUSIC E4X, -,   -, M3
+  MUSIC D4X, E2,  -, M2
+  MUSIC E3X, -,   -, M3
+  MUSIC E4X, -,   -, M1
+  MUSIC G3X, -,   -, M3
+  MUSIC D4X, -,   -, M2
+  MUSIC E4X, -,   -, M3
+  MUSIC E3X, -,   -, M1
+  MUSIC G3X, -,   -, M3
+
+  ' --- Bar 8: strip-back — acid dies, turnaround ---
+  MUSIC E3X, E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   E2,  -, M1
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M3
+  MUSIC -,   -,   -, M1
+  MUSIC -,   -,   -, M2
+  MUSIC -,   -,   -, M1
+  MUSIC -,   E2,  -, M2
+
+  MUSIC JUMP si_bg_panic_loop
