@@ -66,6 +66,10 @@ CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
 CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
 CONST GRAM_QUAD    = 47         ' Quad laser (4 thin vertical lines)
+CONST GRAM_CAP_F1  = 48         ' Capsule animation frame 1
+CONST GRAM_CAP_F2  = 49         ' Capsule animation frame 2
+CONST GRAM_CAP_F3  = 50         ' Capsule animation frame 3
+CONST GRAM_CAP_F4  = 51         ' Capsule animation frame 4
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -160,6 +164,8 @@ Lives       = STARTING_LIVES    ' Player lives remaining
 Level       = 1                 ' Current wave/level
 GameOver    = 0                 ' 1 = game over state
 CurrentMarchSpeed = 160         ' Current march speed (decreases per wave)
+MusicGear   = 0                 ' Current music gear (0=slow,1=mid,2=fast,3=panic)
+BaseMarchSpeed = 60             ' March speed at start of wave (before descent accel)
 #AliensAlive = 0                ' Count of remaining aliens
 HitCol      = 0                 ' Collision check - column
 HitRow      = 0                 ' Collision check - row
@@ -328,7 +334,7 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     WAIT
     DEFINE GRAM_BEAM, 1, BeamGfx
     WAIT
-    DEFINE GRAM_POWERUP, 1, PowerUpGfx
+    DEFINE GRAM_CAP_F1, 4, CapsuleF1Gfx
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx
     WAIT
@@ -854,7 +860,9 @@ StartGame:
 
     ' Initialize level and march speed
     Level = 1
+    BaseMarchSpeed = MARCH_SPEED_START
     CurrentMarchSpeed = MARCH_SPEED_START
+    MusicGear = 0
     WaveRevealCol = 0             ' Start column sweep from left
     SubWave = 0
     RevealMode = 0
@@ -1817,6 +1825,11 @@ MarchAliens: PROCEDURE
             ' Hit right edge - drop down and reverse
             AlienOffsetY = AlienOffsetY + 1
             AlienDir = 255
+            ' Accelerate march + music on descent
+            IF CurrentMarchSpeed > 8 THEN
+                CurrentMarchSpeed = CurrentMarchSpeed - 8
+            END IF
+            GOSUB UpdateMusicGear
         END IF
     ELSE
         ' Moving left
@@ -1828,13 +1841,55 @@ MarchAliens: PROCEDURE
                 ' Hit left edge - drop down and reverse
                 AlienOffsetY = AlienOffsetY + 1
                 AlienDir = 1
+                IF CurrentMarchSpeed > 8 THEN
+                    CurrentMarchSpeed = CurrentMarchSpeed - 8
+                END IF
+                GOSUB UpdateMusicGear
             END IF
         ELSE
             ' AlienOffsetX = 0: reverse (can't represent negative offset)
             AlienOffsetY = AlienOffsetY + 1
             AlienDir = 1
+            IF CurrentMarchSpeed > 8 THEN
+                CurrentMarchSpeed = CurrentMarchSpeed - 8
+            END IF
+            GOSUB UpdateMusicGear
         END IF
     END IF
+    RETURN
+END
+
+' --------------------------------------------
+' UpdateMusicGear - Switch music tempo based on alien descent
+' Called after each AlienOffsetY increment
+' --------------------------------------------
+UpdateMusicGear: PROCEDURE
+    ' Calculate target gear from descent + wave
+    IF Level >= 2 THEN
+        ' Wave 2+: start at mid, escalate faster
+        LoopVar = 1 + AlienOffsetY / 2
+    ELSE
+        ' Wave 1: start at slow, gradual buildup
+        LoopVar = AlienOffsetY / 2
+    END IF
+    IF LoopVar > 3 THEN LoopVar = 3
+
+    ' Only switch if gear changed
+    IF LoopVar = MusicGear THEN RETURN
+    MusicGear = LoopVar
+
+    ON MusicGear GOTO GearMid, GearFast, GearPanic
+    ' Gear 0 = slow (fallthrough)
+    PLAY si_bg_slow
+    RETURN
+GearMid:
+    PLAY si_bg_mid
+    RETURN
+GearFast:
+    PLAY si_bg_fast
+    RETURN
+GearPanic:
+    PLAY si_bg_panic
     RETURN
 END
 
@@ -2039,13 +2094,13 @@ UpdatePowerUp: PROCEDURE
             #PowerTimer = 300   ' 5 seconds to pick up
             SlidePos = 0
         END IF
-        ' Draw falling capsule (color flash every 4 frames)
+        ' Draw falling capsule (animated frame + color flash)
         SlidePos = SlidePos + 1
         IF SlidePos >= 8 THEN SlidePos = 0
         IF SlidePos < 4 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, GRAM_POWERUP * 8 + TitleGridCol + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
         ELSE
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, GRAM_POWERUP * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
         END IF
         RETURN
     END IF
@@ -2092,26 +2147,26 @@ UpdatePowerUp: PROCEDURE
         RETURN
     END IF
 
-    ' Draw landed capsule with flash effect
+    ' Draw landed capsule with flash effect + animated frame
     SlidePos = SlidePos + 1
     IF SlidePos >= 8 THEN SlidePos = 0
     IF #PowerTimer < 100 THEN
         ' Rapid flash in last ~1.7 seconds (every 2 frames)
         IF SlidePos < 2 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, GRAM_POWERUP * 8 + TitleGridCol + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
         ELSEIF SlidePos < 4 THEN
             SPRITE SPR_POWERUP, 0, 0, 0  ' Invisible
         ELSEIF SlidePos < 6 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, GRAM_POWERUP * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
         ELSE
             SPRITE SPR_POWERUP, 0, 0, 0  ' Invisible
         END IF
     ELSE
-        ' Normal flash (slow color cycle)
+        ' Normal flash (animated frame + color cycle)
         IF SlidePos < 4 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, GRAM_POWERUP * 8 + TitleGridCol + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
         ELSE
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, GRAM_POWERUP * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
         END IF
     END IF
     RETURN
@@ -2324,22 +2379,21 @@ StartNewWave: PROCEDURE
     ' Increment level
     Level = Level + 1
 
-    ' Switch music gear based on wave level
-    IF Level >= 5 THEN
-        PLAY si_bg_panic
-    ELSEIF Level >= 3 THEN
-        PLAY si_bg_fast
-    ELSEIF Level >= 2 THEN
+    ' Set base march speed for this wave (faster each wave)
+    IF BaseMarchSpeed > MARCH_SPEED_MIN + 10 THEN
+        BaseMarchSpeed = BaseMarchSpeed - 10
+    ELSE
+        BaseMarchSpeed = MARCH_SPEED_MIN
+    END IF
+    CurrentMarchSpeed = BaseMarchSpeed
+
+    ' Set initial music gear (descent will escalate within wave)
+    IF Level >= 2 THEN
+        MusicGear = 1
         PLAY si_bg_mid
     ELSE
+        MusicGear = 0
         PLAY si_bg_slow
-    END IF
-
-    ' Speed up aliens (reduce march delay)
-    IF CurrentMarchSpeed > MARCH_SPEED_MIN + 20 THEN
-        CurrentMarchSpeed = CurrentMarchSpeed - 20
-    ELSE
-        CurrentMarchSpeed = MARCH_SPEED_MIN
     END IF
 
     ' Reset alien positions
@@ -3386,16 +3440,46 @@ BeamGfx:
     BITMAP "..XXXX.."
     BITMAP "..XXXX.."
 
-' --- Power-Up Capsule (flashing pickup) ---
-PowerUpGfx:
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
+' --- Power-Up Capsule Frames (Arkanoid-style with scrolling band) ---
+CapsuleF1Gfx:
     BITMAP "..XXXX.."
-    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
     BITMAP ".XXXXXX."
     BITMAP "..XXXX.."
-    BITMAP "........"
+
+CapsuleF2Gfx:
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
+
+CapsuleF3Gfx:
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
+
+CapsuleF4Gfx:
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
 
 ' Mega beam solid block (fills entire card)
 MegaBeamGfx:
