@@ -501,23 +501,8 @@ TitleScreen:
     TitleMarchCount = 0    ' Frame counter for march steps
     TitleGridCol = 4       ' BACKTAB column of grid left edge
 
-    ' Display title text - row 1
-    ' Title text using custom GRAM font (green = color 5)
-    PRINT AT 22, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
-    PRINT AT 23, GRAM_FONT_P * 8 + COL_TAN + $0800  ' P
-    PRINT AT 24, GRAM_FONT_A * 8 + COL_TAN + $0800  ' A
-    PRINT AT 25, GRAM_FONT_C * 8 + COL_TAN + $0800  ' C
-    PRINT AT 26, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
-    '   position 27 = space (leave black)
-    PRINT AT 28, GRAM_FONT_I * 8 + COL_TAN + $0800  ' I
-    PRINT AT 29, GRAM_FONT_N * 8 + COL_TAN + $0800  ' N
-    PRINT AT 30, GRAM_FONT_T * 8 + COL_TAN + $0800  ' T
-    PRINT AT 31, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
-    PRINT AT 32, GRAM_FONT_U * 8 + COL_TAN + $0800  ' U
-    PRINT AT 33, GRAM_FONT_D * 8 + COL_TAN + $0800  ' D
-    PRINT AT 34, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
-    PRINT AT 35, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
-    PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
+    ' Display title text - row 1 (procedure in Segment 1 to save Seg 0 space)
+    GOSUB DrawTitleText
 
     ' Generate scrolling starfield on safe rows (3, 4, 8, 9, 11)
     StarTimer = 0
@@ -927,6 +912,27 @@ ClearEnemyState: PROCEDURE
     CaptureActive = 0 : CapBulletActive = 0
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
+    RETURN
+END
+
+' --- Draw title text "SPACE INTRUDERS" using custom GRAM font ---
+DrawTitleText: PROCEDURE
+    ' Title text using custom GRAM font (tan = color 3)
+    PRINT AT 22, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
+    PRINT AT 23, GRAM_FONT_P * 8 + COL_TAN + $0800  ' P
+    PRINT AT 24, GRAM_FONT_A * 8 + COL_TAN + $0800  ' A
+    PRINT AT 25, GRAM_FONT_C * 8 + COL_TAN + $0800  ' C
+    PRINT AT 26, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
+    '   position 27 = space (leave black)
+    PRINT AT 28, GRAM_FONT_I * 8 + COL_TAN + $0800  ' I
+    PRINT AT 29, GRAM_FONT_N * 8 + COL_TAN + $0800  ' N
+    PRINT AT 30, GRAM_FONT_T * 8 + COL_TAN + $0800  ' T
+    PRINT AT 31, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
+    PRINT AT 32, GRAM_FONT_U * 8 + COL_TAN + $0800  ' U
+    PRINT AT 33, GRAM_FONT_D * 8 + COL_TAN + $0800  ' D
+    PRINT AT 34, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
+    PRINT AT 35, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
+    PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
     RETURN
 END
 
@@ -3914,7 +3920,7 @@ UpdateSaucer: PROCEDURE
         IF DeathTimer > 0 THEN
             FlyState = SAUCER_ESCAPE
             FlySpeed = 0
-            GOTO SaucerAnimate
+            GOSUB SaucerAnimate : RETURN
         END IF
 
         ' Advance circle step every 2 frames
@@ -3941,7 +3947,7 @@ UpdateSaucer: PROCEDURE
             FlySpeed = 0
         END IF
 
-        GOTO SaucerAnimate
+        GOSUB SaucerAnimate : RETURN
     END IF
 
     ' Chase state: fight to the death — pursue until one is destroyed
@@ -3950,7 +3956,7 @@ UpdateSaucer: PROCEDURE
         IF DeathTimer > 0 THEN
             FlyState = SAUCER_ESCAPE
             FlySpeed = 0
-            GOTO SaucerAnimate
+            GOSUB SaucerAnimate : RETURN
         END IF
         ' Track player X aggressively
         IF FlyX + 4 < PlayerX THEN
@@ -3992,7 +3998,7 @@ UpdateSaucer: PROCEDURE
             FlyState = SAUCER_ESCAPE
             FlySpeed = 0
         END IF
-        GOTO SaucerAnimate
+        GOSUB SaucerAnimate : RETURN
     END IF
 
     ' Escape state: fly off diagonally (runs every frame)
@@ -4011,7 +4017,7 @@ UpdateSaucer: PROCEDURE
             GOSUB DeactivateSaucer
             RETURN
         END IF
-        GOTO SaucerAnimate
+        GOSUB SaucerAnimate : RETURN
     END IF
 
     ' Normal movement (FlyState 1 or 2)
@@ -4059,7 +4065,16 @@ UpdateSaucer: PROCEDURE
         END IF
     END IF
 
-SaucerAnimate:
+    ' Normal movement ends here - call animation and return
+    GOSUB SaucerAnimate
+    RETURN
+END
+
+' --------------------------------------------
+' SaucerAnimate - Saucer animation and bullet collision
+' Extracted from UpdateSaucer for clarity
+' --------------------------------------------
+SaucerAnimate: PROCEDURE
     ' Animate saucer: 4-frame window scan + color based on powerup type
     ' Uses pre-loaded GRAM frames (no DEFINE during gameplay for performance)
     #FlyPhase = #FlyPhase + 1
