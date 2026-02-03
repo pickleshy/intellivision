@@ -30,7 +30,6 @@ CONST GRAM_BAND1    = 9         ' Alien left half
 CONST GRAM_BAND2    = 10        ' Alien right half
 CONST GRAM_BAND1_F1 = 11        ' Alien left half - Frame 2
 CONST GRAM_BAND2_F1 = 12        ' Alien right half - Frame 2
-CONST GRAM_INV_TEST = 13        ' Inverted alien for testing
 CONST GRAM_EXPLOSION = 14       ' Explosion frame 1 (tight pop)
 CONST GRAM_EXPLOSION2 = 15      ' Explosion frame 2 (expanding scatter)
 CONST GRAM_EXPLOSION3 = 16      ' Explosion frame 3 (dissipate)
@@ -257,7 +256,7 @@ RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = n
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
 ' Sound effect variables
 SfxVolume   = 0                 ' Current decay volume (0 = silent)
-SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry
+SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=quad
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 ' Quad laser variables
 DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
@@ -355,8 +354,6 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx
     WAIT
     DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx
-    WAIT
-    DEFINE GRAM_INV_TEST, 1, InvertedAlienGfx
     WAIT
     DEFINE GRAM_EXPLOSION, 1, ExplosionGfx
     WAIT
@@ -1224,8 +1221,9 @@ GameLoop:
     HitCol = 0
     IF WaveRevealCol >= ALIEN_COLS - 1 THEN HitCol = 1
 
-    ' Update alien march (only after reveal is complete)
+    ' Update alien march (only after reveal is complete, and not during death)
     IF HitCol THEN
+    IF DeathTimer = 0 THEN
     MarchCount = MarchCount + 1
     IF MarchCount >= CurrentMarchSpeed THEN
         MarchCount = 0
@@ -1266,28 +1264,19 @@ GameLoop:
                         DeathTimer = 75
                         ShakeTimer = 30
                     ELSE
-                        ' Reset alien formation to top of screen
-                        AlienOffsetY = 0
-                        LastClearedY = 0
-                        AlienOffsetX = 0
-                        AlienDir = 1
-                        MarchCount = 0
-                        ' Death sequence with screen shake + white flash
-                        DeathTimer = 75
-                        ShakeTimer = 30
-                        ' Clear alien area so formation redraws cleanly
-                        FOR Row = 1 TO 10
-                            #ScreenPos = Row * 20
-                            FOR Col = 0 TO 19
-                                PRINT AT #ScreenPos + Col, 0
-                            NEXT Col
-                        NEXT Row
+                        ' INVASION! Aliens freeze in place, then reset to middle
+                        ' Extra 30 frames (105-75) = freeze phase with aliens visible
+                        DeathTimer = 105
+                        ShakeTimer = 45  ' Longer shake for dramatic effect
+                        ' Don't reset aliens yet — they freeze where they are
+                        ' Clear and reset happens at DeathTimer = 75 (see below)
                     END IF
                 END IF
             END IF
           END IF
         END IF
     END IF
+    END IF ' DeathTimer gate for march
     END IF ' reveal complete gate
 
     ' Update bullets
@@ -1297,6 +1286,9 @@ GameLoop:
 
     ' Alien shooting logic
     GOSUB AlienShoot
+
+    ' Update captured wingman position (before bullet collision check)
+    IF CaptureActive THEN GOSUB UpdateCapture
 
     ' Update alien bullet
     IF ABulletActive THEN
@@ -1402,9 +1394,6 @@ ChainDone:
 
     ' Update power-up drop/pickup
     GOSUB UpdatePowerUp
-
-    ' Update captured wingman
-    IF CaptureActive THEN GOSUB UpdateCapture
 
     ' Update rogue alien
     IF RogueState = ROGUE_IDLE THEN
@@ -1519,6 +1508,26 @@ ChainDone:
     ' Handle death timer (respawn after death)
     IF DeathTimer > 0 THEN
         DeathTimer = DeathTimer - 1
+        ' Invasion reset: after 30-frame freeze, clear and reposition aliens
+        IF DeathTimer = 75 THEN
+            IF GameOver = 0 THEN
+                ' Clear alien area
+                FOR Row = 1 TO 10
+                    #ScreenPos = Row * 20
+                    FOR Col = 0 TO 19
+                        PRINT AT #ScreenPos + Col, 0
+                    NEXT Col
+                NEXT Row
+                ' Reset alien formation to middle of screen
+                AlienOffsetY = 2  ' Rows 3-7 instead of 1-5
+                LastClearedY = 0
+                AlienOffsetX = 0
+                AlienDir = 1
+                MarchCount = 0
+                ' Redraw aliens at new position
+                GOSUB DrawAliens
+            END IF
+        END IF
         IF DeathTimer = 0 THEN
             IF GameOver = 3 THEN
                 ' Explosion done — let aliens crawl for 1 more second
@@ -1762,6 +1771,9 @@ MovePlayer: PROCEDURE
                 BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
+                ' Quad laser SFX: rising burst energy weapon
+                SfxType = 8 : SfxVolume = 14 : #SfxPitch = 500
+                SOUND 2, 500, 14
             END IF
         ELSE
             ' Normal/beam/rapid: single center shot
@@ -1786,6 +1798,10 @@ MovePlayer: PROCEDURE
                         POKE $1F8, $18
                         SOUND 0, 150, 14
                         SOUND 2, 80, 15
+                    ELSE
+                        ' Pea shooter SFX: descending laser zap
+                        SfxType = 7 : SfxVolume = 14 : #SfxPitch = 150
+                        SOUND 2, 150, 14
                     END IF
                     IF RapidTimer > 0 THEN
                         TitleJitter = RAPID_COOLDOWN
@@ -2271,6 +2287,29 @@ MoveAlienBullet: PROCEDURE
         RETURN
     END IF
 
+    ' Check wingman collision (bullet sponge - absorbs hits for player)
+    IF CaptureActive THEN
+        ' Wingman hitbox: 8x8 sprite at RogueX, RogueY
+        IF ABulletY >= RogueY - 2 THEN
+            IF ABulletY <= RogueY + 8 THEN
+                IF ABulletX >= RogueX - 2 THEN
+                    IF ABulletX <= RogueX + 8 THEN
+                        ' Wingman absorbs the hit!
+                        CaptureActive = 0
+                        CapBulletActive = 0
+                        ABulletActive = 0
+                        SPRITE SPR_ABULLET, 0, 0, 0
+                        SPRITE SPR_POWERUP, 0, 0, 0
+                        ' Explosion SFX (alien death sound)
+                        SfxType = 1 : SfxVolume = 12 : #SfxPitch = 400
+                        SOUND 2, 400, 12
+                        RETURN
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
     ' Check player collision
     IF DeathTimer = 0 THEN
         IF Invincible = 0 THEN
@@ -2307,6 +2346,8 @@ DrawAlienBullet: PROCEDURE
     END IF
     RETURN
 END
+
+    SEGMENT 2   ' Move large procedures to Segment 2 for headroom
 
 ' --------------------------------------------
 ' MarchAliens - Move alien grid (dynamic boundaries)
@@ -2550,6 +2591,26 @@ UpdateSfx: PROCEDURE
         ELSE
             SfxVolume = 0
         END IF
+    ELSEIF SfxType = 7 THEN
+        ' Pea shooter: descending laser zap (pitch rises = lower tone)
+        #SfxPitch = #SfxPitch + 15
+        IF #SfxPitch > 800 THEN #SfxPitch = 800
+        IF SfxVolume > 1 THEN
+            SfxVolume = SfxVolume - 1
+        ELSE
+            SfxVolume = 0
+        END IF
+    ELSEIF SfxType = 8 THEN
+        ' Quad laser: rising burst energy weapon (pitch descends = higher tone)
+        IF #SfxPitch > 80 THEN #SfxPitch = #SfxPitch - 35
+        IF #SfxPitch <= 115 THEN
+            ' Near end of pitch rise, fast volume cut
+            IF SfxVolume > 3 THEN
+                SfxVolume = SfxVolume - 3
+            ELSE
+                SfxVolume = 0
+            END IF
+        END IF
     ELSE
         ' Alien: fast decay (2 per frame)
         IF SfxVolume > 2 THEN
@@ -2684,8 +2745,6 @@ MegaBeamClear: PROCEDURE
     NEXT LoopVar
     RETURN
 END
-
-    SEGMENT 2   ' Move remaining procedures to Segment 2 (Seg 1 overflow fix)
 
 ' --------------------------------------------
 ' UpdatePowerUp - Handle falling/landed power-up capsule
@@ -4936,19 +4995,6 @@ WideCrabRightF1Gfx:
     BITMAP "X..XXX.."
     BITMAP "....X..."
     BITMAP "........"
-
-' Alien2 drawn with DOTS as the alien body (for F/B mode BACKTAB)
-' In F/B mode: . = foreground color, X = background/black
-' Dots placed exactly where original Alien2 has X pixels
-InvertedAlienGfx:
-    BITMAP ".XXXX.XX"
-    BITMAP ".X..X.XX"
-    BITMAP "......XX"
-    BITMAP "..XX..XX"
-    BITMAP "......XX"
-    BITMAP "X....XXX"
-    BITMAP ".XXXX.XX"
-    BITMAP "XXXXXXXX"
 
 ' Explosion graphics - 3 frame animation
 ' Frame 1 - tight pop (dense core)
