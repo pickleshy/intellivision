@@ -912,3 +912,162 @@ Locations to guard (in Space Intruders):
 - Any future collision source (e.g., alien reaching player row)
 
 **Symptom without guards:** Death explosion SFX plays and sustains during invincibility, even though the downstream `PlayerHit` check correctly ignores the hit. The SFX triggers at the collision site before the state check.
+
+### PRINT AT COLOR is persistent state
+
+IntyBASIC's `PRINT AT position COLOR color, "text"` sets a **persistent foreground color** that applies to all subsequent `PRINT AT` calls without an explicit `COLOR`. This is not scoped to a line or procedure — it persists globally until the next `COLOR` is specified.
+
+```basic
+' BAD — score inherits yellow from WAVE banner:
+PRINT AT 107 COLOR 6, "WAVE "     ' Sets persistent color to 6 (yellow)
+' ... later in game loop ...
+PRINT AT 227, <>#Score             ' Score renders yellow, not white!
+
+' GOOD — always specify COLOR on HUD/score elements:
+PRINT AT 220 COLOR COL_WHITE, "SCORE:"
+PRINT AT 227 COLOR COL_WHITE, <>#Score
+```
+
+**Symptom:** HUD text (score, lives, labels) changes color after wave transitions, game over screens, or any sequence that uses `PRINT AT COLOR` with a different color. The text works fine initially but adopts the wrong color after the first color-setting PRINT in a different context.
+
+**Rule: Always use explicit `COLOR` on any `PRINT AT` that renders persistent UI elements (score, lives, labels). Never rely on the default/inherited color state for HUD text.**
+
+### CONT.BUTTON reads raw hardware ports (unreliable with ECS)
+
+`CONT.BUTTON` compiles to a **raw read of PSG I/O ports** ($1FE/$1FF), XORed together and masked to bits 5-7. This is NOT debounced and reads mid-frame during game logic execution.
+
+`CONT.KEY` uses the **debounced `_cnt1_key` variable** computed by the ISR during WAIT. It correctly identifies keypad presses with 2-frame debounce.
+
+When ECS is loaded (`--ecsimg` flag in jzintv), the ECS keyboard shares the same I/O ports. **Keypad presses bleed into CONT.BUTTON** — pressing a keypad key makes CONT.BUTTON nonzero, indistinguishable from a side button press.
+
+```basic
+' BAD — keypad presses trigger this on title screen:
+IF CONT.BUTTON THEN
+    GOTO StartGame        ' Keypad "3" starts the game!
+END IF
+
+' GOOD — combine CONT.KEY gate with hold counter:
+IF CONT.BUTTON THEN
+    IF CONT.KEY >= 12 THEN
+        IF FireHeld < 4 THEN FireHeld = FireHeld + 1
+    ELSE
+        FireHeld = 0       ' Keypad active — reset counter
+    END IF
+ELSE
+    FireHeld = 0
+END IF
+IF FireHeld >= 4 THEN
+    GOTO StartGame         ' Only after 4 frames of button-only input
+END IF
+```
+
+**Why both guards are needed:**
+- `CONT.KEY >= 12` alone fails: after releasing a keypad key, CONT.KEY returns to 12 while CONT.BUTTON may ghost for 1-2 more frames, triggering an instant start
+- Hold counter alone fails: CONT.BUTTON stays set for the entire duration the keypad key is held, so any threshold is reached if the key is held long enough
+- Combined: counter only increments when CONT.KEY confirms no keypad activity, AND requires sustained input to filter brief ghosts
+
+**Also:** Terminal Enter key (`CONT.KEY = 11`) can ghost into jzIntv when launching from the command line. Avoid using Enter as an instant-action trigger on the title screen.
+
+### Unsigned AlienOffsetX limits left march range for sparse formations
+
+When using sparse alien formations (diamond, V-shape, etc.) where the leftmost alive column is > 0, the unsigned 8-bit `AlienOffsetX` creates an asymmetric march range. The grid can reach the right screen edge but stops early on the left because `AlienOffsetX` can't go below 0.
+
+```basic
+' Problem: Diamond leftmost at column 2, AlienOffsetX = 0
+' Screen position = 0 + 2 = 2 (can't reach column 0!)
+' But rightmost at column 6 can reach screen column 19
+
+' Fix: Normalize grid data after loading so leftmost alive = column 0
+' Shift all bitmasks right, increase AlienOffsetX to compensate
+IF LeftmostCol > 0 THEN
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        #AlienRow(Row) = #AlienRow(Row) / ColMaskData(LeftmostCol)
+    NEXT Row
+    AlienOffsetX = AlienOffsetX + LeftmostCol
+    ' Also adjust boss column positions
+    FOR BossIdx = 0 TO BossCount - 1
+        BossCol(BossIdx) = BossCol(BossIdx) - LeftmostCol
+    NEXT BossIdx
+END IF
+```
+
+**Symptom:** Sparse formations march all the way to the right edge but reverse too early on the left, as if dead aliens are still present. The effect worsens as left-side aliens are killed.
+
+### Reset state completely on wave/subwave transitions
+
+When transitioning between subwaves (Pattern A → Pattern B) or waves, **all gameplay-relevant state must be explicitly reset**. Variables that accumulate during gameplay (march speed, power-up timers, SFX state) will carry over and cause incorrect behavior in the new wave.
+
+```basic
+' BAD — LoadPatternB resets aliens but not march speed:
+' Pattern A accelerated CurrentMarchSpeed to 20 via descents
+' Pattern B aliens immediately march at full speed!
+
+' GOOD — reset speed when loading new pattern:
+CurrentMarchSpeed = BaseMarchSpeed  ' Reset to wave's base speed
+```
+
+**Checklist for wave/subwave transitions:**
+- `CurrentMarchSpeed = BaseMarchSpeed` (march speed)
+- `MarchCount = 0` (march timer)
+- `BombExpTimer = 0` (chain explosion state)
+- `SfxVolume = 0 : SfxType = 0` (sound effects)
+- Any power-up timers, bullet states, animation counters
+
+## Performance Optimization Patterns
+
+### ROM-based lookup tables vs FOR loop shifts
+
+Bitmask shift operations (`FOR LoopVar = 1 TO Col : #Mask = #Mask * 2 : NEXT`) are extremely common in grid-based games but consume ~305 CPU cycles per lookup (for column 5). Replace with a ROM DATA table for ~31 cycles per lookup (89% reduction):
+
+```basic
+' BAD — 14 shift loops across codebase eat ~27-37% of frame budget during heavy action:
+#Mask = 1
+FOR LoopVar = 1 TO Col
+    #Mask = #Mask * 2
+NEXT LoopVar
+
+' GOOD — ROM lookup table (zero RAM cost, constant time):
+ColMaskData:
+    DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+
+' Usage:
+#Mask = ColMaskData(Col)
+```
+
+**Impact (measured in Space Intruders):**
+- 14 shift loops replaced, ROM shrank by 319 words
+- Normal gameplay: 4-7% of frame budget freed
+- Heavy action (bomb explosion scanning all 12 cells): 27-37% freed
+- CP1610 at ~895 kHz NTSC = ~14,915 cycles per frame at 60fps
+
+**When to use:** Any repeated power-of-2 calculation, bitmask generation, or grid column addressing. Leave sequential shifts in place only when iterating columns in order (the shift is inherent to the loop).
+
+### CPU profiling with BORDER color band
+
+Use the STIC border color to visualize CPU usage per frame:
+
+```basic
+GameLoop:
+    WAIT
+    IF DebugMode THEN BORDER COL_RED    ' Start timing
+    ' ... all game logic ...
+    IF DebugMode THEN BORDER 0          ' End timing
+    GOTO GameLoop
+```
+
+The red band height on screen is proportional to CPU time used. Taller band = more CPU consumed. Toggle with a keypad cheat code (e.g., type "36") so it's available during testing but hidden in normal play.
+
+### DIM arrays consume 16-bit variable slots; DATA tables don't
+
+`DIM #array(N)` allocates N words from the 16-bit variable pool (max 25 slots). If you run out, switch to ROM-based `DATA` tables which cost zero RAM:
+
+```basic
+' BAD — costs 10 of 25 16-bit variable slots:
+DIM #ColMask(10)
+FOR i = 0 TO 9 : #ColMask(i) = ColMaskData(i) : NEXT i
+
+' GOOD — zero RAM cost, stored in ROM:
+ColMaskData:
+    DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+' Access: #Mask = ColMaskData(index)
+```

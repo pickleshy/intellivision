@@ -72,6 +72,10 @@ CONST GRAM_CAP_F3  = 50         ' Capsule animation frame 3
 CONST GRAM_CAP_F4  = 51         ' Capsule animation frame 4
 CONST GRAM_ZIGZAG1 = 52         ' Zigzag bolt frame 1
 CONST GRAM_ZIGZAG2 = 53         ' Zigzag bolt frame 2
+CONST GRAM_BOMB1    = 54        ' Bomb alien left half frame 1
+CONST GRAM_BOMB2    = 55        ' Bomb alien right half frame 1
+CONST GRAM_BOMB1_F1 = 56        ' Bomb alien left half frame 2
+CONST GRAM_BOMB2_F1 = 57        ' Bomb alien right half frame 2
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -139,6 +143,14 @@ CONST ROGUE_CHANCE     = 12       ' 1-in-12 per check
 ' Capture wingman constants
 CONST CAPTURE_FIRE_RATE = 90      ' Frames between allied hitscan shots (~1.5 sec)
 CONST CAPTURE_ORBIT_R   = 6      ' Orbit radius (pixels)
+
+' Boss alien constants
+CONST BOSS_HP_MAX  = 3          ' Hits to destroy boss
+CONST BOSS_SCORE   = 100        ' Bonus score on boss kill
+CONST BOMB_SCORE   = 50         ' Score for bomb alien itself
+CONST MAX_BOSSES   = 4          ' Maximum simultaneous special aliens
+CONST SKULL_TYPE   = 0          ' BossType: multi-hit skull boss
+CONST BOMB_TYPE    = 1          ' BossType: single-hit bomb alien (chain explodes)
 
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
@@ -225,7 +237,7 @@ DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
 StarCount   = 0                 ' Number of active stars
 StarTimer   = 0                 ' Frame counter for scroll updates
 StarTick    = 0                 ' Tick counter (for slow layer)
-#BeamTimer  = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
+BeamTimer  = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
 ' Power-up drop variables (reuse title-screen vars during gameplay)
 ' TitleFrame reuses TitleFrame (title-only)
 ' TitleMarchDir reuses TitleMarchDir (title-only)
@@ -235,7 +247,7 @@ PowerUpY    = 0                 ' Power-up capsule Y position (separate from sau
 ' Rapid fire variables (reuse title-screen vars during gameplay)
 ' PowerUpType reuses TitleColor (title-only): 0=beam, 1=rapid fire
 ' FireCooldown reuses TitleJitter (title-only): frames until next shot allowed
-#RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
+RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
 #PathXAddr  = 0                 ' ROM address of FlyPathXData (set at title init)
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
 ' Sound effect variables
@@ -243,7 +255,7 @@ SfxVolume   = 0                 ' Current decay volume (0 = silent)
 SfxType     = 0                 ' 0=none, 1=alien explode, 2=saucer explode, 3=player death
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 ' Quad laser variables
-#DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
+DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #NextLife   = 1000              ' Score threshold for next extra life
 #MegaTimer  = 0                 ' Mega beam countdown (300 frames = 5 sec, 0 = normal)
@@ -251,6 +263,9 @@ MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
 AutoFire    = 0                 ' Auto-fire toggle (0=off, 1=on)
 Key1Held    = 0                 ' Debounce flag for keypad 1
+DebugMode   = 0                 ' CPU profiling display (0=off, 1=on)
+CheatState  = 0                 ' Cheat code entry: 0=idle, 1=got '3'
+CheatHeld   = 0                 ' Debounce for cheat code keys
 SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
 RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sides)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
@@ -278,6 +293,21 @@ Key0Held       = 0                 ' Debounce: 1 = keypad 0 was held last frame
 CapBulletActive = 0                ' 1 = wingman bullet in flight
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
+' Boss alien state (array-based, up to MAX_BOSSES simultaneous)
+DIM BossCol(MAX_BOSSES)            ' Left column of each boss (0-7)
+DIM BossRow(MAX_BOSSES)            ' Grid row of each boss (0-4)
+DIM BossHP(MAX_BOSSES)             ' HP per boss (0=dead/unused, 1-3=alive)
+DIM BossColor(MAX_BOSSES)          ' Display color per boss
+DIM BossType(MAX_BOSSES)           ' 0=skull (multi-hit), 1=bomb (chain explosion)
+BossCount      = 0                 ' Number of boss slots in use (0-4)
+BossIdx        = 0                 ' Temp: loop index for boss iteration
+FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
+DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
+' Column bitmask lookup table is in ROM (see ColMaskData near end of file)
+' Chain explosion state (bomb alien)
+BombExpTimer   = 0                 ' Chain explosion countdown (0=inactive, 20=active)
+BombExpRow     = 0                 ' Grid row of exploded bomb
+BombExpCol     = 0                 ' Left grid column of exploded bomb
 ' Wave color palette (set at start of each wave from DATA table)
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
 WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
@@ -392,6 +422,14 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     WAIT
     DEFINE GRAM_ZIGZAG1, 1, ZigzagF1Gfx
     WAIT
+    DEFINE GRAM_BOMB1, 1, SquidLeftF1Gfx
+    WAIT
+    DEFINE GRAM_BOMB2, 1, SquidRightF1Gfx
+    WAIT
+    DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx
+    WAIT
+    DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx
+    WAIT
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
     ' Grey/White flash
@@ -427,8 +465,10 @@ ResetToTitle:
     BulletActive = 0
     ABulletActive = 0 : ABulFrame = 0
     RogueState = 0 : RogueTimer = 0
+    FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
+    BossCount = 0 : BombExpTimer = 0
     CaptureActive = 0 : CapBulletActive = 0 : Key0Held = 0
-    #DualTimer = 0
+    DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
     AutoFire = 0
@@ -794,8 +834,53 @@ SkipPressfire:
         END IF
     END IF
 
-    ' Check for fire button to start game
+    ' Cheat code: type "36" on keypad to toggle debug mode
+    IF CONT.KEY = 3 THEN
+        IF CheatHeld = 0 THEN
+            CheatHeld = 5
+            CheatState = 1
+        END IF
+    ELSEIF CONT.KEY = 6 THEN
+        IF CheatHeld = 0 THEN
+            CheatHeld = 5
+            IF CheatState = 1 THEN
+                DebugMode = 1 - DebugMode
+                CheatState = 0
+                ' Flash border to confirm
+                IF DebugMode THEN
+                    BORDER COL_RED
+                    PRINT AT 219 COLOR COL_RED, "DEBUG"
+                ELSE
+                    BORDER 0
+                    PRINT AT 219, 0
+                    PRINT AT 220, 0
+                    PRINT AT 221, 0
+                    PRINT AT 222, 0
+                    PRINT AT 223, 0
+                END IF
+            END IF
+        END IF
+    ELSE
+        IF CheatHeld > 0 THEN CheatHeld = CheatHeld - 1
+        ' Reset cheat state if a non-3/6 key is pressed
+        IF CONT.KEY < 12 THEN
+            IF CONT.KEY <> 3 THEN
+                IF CONT.KEY <> 6 THEN CheatState = 0
+            END IF
+        END IF
+    END IF
+
+    ' Fire button: must hold 4 frames with NO keypad key active
     IF CONT.BUTTON THEN
+        IF CONT.KEY >= 12 THEN
+            IF Key1Held < 4 THEN Key1Held = Key1Held + 1
+        ELSE
+            Key1Held = 0    ' Keypad active — reset counter
+        END IF
+    ELSE
+        Key1Held = 0
+    END IF
+    IF Key1Held >= 4 THEN
         ' Silence any lingering PSG state before gameplay
         SOUND 0, , 0
         SOUND 1, , 0
@@ -935,7 +1020,7 @@ StartGame:
     RightRevealCol = ALIEN_COLS - 1
 
     ' Draw score and lives
-    PRINT AT 220, "SCORE: 0"
+    PRINT AT 220 COLOR COL_WHITE, "SCORE: 0"
     ' Lives ship icon (GRAM card 0, green, Color Stack mode)
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     PRINT AT 237 COLOR COL_WHITE, "X3"
@@ -944,9 +1029,9 @@ StartGame:
     FlyState = 0
     #FlyPhase = 0  ' Spawn countdown (counts up to threshold)
     #FlyLoopCount = RANDOM(360) + 180  ' Random spawn threshold
-    #BeamTimer = 0  ' No beam power-up
-    #RapidTimer = 0 ' No rapid fire
-    #DualTimer = 0  ' No dual laser
+    BeamTimer = 0  ' No beam power-up
+    RapidTimer = 0 ' No rapid fire
+    DualTimer = 0  ' No dual laser
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     TitleFrame = 0  ' No power-up drop
@@ -955,6 +1040,8 @@ StartGame:
     TitleJitter = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
     RogueState = 0 : RogueTimer = 0
+    FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
+    BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
     CaptureActive = 0 : CapBulletActive = 0
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
@@ -992,6 +1079,8 @@ StartGame:
 ' --------------------------------------------
 GameLoop:
     WAIT
+    ' Debug mode: CPU profiling — red border during game logic
+    IF DebugMode THEN BORDER COL_RED
 
     ' Screen shake effect
     IF ShakeTimer > 0 THEN
@@ -1068,6 +1157,7 @@ GameLoop:
                 GOTO ResetToTitle
             END IF
         END IF
+        IF DebugMode THEN BORDER 0
         GOTO GameLoop
     END IF
 
@@ -1106,6 +1196,18 @@ GameLoop:
                     RevealMode = 0
                     WaveRevealCol = ALIEN_COLS - 1
                     MarchCount = 0
+                    ' Clear alien area: reveal drew at WaveRevealCol+Col but
+                    ' standard mode draws at AlienOffsetX+Col. After grid
+                    ' normalization shifts AlienOffsetX, there's a gap that
+                    ' leaves ghost tiles from the last reveal frame.
+                    FOR ClearRow = 0 TO ALIEN_ROWS - 1
+                        IF ALIEN_START_Y + AlienOffsetY + ClearRow < 11 THEN
+                            #ScreenPos = (ALIEN_START_Y + AlienOffsetY + ClearRow) * 20
+                            FOR Col = 0 TO 19
+                                PRINT AT #ScreenPos + Col, 0
+                            NEXT Col
+                        END IF
+                    NEXT ClearRow
                 END IF
             END IF
         END IF
@@ -1135,21 +1237,60 @@ GameLoop:
         IF HitRow < 255 THEN
           IF GameOver = 0 THEN
             IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
-                ' Invasion! Skip straight to game over with brief shake
-                Lives = 0
-                GameOver = 4
-                DeathTimer = 30
-                ShakeTimer = 30
-                ABulletActive = 0
-                BulletActive = 0
-                RogueState = 0 : RogueTimer = 0
-                CaptureActive = 0 : CapBulletActive = 0
-                SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
-                SPRITE SPR_PLAYER, 0, 0, 0
-                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
-                SPRITE SPR_PBULLET, 0, 0, 0
-                SPRITE SPR_ABULLET, 0, 0, 0
-                SPRITE SPR_FLYER, 0, 0, 0
+                ' Invasion! Lose a life and reset formation
+                IF DeathTimer = 0 AND Invincible = 0 THEN
+                    Lives = Lives - 1
+                    ' Update lives display
+                    IF Lives >= 6 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X"
+                        PRINT AT 238, <> (Lives - 1)
+                    ELSEIF Lives = 5 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X4"
+                    ELSEIF Lives = 4 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X3"
+                    ELSEIF Lives = 3 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X2"
+                    ELSEIF Lives = 2 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X1"
+                    ELSEIF Lives = 1 THEN
+                        PRINT AT 237 COLOR COL_WHITE, "X0"
+                    END IF
+                    ' Clear power-ups, bullets, rogue, wingman
+                    BeamTimer = 0 : RapidTimer = 0
+                    DualTimer = 0 : #MegaTimer = 0
+                    ABulletActive = 0 : BulletActive = 0
+                    RogueState = ROGUE_IDLE : RogueTimer = 0
+                    CaptureActive = 0 : CapBulletActive = 0
+                    SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                    SPRITE SPR_PLAYER, 0, 0, 0
+                    SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+                    SPRITE SPR_PBULLET, 0, 0, 0
+                    SPRITE SPR_ABULLET, 0, 0, 0
+                    SPRITE SPR_FLYER, 0, 0, 0
+                    SPRITE SPR_POWERUP, 0, 0, 0
+                    IF Lives = 0 THEN
+                        ' No lives left — game over
+                        GameOver = 3
+                        DeathTimer = 75
+                        ShakeTimer = 30
+                    ELSE
+                        ' Reset alien formation to top of screen
+                        AlienOffsetY = 0
+                        AlienOffsetX = 0
+                        AlienDir = 1
+                        MarchCount = 0
+                        ' Death sequence with screen shake
+                        DeathTimer = 75
+                        ShakeTimer = 30
+                        ' Clear alien area so formation redraws cleanly
+                        FOR Row = 1 TO 10
+                            #ScreenPos = Row * 20
+                            FOR Col = 0 TO 19
+                                PRINT AT #ScreenPos + Col, 0
+                            NEXT Col
+                        NEXT Row
+                    END IF
+                END IF
             END IF
           END IF
         END IF
@@ -1187,6 +1328,41 @@ GameLoop:
             PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + COL_WHITE + $0800
         END IF
         END IF
+    END IF
+
+    ' Chain explosion rendering (bomb alien blast radius)
+    IF BombExpTimer > 0 THEN
+        BombExpTimer = BombExpTimer - 1
+        ' Determine explosion frame based on timer
+        IF BombExpTimer > 13 THEN
+            AlienCard = GRAM_EXPLOSION
+            AlienColor = COL_RED
+        ELSEIF BombExpTimer > 6 THEN
+            AlienCard = GRAM_EXPLOSION2
+            AlienColor = COL_YELLOW
+        ELSE
+            AlienCard = GRAM_EXPLOSION3
+            AlienColor = COL_WHITE
+        END IF
+        ' Draw explosion on all cells in blast radius (4 cols × 3 rows)
+        FOR Row = BombExpRow - 1 TO BombExpRow + 1
+            IF Row >= 0 THEN
+            IF Row < ALIEN_ROWS THEN
+                #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                FOR Col = BombExpCol - 1 TO BombExpCol + 2
+                    IF Col >= 0 THEN
+                    IF Col < ALIEN_COLS THEN
+                        IF BombExpTimer > 0 THEN
+                            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, AlienCard * 8 + AlienColor + $0800
+                        ELSE
+                            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+                        END IF
+                    END IF
+                    END IF
+                NEXT Col
+            END IF
+            END IF
+        NEXT Row
     END IF
 
     ' Update explosion sound effect (noise decay)
@@ -1296,8 +1472,8 @@ GameLoop:
                     PRINT AT 237 COLOR COL_WHITE, "X0"
                 END IF
                 ' Lose all power-ups on death (mega laser too)
-                #BeamTimer = 0 : #RapidTimer = 0
-                #DualTimer = 0 : #MegaTimer = 0
+                BeamTimer = 0 : RapidTimer = 0
+                DualTimer = 0 : #MegaTimer = 0
                 ABulletActive = 0
                 ' Cancel active rogue alien and wingman
                 RogueState = ROGUE_IDLE : RogueTimer = 0
@@ -1464,7 +1640,7 @@ GameLoop:
     GOSUB DrawAlienBullet
 
     ' Update score display
-    PRINT AT 227, <>#Score
+    PRINT AT 227 COLOR COL_WHITE, <>#Score
 
     ' Extra life every 1000 points
     IF #Score >= #NextLife THEN
@@ -1490,6 +1666,9 @@ GameLoop:
             END IF
         END IF
     END IF
+
+    ' Debug mode: end CPU profiling — black border shows idle time
+    IF DebugMode THEN BORDER 0
 
     GOTO GameLoop
 
@@ -1552,14 +1731,19 @@ MovePlayer: PROCEDURE
         Key0Held = 0
     END IF
 
-    ' Fire: side buttons or auto-fire
+    ' Fire: side buttons (not keypad) or auto-fire
     IF CONT.BUTTON OR AutoFire THEN
+    IF CONT.KEY >= 12 OR AutoFire THEN
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
                 MegaBeamCol = (PlayerX + 3) / 8
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
+                ' Reset beam damage tracker for each boss
+                FOR BossIdx = 0 TO MAX_BOSSES - 1
+                    BossBeamHit(BossIdx) = 0
+                NEXT BossIdx
                 GOSUB MegaBeamKill
                 GOSUB MegaBeamDraw
                 ' SFX: loud crackle blast
@@ -1568,10 +1752,10 @@ MovePlayer: PROCEDURE
                 POKE $1F7, 8
                 POKE $1F8, PEEK($1F8) AND $DF
             END IF
-        ELSEIF #DualTimer > 0 THEN
+        ELSEIF DualTimer > 0 THEN
             ' Quad laser: single center bullet with wide hitbox
             IF BulletActive = 0 THEN
-                BulletX = PlayerX + 3  ' Center of ship
+                BulletX = PlayerX  ' Center of ship (bitmap already centered)
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
             END IF
@@ -1579,15 +1763,16 @@ MovePlayer: PROCEDURE
             ' Normal/beam/rapid: single center shot
             IF BulletActive = 0 THEN
                 IF TitleJitter = 0 THEN
-                    BulletX = PlayerX + 3  ' Center of ship
+                    BulletX = PlayerX  ' Center of ship (bitmap already centered)
                     BulletY = PLAYER_Y - 4
                     BulletActive = 1
-                    IF #RapidTimer > 0 THEN
+                    IF RapidTimer > 0 THEN
                         TitleJitter = RAPID_COOLDOWN
                     END IF
                 END IF
             END IF
         END IF
+    END IF
     END IF
 
     RETURN
@@ -1599,14 +1784,14 @@ END
 ' --------------------------------------------
 MoveBullet: PROCEDURE
     ' Move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
-    IF #RapidTimer > 0 THEN
+    IF RapidTimer > 0 THEN
         IF BulletY > BULLET_TOP + RAPID_SPEED THEN
             BulletY = BulletY - RAPID_SPEED
         ELSE
             BulletActive = 0
             ChainCount = 0   ' Missed — break chain
         END IF
-    ELSEIF #DualTimer > 0 THEN
+    ELSEIF DualTimer > 0 THEN
         ' Quad laser: flat 2px/frame
         IF BulletY > BULLET_TOP + 2 THEN
             BulletY = BulletY - 2
@@ -1668,7 +1853,7 @@ CheckRowForHit: PROCEDURE
         IF HitRow < ALIEN_START_Y + AlienOffsetY + ALIEN_ROWS THEN
             AlienGridRow = HitRow - ALIEN_START_Y - AlienOffsetY
 
-            IF #BeamTimer > 0 THEN
+            IF BeamTimer > 0 THEN
                 ' Wide beam mode: beam covers BulletX-3 to BulletX+4 (8px)
                 ' Subtract 8 from X for sprite-to-BACKTAB offset
                 IF BulletX >= 11 THEN
@@ -1685,7 +1870,7 @@ CheckRowForHit: PROCEDURE
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
-            ELSEIF #DualTimer > 0 THEN
+            ELSEIF DualTimer > 0 THEN
                 ' Quad laser: 4 spread columns (~24px wide kill zone)
                 IF BulletX >= 16 THEN
                     HitCol = (BulletX - 16) / 8
@@ -1736,6 +1921,99 @@ CheckRowForHit: PROCEDURE
 END
 
 ' --------------------------------------------
+' FindBoss - Check if (AlienGridRow, AlienGridCol) belongs to a boss
+' Sets FoundBoss = slot index (0-2) or 255 if not a boss
+' --------------------------------------------
+FindBoss: PROCEDURE
+    FoundBoss = 255
+    FOR BossIdx = 0 TO BossCount - 1
+        IF BossHP(BossIdx) > 0 THEN
+            IF AlienGridRow = BossRow(BossIdx) THEN
+                IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
+                    FoundBoss = BossIdx
+                END IF
+            END IF
+        END IF
+    NEXT BossIdx
+    RETURN
+END
+
+' --------------------------------------------
+' BombExplode - Chain explosion when bomb alien dies
+' Expects: FoundBoss = the bomb's slot index (already HP=0)
+' Kills all aliens in 4-wide × 3-tall blast radius
+' --------------------------------------------
+BombExplode: PROCEDURE
+    ' Save bomb position for chain explosion rendering
+    BombExpRow = BossRow(FoundBoss)
+    BombExpCol = BossCol(FoundBoss)
+    BombExpTimer = 20
+
+    ' XOR out bomb's own two columns
+    #Mask = ColMaskData(BombExpCol)
+    #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+    #Mask = ColMaskData(BombExpCol + 1)
+    #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+
+    ' XOR out all aliens in blast radius (4 cols × 3 rows)
+    FOR Row = BombExpRow - 1 TO BombExpRow + 1
+        IF Row >= 0 THEN
+        IF Row < ALIEN_ROWS THEN
+            FOR Col = BombExpCol - 1 TO BombExpCol + 2
+                IF Col >= 0 THEN
+                IF Col < ALIEN_COLS THEN
+                    ' Skip the bomb's own cells (already XOR'd above)
+                    IF Row = BombExpRow THEN
+                        IF Col = BombExpCol OR Col = BombExpCol + 1 THEN
+                            Col = Col  ' No-op, let loop continue
+                        ELSE
+                            ' Kill alien at this position
+                            #Mask = ColMaskData(Col)
+                            IF #AlienRow(Row) AND #Mask THEN
+                                ' Check if it's also a special alien
+                                AlienGridRow = Row : AlienGridCol = Col
+                                GOSUB FindBoss
+                                IF FoundBoss < 255 THEN
+                                    ' Chain-kill a boss: clear its HP and XOR second column
+                                    BossHP(FoundBoss) = 0
+                                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
+                                END IF
+                                #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                                #Score = #Score + 10
+                            END IF
+                        END IF
+                    ELSE
+                        ' Different row — always kill
+                        #Mask = ColMaskData(Col)
+                        IF #AlienRow(Row) AND #Mask THEN
+                            AlienGridRow = Row : AlienGridCol = Col
+                            GOSUB FindBoss
+                            IF FoundBoss < 255 THEN
+                                BossHP(FoundBoss) = 0
+                                #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
+                            END IF
+                            #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                            #Score = #Score + 10
+                        END IF
+                    END IF
+                END IF
+                END IF
+            NEXT Col
+        END IF
+        END IF
+    NEXT Row
+
+    ' Score for bomb itself
+    #Score = #Score + BOMB_SCORE
+
+    ' Big SFX (low rumble)
+    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 60
+    SOUND 2, 60, 15
+
+    RETURN
+END
+
+' --------------------------------------------
 ' CheckOneColumn - Check single column for alien hit
 ' Expects: HitCol, HitRow, AlienGridRow set
 ' --------------------------------------------
@@ -1748,19 +2026,55 @@ CheckOneColumn: PROCEDURE
             IF AlienGridCol > WaveRevealCol THEN RETURN
 
             ' Calculate bitmask for this column
-            #Mask = 1
-            IF AlienGridCol > 0 THEN
-                FOR LoopVar = 1 TO AlienGridCol
-                    #Mask = #Mask * 2
-                NEXT LoopVar
-            END IF
+            #Mask = ColMaskData(AlienGridCol)
 
             IF #AlienRow(AlienGridRow) AND #Mask THEN
-                ' HIT! Kill the alien
+                ' Multi-boss intercept
+                IF BossCount > 0 THEN GOSUB FindBoss
+                IF BossCount > 0 AND FoundBoss < 255 THEN
+                    BossHP(FoundBoss) = BossHP(FoundBoss) - 1
+                    IF BossHP(FoundBoss) > 0 THEN
+                        ' Damaged but alive — stop bullet, update color
+                        IF BeamTimer = 0 THEN BulletActive = 0
+                        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
+                        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+                        SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
+                        SOUND 2, 120, 14
+                        RETURN
+                    ELSE
+                        ' Boss dead! Check type
+                        IF BossType(FoundBoss) = BOMB_TYPE THEN
+                            ' Bomb alien — chain explosion!
+                            IF BeamTimer = 0 THEN BulletActive = 0
+                            GOSUB BombExplode
+                            RETURN
+                        ELSE
+                            ' Skull boss dead! XOR BOTH columns out
+                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
+                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                            ' Clear both BACKTAB tiles
+                            #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
+                            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                            IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
+                            ' Big score + explosion
+                            #Score = #Score + BOSS_SCORE
+                            IF BeamTimer = 0 THEN BulletActive = 0
+                            ExplosionTimer = 20
+                            IF #ExplosionPos < 220 THEN
+                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
+                            END IF
+                            SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
+                            SOUND 2, 80, 15
+                            RETURN
+                        END IF
+                    END IF
+                END IF
+
+                ' Normal alien kill
                 #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
 
                 ' Beam pierces through; normal bullet stops
-                IF #BeamTimer = 0 THEN
+                IF BeamTimer = 0 THEN
                     BulletActive = 0
                 END IF
 
@@ -1859,14 +2173,14 @@ DrawBullet: PROCEDURE
             LaserColor = COL_WHITE
         END IF
 
-        IF #BeamTimer > 0 THEN
+        IF BeamTimer > 0 THEN
             ' Wide beam mode: 8px wide x 16px tall, centered on bullet position
             IF BulletX >= 3 THEN
                 SPRITE SPR_PBULLET, (BulletX - 3) + $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
             ELSE
                 SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
             END IF
-        ELSEIF #DualTimer > 0 THEN
+        ELSEIF DualTimer > 0 THEN
             ' Quad laser mode: 4-line pattern sprite
             SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + LaserColor + $0800
         ELSE
@@ -1903,12 +2217,7 @@ END
 ' --------------------------------------------
 FindShooter: PROCEDURE
     ' Calculate bitmask for this column
-    #Mask = 1
-    IF ShootCol > 0 THEN
-        FOR LoopVar = 1 TO ShootCol
-            #Mask = #Mask * 2
-        NEXT LoopVar
-    END IF
+    #Mask = ColMaskData(ShootCol)
 
     ' Search from bottom row up for an alive alien
     ' NOTE: Must NOT use RETURN/GOTO to exit FOR loop (R4 stack leak)
@@ -2001,9 +2310,46 @@ MarchAliens: PROCEDURE
     ' Right boundary: ALIEN_START_X + AlienOffsetX + LoopVar must stay <= 19
     ' Left boundary: ALIEN_START_X + AlienOffsetX + HitRow must stay >= 0
 
+    ' Runtime grid normalization: when leftmost alive column > 0,
+    ' dead left columns limit the left march range (AlienOffsetX is
+    ' unsigned and can't go below 0). Shift bitmasks right and increase
+    ' offset to reclaim that space. This keeps march range symmetric.
+    IF HitRow > 0 THEN
+        ' Clear the abandoned left columns on screen
+        FOR Col = 0 TO HitRow - 1
+            FOR Row = 0 TO ALIEN_ROWS - 1
+                IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
+                    #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
+                END IF
+            NEXT Row
+        NEXT Col
+        ' Shift bitmasks so leftmost alive becomes column 0
+        FOR Row = 0 TO ALIEN_ROWS - 1
+            #AlienRow(Row) = #AlienRow(Row) / ColMaskData(HitRow)
+        NEXT Row
+        AlienOffsetX = AlienOffsetX + HitRow
+        ' Adjust boss grid positions
+        FOR BossIdx = 0 TO BossCount - 1
+            IF BossHP(BossIdx) > 0 THEN
+                BossCol(BossIdx) = BossCol(BossIdx) - HitRow
+            END IF
+        NEXT BossIdx
+        ' Update boundaries after shift
+        LoopVar = LoopVar - HitRow
+        HitRow = 0
+    END IF
+
     IF AlienDir = 1 THEN
         ' Moving right
         IF ALIEN_START_X + AlienOffsetX + LoopVar < 19 THEN
+            ' Clear trailing left column before moving
+            FOR Row = 0 TO ALIEN_ROWS - 1
+                IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
+                    #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX, 0
+                END IF
+            NEXT Row
             AlienOffsetX = AlienOffsetX + 1
         ELSE
             ' Hit right edge - drop down and reverse
@@ -2020,6 +2366,13 @@ MarchAliens: PROCEDURE
         ' Guard: AlienOffsetX is unsigned 8-bit, can't go below 0
         IF AlienOffsetX > 0 THEN
             IF AlienOffsetX + HitRow > 0 THEN
+                ' Clear trailing right column before moving
+                FOR Row = 0 TO ALIEN_ROWS - 1
+                    IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
+                        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS - 1, 0
+                    END IF
+                NEXT Row
                 AlienOffsetX = AlienOffsetX - 1
             ELSE
                 ' Hit left edge - drop down and reverse
@@ -2169,19 +2522,44 @@ MegaBeamKill: PROCEDURE
                 AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
                 IF AlienGridCol <= WaveRevealCol THEN
                     ' Build bitmask for this column
-                    #Mask = 1
-                    IF AlienGridCol > 0 THEN
-                        FOR LoopVar = 1 TO AlienGridCol
-                            #Mask = #Mask * 2
-                        NEXT LoopVar
-                    END IF
+                    #Mask = ColMaskData(AlienGridCol)
                     ' Kill alien in every row at this column
                     FOR LoopVar = 0 TO ALIEN_ROWS - 1
                         IF #AlienRow(LoopVar) AND #Mask THEN
-                            #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
-                            ChainCount = ChainCount + 1
-                            IF ChainCount > 5 THEN ChainCount = 5
-                            #Score = #Score + ChainCount * 10
+                            ' Multi-boss intercept in mega beam (capped at 2 damage per activation)
+                            AlienGridRow = LoopVar
+                            FoundBoss = 255
+                            IF BossCount > 0 THEN GOSUB FindBoss
+                            IF BossCount > 0 AND FoundBoss < 255 THEN
+                                ' Only deal 1 damage per boss per beam activation
+                                IF BossBeamHit(FoundBoss) < 1 THEN
+                                    BossBeamHit(FoundBoss) = BossBeamHit(FoundBoss) + 1
+                                    BossHP(FoundBoss) = BossHP(FoundBoss) - 1
+                                    IF BossHP(FoundBoss) > 0 THEN
+                                        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
+                                        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+                                    ELSE
+                                        ' Boss dead! Check type
+                                        IF BossType(FoundBoss) = BOMB_TYPE THEN
+                                            ' Bomb alien — chain explosion!
+                                            GOSUB BombExplode
+                                        ELSE
+                                            ' Skull boss dead! XOR both columns
+                                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
+                                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                                            #Score = #Score + BOSS_SCORE
+                                        END IF
+                                        ' Restore #Mask for current column iteration
+                                        #Mask = ColMaskData(AlienGridCol)
+                                    END IF
+                                END IF
+                            ELSE
+                                ' Normal alien kill
+                                #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
+                                ChainCount = ChainCount + 1
+                                IF ChainCount > 5 THEN ChainCount = 5
+                                #Score = #Score + ChainCount * 10
+                            END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
                             IF #ExplosionPos < 220 THEN
                                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -2248,6 +2626,8 @@ MegaBeamClear: PROCEDURE
     RETURN
 END
 
+    SEGMENT 2   ' Move remaining procedures to Segment 2 (Seg 1 overflow fix)
+
 ' --------------------------------------------
 ' UpdatePowerUp - Handle falling/landed power-up capsule
 ' --------------------------------------------
@@ -2300,20 +2680,20 @@ UpdatePowerUp: PROCEDURE
             IF PlayerX <= TitleMarchDir + 12 THEN
                 ' Picked up! Activate power-up based on type
                 IF TitleColor = 0 THEN
-                    #BeamTimer = 1
-                    #RapidTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
+                    BeamTimer = 1
+                    RapidTimer = 0 : DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF TitleColor = 1 THEN
-                    #RapidTimer = 1
-                    #BeamTimer = 0 : #DualTimer = 0 : #MegaTimer = 0
+                    RapidTimer = 1
+                    BeamTimer = 0 : DualTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF TitleColor = 2 THEN
-                    #DualTimer = 1
-                    #BeamTimer = 0 : #RapidTimer = 0 : #MegaTimer = 0
+                    DualTimer = 1
+                    BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
                 ELSE
                     #MegaTimer = 300
-                    #BeamTimer = 0 : #RapidTimer = 0 : #DualTimer = 0
+                    BeamTimer = 0 : RapidTimer = 0 : DualTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 END IF
                 TitleFrame = 0
@@ -2404,6 +2784,49 @@ DrawAliens: PROCEDURE
             #Mask = 1
             FOR Col = 0 TO ALIEN_COLS - 1
                 IF #AlienRow(Row) AND #Mask THEN
+                    ' Check for boss in dual-reveal mode
+                    FoundBoss = 255
+                    IF BossCount > 0 THEN
+                        AlienGridRow = Row : AlienGridCol = Col
+                        GOSUB FindBoss
+                    END IF
+                    IF FoundBoss < 255 THEN
+                        ' Special alien in slide-in mode
+                        IF BossType(FoundBoss) = BOMB_TYPE THEN
+                            ' Flash red/white when bomb alien at HP=1
+                            AlienColor = BossColor(FoundBoss)
+                            IF BossHP(FoundBoss) = 1 THEN
+                                IF ShimmerCount AND 4 THEN AlienColor = COL_WHITE ELSE AlienColor = COL_RED
+                            END IF
+                            IF Col = BossCol(FoundBoss) THEN
+                                IF AnimFrame = 0 THEN
+                                    #Card = GRAM_BOMB1 * 8 + AlienColor + $0800
+                                ELSE
+                                    #Card = GRAM_BOMB1_F1 * 8 + AlienColor + $0800
+                                END IF
+                            ELSE
+                                IF AnimFrame = 0 THEN
+                                    #Card = GRAM_BOMB2 * 8 + AlienColor + $0800
+                                ELSE
+                                    #Card = GRAM_BOMB2_F1 * 8 + AlienColor + $0800
+                                END IF
+                            END IF
+                        ELSE
+                            IF Col = BossCol(FoundBoss) THEN
+                                IF AnimFrame = 0 THEN
+                                    #Card = GRAM_BAND1 * 8 + BossColor(FoundBoss) + $0800
+                                ELSE
+                                    #Card = GRAM_BAND1_F1 * 8 + BossColor(FoundBoss) + $0800
+                                END IF
+                            ELSE
+                                IF AnimFrame = 0 THEN
+                                    #Card = GRAM_BAND2 * 8 + BossColor(FoundBoss) + $0800
+                                ELSE
+                                    #Card = GRAM_BAND2_F1 * 8 + BossColor(FoundBoss) + $0800
+                                END IF
+                            END IF
+                        END IF
+                    END IF
                     IF Col < 5 THEN
                         ' Left group: slides in from left edge
                         PRINT AT #ScreenPos + WaveRevealCol + Col, #Card
@@ -2411,6 +2834,8 @@ DrawAliens: PROCEDURE
                         ' Right group: slides in from right edge
                         PRINT AT #ScreenPos + RightRevealCol + Col, #Card
                     END IF
+                    ' Restore normal alien card for next column
+                    #Card = AlienCard * 8 + AlienColor + $0800
                 END IF
                 #Mask = #Mask * 2
             NEXT Col
@@ -2420,7 +2845,53 @@ DrawAliens: PROCEDURE
             FOR Col = 0 TO ALIEN_COLS - 1
                 IF Col <= WaveRevealCol THEN
                     IF #AlienRow(Row) AND #Mask THEN
-                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                        ' Check if this cell is a boss (multi-boss support)
+                        FoundBoss = 255
+                        IF BossCount > 0 THEN
+                            AlienGridRow = Row : AlienGridCol = Col
+                            GOSUB FindBoss
+                        END IF
+                        IF FoundBoss < 255 THEN
+                            ' Special alien — bomb (squid) or skull boss
+                            IF BossType(FoundBoss) = BOMB_TYPE THEN
+                                ' Bomb alien (squid) left/right halves
+                                ' Flash red/white when bomb alien at HP=1
+                                AlienColor = BossColor(FoundBoss)
+                                IF BossHP(FoundBoss) = 1 THEN
+                                    IF ShimmerCount AND 4 THEN AlienColor = COL_WHITE ELSE AlienColor = COL_RED
+                                END IF
+                                IF Col = BossCol(FoundBoss) THEN
+                                    IF AnimFrame = 0 THEN
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1 * 8 + AlienColor + $0800
+                                    ELSE
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1_F1 * 8 + AlienColor + $0800
+                                    END IF
+                                ELSE
+                                    IF AnimFrame = 0 THEN
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2 * 8 + AlienColor + $0800
+                                    ELSE
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2_F1 * 8 + AlienColor + $0800
+                                    END IF
+                                END IF
+                            ELSE
+                                ' Skull boss left/right halves
+                                IF Col = BossCol(FoundBoss) THEN
+                                    IF AnimFrame = 0 THEN
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1 * 8 + BossColor(FoundBoss) + $0800
+                                    ELSE
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1_F1 * 8 + BossColor(FoundBoss) + $0800
+                                    END IF
+                                ELSE
+                                    IF AnimFrame = 0 THEN
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2 * 8 + BossColor(FoundBoss) + $0800
+                                    ELSE
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2_F1 * 8 + BossColor(FoundBoss) + $0800
+                                    END IF
+                                END IF
+                            END IF
+                        ELSE
+                            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                        END IF
                     ELSE
                         PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
                     END IF
@@ -2476,6 +2947,7 @@ LoadPatternB: PROCEDURE
     AlienOffsetY = 0
     AlienDir = 1
     MarchCount = 0
+    CurrentMarchSpeed = BaseMarchSpeed  ' Reset speed (don't inherit Pattern A's acceleration)
 
     ' Look up which pattern to use for this level
     LoopVar = (Level - 1) AND 7
@@ -2485,6 +2957,43 @@ LoadPatternB: PROCEDURE
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = PatternBData(Col + LoopVar)
     NEXT LoopVar
+
+    ' Clear all boss slots
+    FOR BossIdx = 0 TO MAX_BOSSES - 1
+        BossHP(BossIdx) = 0
+    NEXT BossIdx
+    BossCount = 0 : BombExpTimer = 0
+
+    ' Wave 2 Pattern B: telegraph one boss in Diamond formation center
+    IF Level = 2 THEN
+        BossCount = 1
+        BossCol(0) = 4 : BossRow(0) = 2
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor2
+    END IF
+
+    ' Normalize grid: shift bitmasks so leftmost alive column = 0
+    ' This ensures symmetric march range (AlienOffsetX can't go below 0)
+    HitRow = 8
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        IF #AlienRow(Row) THEN
+            #Mask = 1
+            FOR Col = 0 TO 8
+                IF #AlienRow(Row) AND #Mask THEN
+                    IF Col < HitRow THEN HitRow = Col
+                END IF
+                #Mask = #Mask * 2
+            NEXT Col
+        END IF
+    NEXT Row
+    IF HitRow > 0 THEN
+        FOR Row = 0 TO ALIEN_ROWS - 1
+            #AlienRow(Row) = #AlienRow(Row) / ColMaskData(HitRow)
+        NEXT Row
+        AlienOffsetX = AlienOffsetX + HitRow
+        FOR BossIdx = 0 TO BossCount - 1
+            BossCol(BossIdx) = BossCol(BossIdx) - HitRow
+        NEXT BossIdx
+    END IF
 
     ' Set dual-slide mode: halves fly in from screen edges
     RevealMode = 1
@@ -2500,8 +3009,8 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
 
     ' Redraw HUD (cleared by above loop at row 11)
-    PRINT AT 220, "SCORE:"
-    PRINT AT 227, <>#Score
+    PRINT AT 220 COLOR COL_WHITE, "SCORE:"
+    PRINT AT 227 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
 
     ' Visual/audio cue: "ALERT!" flash
@@ -2607,6 +3116,43 @@ StartNewWave: PROCEDURE
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
 
+    ' Clear all boss slots
+    FOR BossIdx = 0 TO MAX_BOSSES - 1
+        BossHP(BossIdx) = 0
+    NEXT BossIdx
+    BossCount = 0 : BombExpTimer = 0
+
+    ' Wave 3: 2 skull bosses + 1 bomb alien
+    IF Level = 3 THEN
+        BossCount = 3
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor0
+        BossType(0) = SKULL_TYPE
+        BossCol(1) = 6 : BossRow(1) = 0
+        BossHP(1) = BOSS_HP_MAX : BossColor(1) = WaveColor0
+        BossType(1) = SKULL_TYPE
+        BossCol(2) = 4 : BossRow(2) = 3
+        BossHP(2) = 2 : BossColor(2) = WaveColor2
+        BossType(2) = BOMB_TYPE
+    END IF
+
+    ' Wave 4+: 2 skull bosses + 1 skull boss + 1 bomb alien
+    IF Level >= 4 THEN
+        BossCount = 4
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor0
+        BossType(0) = SKULL_TYPE
+        BossCol(1) = 6 : BossRow(1) = 0
+        BossHP(1) = BOSS_HP_MAX : BossColor(1) = WaveColor0
+        BossType(1) = SKULL_TYPE
+        BossCol(2) = 3 : BossRow(2) = 1
+        BossHP(2) = BOSS_HP_MAX : BossColor(2) = WaveColor1
+        BossType(2) = SKULL_TYPE
+        BossCol(3) = 4 : BossRow(3) = 3
+        BossHP(3) = 2 : BossColor(3) = WaveColor2
+        BossType(3) = BOMB_TYPE
+    END IF
+
     ' Clear any active bullets (power-ups persist until death)
     BulletActive = 0
     ABulletActive = 0
@@ -2633,8 +3179,8 @@ StartNewWave: PROCEDURE
     CLS
 
     ' Redraw HUD
-    PRINT AT 220, "SCORE:"
-    PRINT AT 227, <>#Score
+    PRINT AT 220 COLOR COL_WHITE, "SCORE:"
+    PRINT AT 227 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     IF Lives >= 6 THEN
         PRINT AT 237 COLOR COL_WHITE, "X"
@@ -2730,8 +3276,6 @@ SaucerColor2:
 PowerUpWeights:
     DATA 0, 0, 1, 1, 1, 2, 2, 3
 
-    SEGMENT 2   ' Pattern data in Segment 2 (Seg 1 is full)
-
 ' --------------------------------------------
 ' UpdateCapture - Orbit captured wingman around player ship
 ' --------------------------------------------
@@ -2751,8 +3295,13 @@ UpdateCapture: PROCEDURE
     IF RogueX > 160 THEN RogueX = 160
 
     ' Render wingman (skip if power-up capsule is using the sprite)
+    ' Uses SmallCrab centered graphics (GRAM_CRAB_F1/F2) with captured alien's color
     IF TitleFrame = 0 THEN
-        SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, (CaptureCard + AnimFrame) * 8 + CaptureColor + $0800
+        IF AnimFrame = 0 THEN
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_CRAB_F1 * 8 + CaptureColor + $0800
+        ELSE
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_CRAB_F2 * 8 + CaptureColor + $0800
+        END IF
     END IF
 
     ' Fire timer — launch upward bullet
@@ -2775,15 +3324,17 @@ UpdateCapture: PROCEDURE
 
     ' Update capture bullet (move up one row per frame)
     IF CapBulletActive THEN
-        ' Clear previous tile
-        #ScreenPos = CapBulletRow * 20 + CapBulletCol
-        IF #ScreenPos < 240 THEN
-            IF #ScreenPos > 19 THEN PRINT AT #ScreenPos, 0
+        ' Clear previous tile (skip row 0 = score display)
+        IF CapBulletRow > 0 THEN
+            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+            IF #ScreenPos < 240 THEN
+                PRINT AT #ScreenPos, 0
+            END IF
         END IF
 
-        ' Move up
-        IF CapBulletRow = 0 THEN
-            ' Reached top of screen, deactivate
+        ' Move up — stop at row 1 (don't enter score row 0)
+        IF CapBulletRow <= 1 THEN
+            ' Reached top of play area, deactivate
             CapBulletActive = 0
             GOTO CapBulletDone
         END IF
@@ -2796,7 +3347,7 @@ UpdateCapture: PROCEDURE
         IF CapBulletActive THEN
             #ScreenPos = CapBulletRow * 20 + CapBulletCol
             IF #ScreenPos < 240 THEN
-                PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_GREEN + $0800
+                PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_WHITE + $0800
             END IF
         END IF
     END IF
@@ -2824,17 +3375,49 @@ CaptureHitscan: PROCEDURE
     IF AlienGridRow >= ALIEN_ROWS THEN RETURN
 
     ' Calculate bitmask for this column
-    #Mask = 1
-    IF AlienGridCol > 0 THEN
-        FOR LoopVar = 1 TO AlienGridCol
-            #Mask = #Mask * 2
-        NEXT LoopVar
-    END IF
+    #Mask = ColMaskData(AlienGridCol)
 
     ' Check if alien is alive at this position
     IF (#AlienRow(AlienGridRow) AND #Mask) = 0 THEN RETURN
 
-    ' HIT! Kill the alien
+    ' Multi-boss intercept
+    IF BossCount > 0 THEN GOSUB FindBoss
+    IF BossCount > 0 AND FoundBoss < 255 THEN
+        BossHP(FoundBoss) = BossHP(FoundBoss) - 1
+        CapBulletActive = 0
+        IF BossHP(FoundBoss) > 0 THEN
+            ' Damaged but alive
+            IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
+            IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+            SfxType = 1 : SfxVolume = 10 : #SfxPitch = 120
+            SOUND 2, 120, 10
+            RETURN
+        ELSE
+            ' Boss dead! Check type
+            IF BossType(FoundBoss) = BOMB_TYPE THEN
+                ' Bomb alien — chain explosion!
+                GOSUB BombExplode
+                RETURN
+            ELSE
+                ' Skull boss dead! XOR BOTH columns out
+                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
+                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
+                IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+                IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
+                #Score = #Score + BOSS_SCORE
+                ExplosionTimer = 20
+                IF #ExplosionPos < 220 THEN
+                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
+                END IF
+                SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
+                SOUND 2, 80, 15
+                RETURN
+            END IF
+        END IF
+    END IF
+
+    ' Normal alien kill
     #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
 
     ' Clear BACKTAB tile (bullet tile will also be cleared)
@@ -2874,12 +3457,7 @@ RoguePickAlien: PROCEDURE
     IF RANDOM(2) = 1 THEN RogueCol = ALIEN_COLS - 1
 
     ' Calculate bitmask for this column
-    #Mask = 1
-    IF RogueCol > 0 THEN
-        FOR LoopVar = 1 TO RogueCol
-            #Mask = #Mask * 2
-        NEXT LoopVar
-    END IF
+    #Mask = ColMaskData(RogueCol)
 
     ' Count alive aliens in this column
     HitRow = 0
@@ -2896,12 +3474,7 @@ RoguePickAlien: PROCEDURE
         ELSE
             RogueCol = 0
         END IF
-        #Mask = 1
-        IF RogueCol > 0 THEN
-            FOR LoopVar = 1 TO RogueCol
-                #Mask = #Mask * 2
-            NEXT LoopVar
-        END IF
+        #Mask = ColMaskData(RogueCol)
         HitRow = 0
         FOR Row = 0 TO ALIEN_ROWS - 1
             IF #AlienRow(Row) AND #Mask THEN
@@ -2967,13 +3540,7 @@ RogueUpdate: PROCEDURE
 
         IF RogueTimer = 0 THEN
             ' Remove from grid
-            #Mask = 1
-            IF RogueCol > 0 THEN
-                FOR LoopVar = 1 TO RogueCol
-                    #Mask = #Mask * 2
-                NEXT LoopVar
-            END IF
-            #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR #Mask
+            #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR ColMaskData(RogueCol)
 
             ' Clear BACKTAB tile
             IF #ScreenPos < 220 THEN
@@ -3393,6 +3960,10 @@ SaucerAnimate:
     RETURN
 END
 
+' Column bitmask lookup table: ColMaskData(n) = 2^n (0-9)
+ColMaskData:
+    DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+
 ' Pattern B formations (5 bitmasks per pattern, one per row)
 PatternBData:
     DATA $100, $082, $044, $028, $010  ' 0: V-shape (chevron pointing down)
@@ -3744,7 +4315,7 @@ ZodRender: PROCEDURE
     RETURN
     END
 
-    SEGMENT 2   ' Graphics data in Segment 2 (Seg 1 full)
+    ' (continuing in Segment 2 — flight engine, graphics data, music)
 
 ' --------------------------------------------
 ' Graphics Data
