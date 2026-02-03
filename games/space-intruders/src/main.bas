@@ -483,14 +483,7 @@ ResetToTitle:
     Invincible = 0
     ShakeTimer = 0
     SCROLL 0, 0
-    SPRITE SPR_PLAYER, 0, 0, 0
-    SPRITE SPR_SHIP_ACCENT, 0, 0, 0
-    SPRITE SPR_PBULLET, 0, 0, 0
-    SPRITE SPR_ABULLET, 0, 0, 0
-    SPRITE SPR_FLYER, 0, 0, 0
-    SPRITE SPR_SAUCER, 0, 0, 0
-    SPRITE SPR_SAUCER2, 0, 0, 0
-    SPRITE SPR_POWERUP, 0, 0, 0
+    GOSUB HideAllSprites
 
 ' ============================================
 ' TITLE SCREEN
@@ -901,6 +894,36 @@ SkipPressfire:
 
     SEGMENT 1   ' All procedures in Segment 1 (Seg 0 reserved for main code + Intellivoice runtime)
 
+' ============================================
+' UTILITY PROCEDURES (shared code consolidation)
+' ============================================
+
+' --- HideAllSprites: Hide all 8 hardware sprites ---
+HideAllSprites: PROCEDURE
+    SPRITE 0, 0, 0, 0 : SPRITE 1, 0, 0, 0
+    SPRITE 2, 0, 0, 0 : SPRITE 3, 0, 0, 0
+    SPRITE 4, 0, 0, 0 : SPRITE 5, 0, 0, 0
+    SPRITE 6, 0, 0, 0 : SPRITE 7, 0, 0, 0
+    RETURN
+END
+
+' --- SilenceSfx: Stop all sound effects on channel 3 ---
+SilenceSfx: PROCEDURE
+    SOUND 2, , 0
+    SfxVolume = 0
+    SfxType = 0
+    RETURN
+END
+
+' --- ClearEnemyState: Reset rogue alien and wingman state ---
+ClearEnemyState: PROCEDURE
+    RogueState = 0 : RogueTimer = 0
+    CaptureActive = 0 : CapBulletActive = 0
+    SPRITE SPR_FLYER, 0, 0, 0
+    SPRITE SPR_POWERUP, 0, 0, 0
+    RETURN
+END
+
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
     ' Clear rows 5-7 first (cols 0-19)
@@ -1050,7 +1073,6 @@ StartGame:
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
-    SPRITE SPR_FLYER, 0, 0, 0
 
     ' Wave 1 announcement
     IF VOICE.AVAILABLE THEN
@@ -1251,7 +1273,7 @@ GameLoop:
                     ABulletActive = 0 : BulletActive = 0
                     RogueState = ROGUE_IDLE : RogueTimer = 0
                     CaptureActive = 0 : CapBulletActive = 0
-                    SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                    GOSUB SilenceSfx
                     SPRITE SPR_PLAYER, 0, 0, 0
                     SPRITE SPR_SHIP_ACCENT, 0, 0, 0
                     SPRITE SPR_PBULLET, 0, 0, 0
@@ -1481,10 +1503,7 @@ ChainDone:
                 DualTimer = 0 : #MegaTimer = 0
                 ABulletActive = 0
                 ' Cancel active rogue alien and wingman
-                RogueState = ROGUE_IDLE : RogueTimer = 0
-                SPRITE SPR_FLYER, 0, 0, 0
-                CaptureActive = 0 : CapBulletActive = 0
-                SPRITE SPR_POWERUP, 0, 0, 0
+                GOSUB ClearEnemyState
                 IF Lives = 0 THEN
                     ' Pre-game-over: play death explosion, then aliens crawl
                     GameOver = 3
@@ -1536,7 +1555,7 @@ ChainDone:
             ELSEIF GameOver = 4 THEN
                 ' Alien crawl done — fancy Game Over screen
                 CaptureActive = 0 : CapBulletActive = 0
-                SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0
+                GOSUB SilenceSfx
                 ' Game-over music: intensity matches how far the player got
                 IF Level >= 5 THEN
                     PLAY si_dnb_panic
@@ -1550,15 +1569,7 @@ ChainDone:
                 ShakeTimer = 0
                 SCROLL 0, 0
                 CLS
-                ' Hide all sprites
-                SPRITE SPR_PLAYER, 0, 0, 0
-                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
-                SPRITE SPR_PBULLET, 0, 0, 0
-                SPRITE SPR_ABULLET, 0, 0, 0
-                SPRITE SPR_FLYER, 0, 0, 0
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
-                SPRITE SPR_POWERUP, 0, 0, 0
+                GOSUB HideAllSprites
                 ' Update high score
                 IF #Score > #HighScore THEN #HighScore = #Score
                 ' "GAME OVER" in tan at row 2 col 5, centered
@@ -3059,12 +3070,9 @@ LoadPatternB: PROCEDURE
     BulletActive = 0
     ABulletActive = 0
     MegaBeamTimer = 0
-    RogueState = 0 : RogueTimer = 0
-    CaptureActive = 0 : CapBulletActive = 0
+    GOSUB ClearEnemyState
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
-    SPRITE SPR_FLYER, 0, 0, 0
-    SPRITE SPR_POWERUP, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
     FlyState = 0
@@ -3286,14 +3294,11 @@ StartNewWave: PROCEDURE
     ABulletActive = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
-    RogueState = 0 : RogueTimer = 0
-    CaptureActive = 0 : CapBulletActive = 0
+    GOSUB ClearEnemyState
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
-    SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
-    SPRITE SPR_POWERUP, 0, 0, 0
     FlyState = 0
     #FlyPhase = 0
     TitleFrame = 0
@@ -3313,9 +3318,8 @@ StartNewWave: PROCEDURE
     GOSUB UpdateLivesHUD
 
     ' Silence any lingering SFX before transition WAITs
-    SOUND 2, , 0
+    GOSUB SilenceSfx
     POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
-    SfxVolume = 0 : SfxType = 0
 
     ' Phase A: Breather pause (blank screen + HUD only)
     FOR LoopVar = 0 TO 30

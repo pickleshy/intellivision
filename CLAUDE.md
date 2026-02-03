@@ -612,6 +612,56 @@ See `docs/IntyBASIC Tips_Tricks and Do's and Don'ts.pdf` for full details.
 - **Test on real hardware** - Emulator behavior differs from actual consoles
 - **Get diverse testers** - Different ages find different issues
 
+**Code Consolidation:**
+
+As projects grow, repeated code patterns emerge. Extract these into utility procedures to reduce ROM usage and improve maintainability:
+
+```basic
+' --- Common utility procedures (place at start of SEGMENT 1) ---
+
+' Hide all 8 hardware sprites in one call
+HideAllSprites: PROCEDURE
+    SPRITE 0, 0, 0, 0 : SPRITE 1, 0, 0, 0
+    SPRITE 2, 0, 0, 0 : SPRITE 3, 0, 0, 0
+    SPRITE 4, 0, 0, 0 : SPRITE 5, 0, 0, 0
+    SPRITE 6, 0, 0, 0 : SPRITE 7, 0, 0, 0
+    RETURN
+END
+
+' Silence SFX channel and reset state variables
+SilenceSfx: PROCEDURE
+    SOUND 2, , 0
+    SfxVolume = 0
+    SfxType = 0
+    RETURN
+END
+
+' Reset enemy/game subsystem state (customize per game)
+ClearEnemyState: PROCEDURE
+    EnemyState = 0 : EnemyTimer = 0
+    SPRITE SPR_ENEMY, 0, 0, 0
+    RETURN
+END
+```
+
+**Patterns worth consolidating:**
+- **Full sprite hide blocks** - Any sequence that hides all 8 sprites → `GOSUB HideAllSprites`
+- **SFX silence patterns** - `SOUND 2, , 0 : SfxVolume = 0 : SfxType = 0` → `GOSUB SilenceSfx`
+- **State reset sequences** - Repeated variable resets + sprite hides → custom procedure
+- **Transition sequences** - Screen clears, WAIT loops, HUD redraws
+
+**When to consolidate:**
+- Pattern appears 3+ times in codebase
+- Pattern involves 3+ lines of code
+- Pattern is likely to need changes (single point of maintenance)
+
+**Audit technique:** Search for repeated patterns with grep:
+```bash
+grep -n "SPRITE.*0, 0, 0" src/main.bas | head -20
+grep -n "SfxVolume = 0" src/main.bas
+grep -n "RogueState = 0" src/main.bas
+```
+
 ## Common Pitfalls (Learned the Hard Way)
 
 ### Color Stack BACKTAB Manipulation
