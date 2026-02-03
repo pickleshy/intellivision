@@ -1617,7 +1617,7 @@ ChainDone:
     IF MegaBeamTimer > 0 THEN
         MegaBeamTimer = MegaBeamTimer - 1
         ' Clear old beam column before updating position
-        FOR LoopVar = 0 TO 8
+        FOR LoopVar = 0 TO 9
             #ScreenPos = LoopVar * 20 + MegaBeamCol
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
@@ -1626,11 +1626,11 @@ ChainDone:
         IF MegaBeamCol > 19 THEN MegaBeamCol = 19
         ' Kill aliens in new column position
         GOSUB MegaBeamKill
-        ' Calculate beam top row: sweeps UP from row 8 (above ship turret)
+        ' Calculate beam top row: sweeps UP from row 9 (at ship turret)
         ' Frames elapsed = 20 - MegaBeamTimer. Sweep 2 rows/frame.
         Col = (20 - MegaBeamTimer) * 2
-        IF Col > 8 THEN Col = 8
-        Col = 8 - Col
+        IF Col > 9 THEN Col = 9
+        Col = 9 - Col
         ' Color cycle: white → yellow → red
         IF MegaBeamTimer > 13 THEN
             LaserColor = COL_WHITE
@@ -1639,8 +1639,8 @@ ChainDone:
         ELSE
             LaserColor = COL_RED
         END IF
-        ' Draw beam from top row (Col) down to row 8 (above ship turret)
-        FOR LoopVar = Col TO 8
+        ' Draw beam from top row (Col) down to row 9 (at ship turret)
+        FOR LoopVar = Col TO 9
             #ScreenPos = LoopVar * 20 + MegaBeamCol
             PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + LaserColor + $0800
         NEXT LoopVar
@@ -2664,7 +2664,7 @@ END
 ' MegaBeamClear - Clear beam column from BACKTAB
 ' --------------------------------------------
 MegaBeamClear: PROCEDURE
-    FOR LoopVar = 0 TO 8
+    FOR LoopVar = 0 TO 9
         #ScreenPos = LoopVar * 20 + MegaBeamCol
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
