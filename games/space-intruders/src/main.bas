@@ -90,12 +90,12 @@ CONST ALIEN_START_X = 0         ' Starting column on screen (leftmost)
 CONST ALIEN_START_Y = 1         ' Starting row on screen
 CONST ALIEN_MAX_X   = 11        ' Maximum X offset before reversing (20 - 9)
 CONST MARCH_SPEED_START = 60   ' Starting frames between march steps
-CONST MARCH_SPEED_MIN = 20      ' Fastest march speed (minimum frames)
+CONST MARCH_SPEED_MIN = 24      ' Fastest march speed (minimum frames) - balanced
 
 ' Bullet constants
 CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
-CONST ALIEN_BULLET_SPEED = 1    ' Alien bullet speed (pixels per frame)
+CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed (pixels per frame) - doubled for challenge
 CONST ALIEN_SHOOT_RATE = 30     ' Frames between alien shots
 CONST RAPID_SPEED    = 3        ' Rapid fire bullet speed (3px/frame)
 CONST RAPID_COOLDOWN = 8        ' Frames between rapid fire shots
@@ -257,7 +257,7 @@ RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = n
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
 ' Sound effect variables
 SfxVolume   = 0                 ' Current decay volume (0 = silent)
-SfxType     = 0                 ' 0=none, 1=alien explode, 2=saucer explode, 3=player death
+SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 ' Quad laser variables
 DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
@@ -1423,22 +1423,23 @@ ChainDone:
         GOSUB RogueUpdate
     END IF
 
-    ' Check bullet-vs-bullet collision
+    ' Check bullet-vs-bullet collision (PARRY - tight hitbox, high reward)
     IF BulletActive THEN
         IF ABulletActive THEN
-            ' Check if bullets are close enough to collide
-            ' X within 6 pixels, Y within 8 pixels
-            IF BulletX >= ABulletX - 6 THEN
-                IF BulletX <= ABulletX + 6 THEN
-                    IF BulletY >= ABulletY - 8 THEN
-                        IF BulletY <= ABulletY + 8 THEN
-                            ' Bullets collide! Destroy both
+            ' Tight hitbox: X within 3 pixels, Y within 4 pixels (skill shot!)
+            IF BulletX >= ABulletX - 3 THEN
+                IF BulletX <= ABulletX + 3 THEN
+                    IF BulletY >= ABulletY - 4 THEN
+                        IF BulletY <= ABulletY + 4 THEN
+                            ' PARRY! Bullets collide - destroy both
                             BulletActive = 0
                             ABulletActive = 0
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
-                            ' Small score bonus for the skillful shot
-                            #Score = #Score + 5
+                            ' Skill bonus for the risky parry
+                            #Score = #Score + 25
+                            ' Bright zap SFX (type 6)
+                            SfxType = 6 : SfxVolume = 15 : #SfxPitch = 60
                         END IF
                     END IF
                 END IF
@@ -1622,7 +1623,7 @@ ChainDone:
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
-        MegaBeamCol = (PlayerX + 2) / 8
+        MegaBeamCol = (PlayerX + 4) / 8
         IF MegaBeamCol > 19 THEN MegaBeamCol = 19
         ' Kill aliens in new column position
         GOSUB MegaBeamKill
@@ -1740,7 +1741,7 @@ MovePlayer: PROCEDURE
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
-                MegaBeamCol = (PlayerX + 2) / 8
+                MegaBeamCol = (PlayerX + 4) / 8
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
                 ' Reset beam damage tracker for each boss
@@ -2371,9 +2372,9 @@ MarchAliens: PROCEDURE
             ' Hit right edge - drop down and reverse
             AlienOffsetY = AlienOffsetY + 1
             AlienDir = 255
-            ' Accelerate march + music on descent
-            IF CurrentMarchSpeed > 8 THEN
-                CurrentMarchSpeed = CurrentMarchSpeed - 8
+            ' Accelerate march + music on descent (balanced ramp)
+            IF CurrentMarchSpeed > 6 THEN
+                CurrentMarchSpeed = CurrentMarchSpeed - 6
             END IF
             GOSUB UpdateMusicGear
         END IF
@@ -2388,8 +2389,8 @@ MarchAliens: PROCEDURE
                 ' Hit left edge - drop down and reverse
                 AlienOffsetY = AlienOffsetY + 1
                 AlienDir = 1
-                IF CurrentMarchSpeed > 8 THEN
-                    CurrentMarchSpeed = CurrentMarchSpeed - 8
+                IF CurrentMarchSpeed > 6 THEN
+                    CurrentMarchSpeed = CurrentMarchSpeed - 6
                 END IF
                 GOSUB UpdateMusicGear
             END IF
@@ -2397,8 +2398,8 @@ MarchAliens: PROCEDURE
             ' AlienOffsetX = 0: reverse (can't represent negative offset)
             AlienOffsetY = AlienOffsetY + 1
             AlienDir = 1
-            IF CurrentMarchSpeed > 8 THEN
-                CurrentMarchSpeed = CurrentMarchSpeed - 8
+            IF CurrentMarchSpeed > 6 THEN
+                CurrentMarchSpeed = CurrentMarchSpeed - 6
             END IF
             GOSUB UpdateMusicGear
         END IF
@@ -2540,6 +2541,14 @@ UpdateSfx: PROCEDURE
         ' Enable noise only on channel C (pure white noise)
         IF SfxVolume > 0 THEN
             POKE $1F8, PEEK($1F8) AND $DF ' Bit 5 clear: noise C on
+        END IF
+    ELSEIF SfxType = 6 THEN
+        ' Parry: bright zap - fast ascending pitch + very fast decay
+        #SfxPitch = #SfxPitch + 12
+        IF SfxVolume > 3 THEN
+            SfxVolume = SfxVolume - 3
+        ELSE
+            SfxVolume = 0
         END IF
     ELSE
         ' Alien: fast decay (2 per frame)
