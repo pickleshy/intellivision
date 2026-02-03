@@ -10,7 +10,7 @@ OPTION MAP 2    ' Enable 42K ROM
 ' --------------------------------------------
 CONST PLAYER_Y      = 88        ' Player Y position (near bottom)
 CONST PLAYER_MIN_X  = 8         ' Left boundary
-CONST PLAYER_MAX_X  = 152       ' Right boundary (160 - 8 for sprite width)
+CONST PLAYER_MAX_X  = 160       ' Right boundary (sprite X=160 → screen pixels 152-159)
 CONST PLAYER_SPEED  = 2         ' Pixels per frame
 
 ' Sprite slot assignments
@@ -1754,8 +1754,8 @@ MoveBullet: PROCEDURE
             BulletActive = 0
             ChainCount = 0   ' Missed — break chain
         END IF
-    ELSEIF DualTimer > 0 THEN
-        ' Quad laser: flat 2px/frame
+    ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
+        ' Quad laser / beam: flat 2px/frame
         IF BulletY > BULLET_TOP + 2 THEN
             BulletY = BulletY - 2
         ELSE
@@ -1998,7 +1998,7 @@ CheckOneColumn: PROCEDURE
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                     IF BossHP(FoundBoss) > 0 THEN
                         ' Damaged but alive — stop bullet, update color
-                        IF BeamTimer = 0 THEN BulletActive = 0
+                        BulletActive = 0
                         IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
                         IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
@@ -2008,7 +2008,7 @@ CheckOneColumn: PROCEDURE
                         ' Boss dead! Check type
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
-                            IF BeamTimer = 0 THEN BulletActive = 0
+                            BulletActive = 0
                             GOSUB BombExplode
                             RETURN
                         ELSE
@@ -2021,7 +2021,7 @@ CheckOneColumn: PROCEDURE
                             IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
                             ' Big score + explosion
                             #Score = #Score + BOSS_SCORE
-                            IF BeamTimer = 0 THEN BulletActive = 0
+                            BulletActive = 0
                             ExplosionTimer = 20
                             IF #ExplosionPos < 220 THEN
                                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
