@@ -1622,7 +1622,7 @@ ChainDone:
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
-        MegaBeamCol = (PlayerX - 5) / 8
+        MegaBeamCol = (PlayerX + 2) / 8
         IF MegaBeamCol > 19 THEN MegaBeamCol = 19
         ' Kill aliens in new column position
         GOSUB MegaBeamKill
@@ -1740,7 +1740,7 @@ MovePlayer: PROCEDURE
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
-                MegaBeamCol = (PlayerX - 5) / 8
+                MegaBeamCol = (PlayerX + 2) / 8
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
                 ' Reset beam damage tracker for each boss
@@ -1758,7 +1758,7 @@ MovePlayer: PROCEDURE
         ELSEIF DualTimer > 0 THEN
             ' Quad laser: single center bullet with wide hitbox
             IF BulletActive = 0 THEN
-                BulletX = PlayerX  ' Center of ship (bitmap already centered)
+                BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
             END IF
@@ -1766,7 +1766,12 @@ MovePlayer: PROCEDURE
             ' Normal/beam/rapid: single center shot
             IF BulletActive = 0 THEN
                 IF TitleJitter = 0 THEN
-                    BulletX = PlayerX  ' Center of ship (bitmap already centered)
+                    ' Beam drawn at BulletX-3, normal drawn at BulletX
+                    IF BeamTimer > 0 THEN
+                        BulletX = PlayerX + 3  ' Beam: offset for -3 draw adjustment
+                    ELSE
+                        BulletX = PlayerX  ' Normal/rapid: direct draw position
+                    END IF
                     BulletY = PLAYER_Y - 4
                     BulletActive = 1
                     IF BeamTimer > 0 THEN
