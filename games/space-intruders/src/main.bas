@@ -239,6 +239,10 @@ StarCount   = 0                 ' Number of active stars
 StarTimer   = 0                 ' Frame counter for scroll updates
 StarTick    = 0                 ' Tick counter (for slow layer)
 BeamTimer  = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
+ChainTimer = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
+#ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
+#ChainFreq2 = 0                ' Chain SFX channel C frequency (sub rumble)
+#ChainVol  = 0                 ' Chain SFX shared volume
 ' Power-up drop variables (reuse title-screen vars during gameplay)
 ' TitleFrame reuses TitleFrame (title-only)
 ' TitleMarchDir reuses TitleMarchDir (title-only)
@@ -1268,7 +1272,7 @@ GameLoop:
                         AlienOffsetX = 0
                         AlienDir = 1
                         MarchCount = 0
-                        ' Death sequence with screen shake
+                        ' Death sequence with screen shake + white flash
                         DeathTimer = 75
                         ShakeTimer = 30
                         ' Clear alien area so formation redraws cleanly
@@ -1322,15 +1326,17 @@ GameLoop:
     ' Chain explosion rendering (bomb alien blast radius)
     IF BombExpTimer > 0 THEN
         BombExpTimer = BombExpTimer - 1
-        ' Determine explosion frame based on timer
+        ' Determine explosion frame — flash red/white every frame
         IF BombExpTimer > 13 THEN
             AlienCard = GRAM_EXPLOSION
-            AlienColor = COL_RED
         ELSEIF BombExpTimer > 6 THEN
             AlienCard = GRAM_EXPLOSION2
-            AlienColor = COL_YELLOW
         ELSE
             AlienCard = GRAM_EXPLOSION3
+        END IF
+        IF BombExpTimer AND 1 THEN
+            AlienColor = COL_RED
+        ELSE
             AlienColor = COL_WHITE
         END IF
         ' Draw explosion on all cells in blast radius (4 cols × 3 rows)
@@ -1352,6 +1358,40 @@ GameLoop:
             END IF
             END IF
         NEXT Row
+    END IF
+
+    ' Chain reaction laser SFX decay (takes priority over regular SFX)
+    IF ChainTimer > 0 THEN
+        ChainTimer = ChainTimer - 1
+        #ChainFreq1 = #ChainFreq1 + 10
+        #ChainFreq2 = #ChainFreq2 + 6
+        IF (ChainTimer AND 1) = 0 THEN
+            IF #ChainVol > 0 THEN #ChainVol = #ChainVol - 1
+        END IF
+        POKE $1F7, 12 + (24 - ChainTimer) / 3
+        SOUND 0, #ChainFreq1, #ChainVol
+        SOUND 2, #ChainFreq2, #ChainVol
+        IF ChainTimer = 0 THEN
+            ' SFX done — silence and restart music
+            SOUND 0, 0, 0
+            SOUND 2, 0, 0
+            POKE $1F8, $3F
+            SfxVolume = 0 : SfxType = 0
+            PLAY SIMPLE
+            PLAY VOLUME 12
+            ON MusicGear GOTO ChainGearMid, ChainGearFast, ChainGearPanic
+            PLAY si_bg_slow
+            GOTO ChainDone
+ChainGearMid:
+            PLAY si_bg_mid
+            GOTO ChainDone
+ChainGearFast:
+            PLAY si_bg_fast
+            GOTO ChainDone
+ChainGearPanic:
+            PLAY si_bg_panic
+ChainDone:
+        END IF
     END IF
 
     ' Update explosion sound effect (noise decay)
@@ -1582,7 +1622,7 @@ GameLoop:
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
-        MegaBeamCol = (PlayerX + 3) / 8
+        MegaBeamCol = (PlayerX - 5) / 8
         IF MegaBeamCol > 19 THEN MegaBeamCol = 19
         ' Kill aliens in new column position
         GOSUB MegaBeamKill
@@ -1700,7 +1740,7 @@ MovePlayer: PROCEDURE
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
-                MegaBeamCol = (PlayerX + 3) / 8
+                MegaBeamCol = (PlayerX - 5) / 8
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
                 ' Reset beam damage tracker for each boss
@@ -1729,6 +1769,18 @@ MovePlayer: PROCEDURE
                     BulletX = PlayerX  ' Center of ship (bitmap already centered)
                     BulletY = PLAYER_Y - 4
                     BulletActive = 1
+                    IF BeamTimer > 0 THEN
+                        ' Chain reaction laser SFX: kill music, dual-tone + noise
+                        PLAY OFF
+                        ChainTimer = 24
+                        #ChainFreq1 = 150
+                        #ChainFreq2 = 80
+                        #ChainVol = 15
+                        POKE $1F7, 12
+                        POKE $1F8, $18
+                        SOUND 0, 150, 14
+                        SOUND 2, 80, 15
+                    END IF
                     IF RapidTimer > 0 THEN
                         TitleJitter = RAPID_COOLDOWN
                     END IF
@@ -1834,17 +1886,10 @@ CheckRowForHit: PROCEDURE
                     GOSUB CheckOneColumn
                 END IF
             ELSEIF DualTimer > 0 THEN
-                ' Quad laser: 4 spread columns (~24px wide kill zone)
-                IF BulletX >= 16 THEN
-                    HitCol = (BulletX - 16) / 8
+                ' Quad laser: 4 columns centered on sprite (32px kill zone)
+                IF BulletX >= 12 THEN
+                    HitCol = (BulletX - 12) / 8
                     GOSUB CheckOneColumn
-                END IF
-
-                IF BulletActive THEN
-                    IF BulletX >= 10 THEN
-                        HitCol = (BulletX - 10) / 8
-                        GOSUB CheckOneColumn
-                    END IF
                 END IF
 
                 IF BulletActive THEN
@@ -1853,7 +1898,12 @@ CheckRowForHit: PROCEDURE
                 END IF
 
                 IF BulletActive THEN
-                    HitCol = (BulletX + 2) / 8
+                    HitCol = (BulletX + 4) / 8
+                    GOSUB CheckOneColumn
+                END IF
+
+                IF BulletActive THEN
+                    HitCol = (BulletX + 12) / 8
                     GOSUB CheckOneColumn
                 END IF
             ELSE
@@ -1969,9 +2019,12 @@ BombExplode: PROCEDURE
     ' Score for bomb itself
     #Score = #Score + BOMB_SCORE
 
-    ' Big SFX (low rumble)
-    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 60
-    SOUND 2, 60, 15
+    ' Big SFX (white noise boom, same as ship explosion)
+    SfxType = 5 : SfxVolume = 15 : #SfxPitch = 0
+    SOUND 2, 0, 15
+
+    ' Screen shake for the explosion
+    ShakeTimer = 20
 
     RETURN
 END
@@ -2463,6 +2516,25 @@ UpdateSfx: PROCEDURE
             POKE $1F8, PEEK($1F8) AND $DF
         ELSE
             SfxVolume = 0
+        END IF
+    ELSEIF SfxType = 5 THEN
+        ' Bomb explosion: white noise boom (same envelope as ship death)
+        #SfxPitch = 0
+        IF BombExpTimer > 2 THEN
+            ' Slow volume decay: drop 1 every 2 frames
+            IF (BombExpTimer AND 1) = 0 THEN
+                IF SfxVolume > 1 THEN
+                    SfxVolume = SfxVolume - 1
+                END IF
+            END IF
+            ' Noise period deepens over time (14 → ~24)
+            POKE $1F7, 14 + (20 - BombExpTimer) / 2
+        ELSE
+            SfxVolume = 0
+        END IF
+        ' Enable noise only on channel C (pure white noise)
+        IF SfxVolume > 0 THEN
+            POKE $1F8, PEEK($1F8) AND $DF ' Bit 5 clear: noise C on
         END IF
     ELSE
         ' Alien: fast decay (2 per frame)
