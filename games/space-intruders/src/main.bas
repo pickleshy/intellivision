@@ -225,6 +225,7 @@ FlyFrame    = 0                 ' Flying sprite animation frame
 FlyColorIdx = 0                 ' Color cycle index (0-5)
 FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
+SaucerCard  = GRAM_SAUCER       ' Current saucer GRAM card (animation frame)
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
 FlyAngry    = 0                 ' 1=saucer will turn hostile at midpoint
 FlyCenterX  = 0                 ' Saucer swirl circle center X
@@ -306,6 +307,8 @@ DIM BossType(MAX_BOSSES)           ' 0=skull (multi-hit), 1=bomb (chain explosio
 BossCount      = 0                 ' Number of boss slots in use (0-4)
 BossIdx        = 0                 ' Temp: loop index for boss iteration
 FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
+RowBoss1       = 255               ' Cached: 1st boss index on current row (255=none)
+RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=none)
 DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
 ' Column bitmask lookup table is in ROM (see ColMaskData near end of file)
 ' Chain explosion state (bomb alien)
@@ -316,6 +319,9 @@ BombExpCol     = 0                 ' Left grid column of exploded bomb
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
 WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
 WaveColor2     = 5                 ' Octopus color (rows 3-4) — default green
+
+' Tutorial message state (first powerup hint)
+TutorialTimer  = 0                 ' 255=ready, 1-180=showing, 0=done
 
 ' Flight engine variables
 #FlyPathLen  = 0                 ' Current pattern waypoint count
@@ -1069,6 +1075,7 @@ StartGame:
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
     CaptureActive = 0 : CapBulletActive = 0
+    TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
     SPRITE SPR_SAUCER2, 0, 0, 0
@@ -1691,6 +1698,24 @@ ChainDone:
         END IF
     END IF
 
+    ' Tutorial message: "GET THE POWERUP!" (flashing, first drop only)
+    IF TutorialTimer > 0 THEN
+        IF TutorialTimer < 255 THEN
+            TutorialTimer = TutorialTimer - 1
+            IF TutorialTimer = 0 THEN
+                ' Clear message when timer expires
+                PRINT AT 200, "                    "
+            ELSE
+                ' Flash every 8 frames (4 on, 4 off)
+                IF TutorialTimer AND 4 THEN
+                    PRINT AT 204 COLOR 6, "GET THE POWERUP!"
+                ELSE
+                    PRINT AT 200, "                    "
+                END IF
+            END IF
+        END IF
+    END IF
+
     ' Debug mode: end CPU profiling — black border shows idle time
     IF DebugMode THEN BORDER 0
 
@@ -1831,40 +1856,40 @@ END
 ' MoveBullet - Update bullet position and check collisions
 ' --------------------------------------------
 MoveBullet: PROCEDURE
-    ' Move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
-    IF RapidTimer > 0 THEN
-        IF BulletY > BULLET_TOP + RAPID_SPEED THEN
-            BulletY = BulletY - RAPID_SPEED
-        ELSE
-            BulletActive = 0
-            ChainCount = 0   ' Missed — break chain
-        END IF
-    ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
-        ' Quad laser / beam: flat 2px/frame
-        IF BulletY > BULLET_TOP + 2 THEN
-            BulletY = BulletY - 2
-        ELSE
-            BulletActive = 0
-            ChainCount = 0   ' Missed — break chain
-        END IF
-    ELSE
-        ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
-        IF (BulletColor AND 3) = 3 THEN
-            LoopVar = 2
-        ELSE
-            LoopVar = 1
-        END IF
-        IF BulletY > BULLET_TOP + LoopVar THEN
-            BulletY = BulletY - LoopVar
-        ELSE
-            BulletActive = 0
-            ChainCount = 0   ' Missed — break chain
-        END IF
-    END IF
+    ' Check collision FIRST at current position (so bullet is visible at hit point)
+    GOSUB CheckBulletHit
 
-    ' Check collision with aliens
+    ' Then move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
     IF BulletActive THEN
-        GOSUB CheckBulletHit
+        IF RapidTimer > 0 THEN
+            IF BulletY > BULLET_TOP + RAPID_SPEED THEN
+                BulletY = BulletY - RAPID_SPEED
+            ELSE
+                BulletActive = 0
+                ChainCount = 0   ' Missed — break chain
+            END IF
+        ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
+            ' Quad laser / beam: flat 2px/frame
+            IF BulletY > BULLET_TOP + 2 THEN
+                BulletY = BulletY - 2
+            ELSE
+                BulletActive = 0
+                ChainCount = 0   ' Missed — break chain
+            END IF
+        ELSE
+            ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
+            IF (BulletColor AND 3) = 3 THEN
+                LoopVar = 2
+            ELSE
+                LoopVar = 1
+            END IF
+            IF BulletY > BULLET_TOP + LoopVar THEN
+                BulletY = BulletY - LoopVar
+            ELSE
+                BulletActive = 0
+                ChainCount = 0   ' Missed — break chain
+            END IF
+        END IF
     END IF
 
     RETURN
@@ -2277,8 +2302,9 @@ FindShooter: PROCEDURE
         END IF
     NEXT Row
     IF HitRow < 255 THEN
-        ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 3
-        ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 8
+        ' Convert BACKTAB coords to sprite coords (+8 offset) and position at alien center/bottom
+        ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 11  ' +8 sprite offset, +3 to center
+        ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 16   ' +8 sprite offset, +8 to bottom of card
         ABulletActive = 1
     END IF
     RETURN
@@ -2714,7 +2740,6 @@ MegaBeamKill: PROCEDURE
             IF #ScreenPos <= FlyX + 15 THEN
                 ' Destroy saucer
                 GOSUB DeactivateSaucer
-                DEFINE GRAM_SAUCER, 1, SaucerGfx
                 SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                 SOUND 2, 150, 15
                 #Score = #Score + 100
@@ -2827,6 +2852,13 @@ UpdatePowerUp: PROCEDURE
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
+                ' Clear tutorial message if showing
+                IF TutorialTimer > 0 THEN
+                    IF TutorialTimer < 255 THEN
+                        TutorialTimer = 0
+                        PRINT AT 200, "                    "
+                    END IF
+                END IF
                 ' Weighted random next power-up type
                 TitleColor = PowerUpWeights(RANDOM(8))
                 RETURN
@@ -2838,6 +2870,13 @@ UpdatePowerUp: PROCEDURE
     IF #PowerTimer = 0 THEN
         TitleFrame = 0
         SPRITE SPR_POWERUP, 0, 0, 0
+        ' Clear tutorial message if showing
+        IF TutorialTimer > 0 THEN
+            IF TutorialTimer < 255 THEN
+                TutorialTimer = 0
+                PRINT AT 200, "                    "
+            END IF
+        END IF
         RETURN
     END IF
 
@@ -2876,8 +2915,9 @@ DrawAliens: PROCEDURE
         FOR ClearRow = LastClearedY TO AlienOffsetY - 1
             IF ALIEN_START_Y + ClearRow < 11 THEN
                 #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
-                FOR Col = 0 TO 19
-                    PRINT AT #ScreenPos + Col, 0
+                ' Only clear alien area + trails (not full 20 columns)
+                FOR Col = ALIEN_START_X + AlienOffsetX TO ALIEN_START_X + AlienOffsetX + ALIEN_COLS + 1
+                    IF Col < 20 THEN PRINT AT #ScreenPos + Col, 0
                 NEXT Col
             END IF
         NEXT ClearRow
@@ -2906,29 +2946,46 @@ DrawAliens: PROCEDURE
         ' card * 8 + color + $0800 (GRAM flag)
         #Card = AlienCard * 8 + AlienColor + $0800
 
-        ' Pre-check: is any boss on this row? (avoids FindBoss scan per cell)
+        ' Pre-check: cache boss indices for this row (eliminates FindBoss GOSUB)
         RowHasBoss = 0
+        RowBoss1 = 255 : RowBoss2 = 255
         IF BossCount > 0 THEN
             FOR BossIdx = 0 TO BossCount - 1
                 IF BossHP(BossIdx) > 0 THEN
-                    IF Row = BossRow(BossIdx) THEN RowHasBoss = 1
+                    IF Row = BossRow(BossIdx) THEN
+                        IF RowBoss1 = 255 THEN RowBoss1 = BossIdx ELSE RowBoss2 = BossIdx
+                        RowHasBoss = 1
+                    END IF
                 END IF
             NEXT BossIdx
         END IF
 
         IF RevealMode = 1 THEN
-            ' Slide-in mode: clear row, draw left group and right group at separate offsets
-            FOR Col = 0 TO 19
-                PRINT AT #ScreenPos + Col, 0
-            NEXT Col
+            ' Slide-in mode: clear only trail columns (not all 20!)
+            ' Left group slides right → clear previous left edge
+            IF WaveRevealCol > 0 THEN
+                FOR Col = 0 TO 4
+                    PRINT AT #ScreenPos + WaveRevealCol - 1 + Col, 0
+                NEXT Col
+            END IF
+            ' Right group slides left → clear previous right edge
+            IF RightRevealCol < 9 THEN
+                FOR Col = 5 TO 9
+                    PRINT AT #ScreenPos + RightRevealCol + 1 + Col, 0
+                NEXT Col
+            END IF
             #Mask = 1
             FOR Col = 0 TO ALIEN_COLS - 1
                 IF #AlienRow(Row) AND #Mask THEN
-                    ' Check for boss in dual-reveal mode
+                    ' Check for boss in dual-reveal mode (inline, no GOSUB)
                     FoundBoss = 255
                     IF RowHasBoss THEN
-                        AlienGridRow = Row : AlienGridCol = Col
-                        GOSUB FindBoss
+                        IF RowBoss1 < 255 THEN
+                            IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                        END IF
+                        IF FoundBoss = 255 AND RowBoss2 < 255 THEN
+                            IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                        END IF
                     END IF
                     IF FoundBoss < 255 THEN
                         ' Special alien in slide-in mode
@@ -2985,11 +3042,15 @@ DrawAliens: PROCEDURE
             FOR Col = 0 TO ALIEN_COLS - 1
                 IF Col <= WaveRevealCol THEN
                     IF #AlienRow(Row) AND #Mask THEN
-                        ' Check if this cell is a boss (multi-boss support)
+                        ' Check if this cell is a boss (inline, no GOSUB)
                         FoundBoss = 255
                         IF RowHasBoss THEN
-                            AlienGridRow = Row : AlienGridCol = Col
-                            GOSUB FindBoss
+                            IF RowBoss1 < 255 THEN
+                                IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                            END IF
+                            IF FoundBoss = 255 AND RowBoss2 < 255 THEN
+                                IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                            END IF
                         END IF
                         IF FoundBoss < 255 THEN
                             ' Special alien — bomb (squid) or skull boss
@@ -4000,25 +4061,26 @@ UpdateSaucer: PROCEDURE
 
 SaucerAnimate:
     ' Animate saucer: 4-frame window scan + color based on powerup type
+    ' Uses pre-loaded GRAM frames (no DEFINE during gameplay for performance)
     #FlyPhase = #FlyPhase + 1
     IF #FlyPhase >= 24 THEN #FlyPhase = 0
-    IF #FlyPhase = 0 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerGfx       ' All windows dark
+    IF #FlyPhase < 6 THEN
+        SaucerCard = GRAM_SAUCER                ' All windows dark
         FlyColor = SaucerColor1(TitleColor)     ' Primary color
-    ELSEIF #FlyPhase = 6 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF2Gfx     ' Inner window lit
+    ELSEIF #FlyPhase < 12 THEN
+        SaucerCard = GRAM_SAUCER_F2             ' Inner window lit
         FlyColor = SaucerColor2(TitleColor)     ' Secondary color
-    ELSEIF #FlyPhase = 12 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF3Gfx     ' Outer window lit
+    ELSEIF #FlyPhase < 18 THEN
+        SaucerCard = GRAM_SAUCER_F3             ' Outer window lit
         FlyColor = SaucerColor1(TitleColor)     ' Primary color
-    ELSEIF #FlyPhase = 18 THEN
-        DEFINE GRAM_SAUCER, 1, SaucerF4Gfx     ' Both windows + engine glow
+    ELSE
+        SaucerCard = GRAM_SAUCER_F4             ' Both windows + engine glow
         FlyColor = SaucerColor2(TitleColor)     ' Secondary color
     END IF
 
     ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
-    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, GRAM_SAUCER * 8 + FlyColor + $0800
-    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, GRAM_SAUCER * 8 + FlyColor + $0800
+    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, SaucerCard * 8 + FlyColor + $0800
+    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, SaucerCard * 8 + FlyColor + $0800
 
     ' Check collision with player bullet (Y range follows saucer position)
     IF BulletActive THEN
@@ -4029,7 +4091,6 @@ SaucerAnimate:
                         ' HIT the saucer!
                         BulletActive = 0
                         GOSUB DeactivateSaucer
-                        DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
                         ' Saucer crash SFX (deep rumble + descending pitch)
                         SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                         SOUND 2, 150, 15  ' Immediate tone hit on channel 3
@@ -4040,6 +4101,8 @@ SaucerAnimate:
                         TitleMarchDir = FlyX        ' Drop from saucer X
                         PowerUpY = FlyY      ' Start falling from saucer Y
                         SlidePos = 0
+                        ' First powerup tutorial hint (flashing)
+                        IF TutorialTimer = 255 THEN TutorialTimer = 180
                         ' Clear previous explosion tile if still active
                         IF ExplosionTimer > 0 THEN
                             IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
