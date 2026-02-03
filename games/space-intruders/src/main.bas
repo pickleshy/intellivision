@@ -171,6 +171,7 @@ AnimFrame   = 0                 ' Animation frame (0 or 1)
 ShimmerCount = 0                ' Frame counter for shimmer updates
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
 AlienOffsetY = 0                ' Alien grid Y offset (drops down)
+LastClearedY = 0                ' Last AlienOffsetY that had rows cleared above it
 AlienDir    = 1                 ' Movement direction (1=right, 255=left using unsigned)
 MarchCount  = 0                 ' Frame counter for march timing
 BulletX     = 0                 ' Bullet X position
@@ -460,6 +461,7 @@ ResetToTitle:
     PlayerX = 80
     AlienOffsetX = 0
     AlienOffsetY = 0
+    LastClearedY = 0
     AlienDir = 1
     MarchCount = 0
     BulletActive = 0
@@ -1240,21 +1242,7 @@ GameLoop:
                 ' Invasion! Lose a life and reset formation
                 IF DeathTimer = 0 AND Invincible = 0 THEN
                     Lives = Lives - 1
-                    ' Update lives display
-                    IF Lives >= 6 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X"
-                        PRINT AT 238, <> (Lives - 1)
-                    ELSEIF Lives = 5 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X4"
-                    ELSEIF Lives = 4 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X3"
-                    ELSEIF Lives = 3 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X2"
-                    ELSEIF Lives = 2 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X1"
-                    ELSEIF Lives = 1 THEN
-                        PRINT AT 237 COLOR COL_WHITE, "X0"
-                    END IF
+                    GOSUB UpdateLivesHUD
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
                     DualTimer = 0 : #MegaTimer = 0
@@ -1276,6 +1264,7 @@ GameLoop:
                     ELSE
                         ' Reset alien formation to top of screen
                         AlienOffsetY = 0
+                        LastClearedY = 0
                         AlienOffsetX = 0
                         AlienDir = 1
                         MarchCount = 0
@@ -1456,21 +1445,7 @@ GameLoop:
             IF Invincible = 0 THEN
                 PlayerHit = 0
                 Lives = Lives - 1
-                ' Update lives display (show extra lives remaining)
-                IF Lives >= 6 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X"
-                    PRINT AT 238, <> (Lives - 1)
-                ELSEIF Lives = 5 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X4"
-                ELSEIF Lives = 4 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X3"
-                ELSEIF Lives = 3 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X2"
-                ELSEIF Lives = 2 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X1"
-                ELSEIF Lives = 1 THEN
-                    PRINT AT 237 COLOR COL_WHITE, "X0"
-                END IF
+                GOSUB UpdateLivesHUD
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 DualTimer = 0 : #MegaTimer = 0
@@ -1647,19 +1622,7 @@ GameLoop:
         #NextLife = #NextLife + 1000
         IF Lives < 9 THEN
             Lives = Lives + 1
-            ' Update lives display
-            IF Lives = 2 THEN
-                PRINT AT 237 COLOR COL_WHITE, "X1"
-            ELSEIF Lives = 3 THEN
-                PRINT AT 237 COLOR COL_WHITE, "X2"
-            ELSEIF Lives = 4 THEN
-                PRINT AT 237 COLOR COL_WHITE, "X3"
-            ELSEIF Lives = 5 THEN
-                PRINT AT 237 COLOR COL_WHITE, "X4"
-            ELSEIF Lives >= 6 THEN
-                PRINT AT 237 COLOR COL_WHITE, "X"
-                PRINT AT 238, <> (Lives - 1)
-            END IF
+            GOSUB UpdateLivesHUD
             ' Announce extra life
             IF VOICE.AVAILABLE THEN
                 VOICE PLAY extra_life_phrase
@@ -2301,7 +2264,7 @@ MarchAliens: PROCEDURE
                     IF Col < HitRow THEN HitRow = Col
                     IF Col > LoopVar THEN LoopVar = Col
                 END IF
-                #Mask = #Mask * 2
+                #Mask = #Mask + #Mask
             NEXT Col
         END IF
     NEXT Row
@@ -2314,7 +2277,8 @@ MarchAliens: PROCEDURE
     ' dead left columns limit the left march range (AlienOffsetX is
     ' unsigned and can't go below 0). Shift bitmasks right and increase
     ' offset to reclaim that space. This keeps march range symmetric.
-    IF HitRow > 0 THEN
+    ' Guard: HitRow <= LoopVar ensures aliens exist (empty grid → HitRow=8, LoopVar=0)
+    IF HitRow > 0 AND HitRow <= LoopVar THEN
         ' Clear the abandoned left columns on screen
         FOR Col = 0 TO HitRow - 1
             FOR Row = 0 TO ALIEN_ROWS - 1
@@ -2343,13 +2307,7 @@ MarchAliens: PROCEDURE
     IF AlienDir = 1 THEN
         ' Moving right
         IF ALIEN_START_X + AlienOffsetX + LoopVar < 19 THEN
-            ' Clear trailing left column before moving
-            FOR Row = 0 TO ALIEN_ROWS - 1
-                IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
-                    #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
-                    PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX, 0
-                END IF
-            NEXT Row
+            ' Trail clearing handled by DrawAliens edge-clear (called after MarchAliens)
             AlienOffsetX = AlienOffsetX + 1
         ELSE
             ' Hit right edge - drop down and reverse
@@ -2366,13 +2324,7 @@ MarchAliens: PROCEDURE
         ' Guard: AlienOffsetX is unsigned 8-bit, can't go below 0
         IF AlienOffsetX > 0 THEN
             IF AlienOffsetX + HitRow > 0 THEN
-                ' Clear trailing right column before moving
-                FOR Row = 0 TO ALIEN_ROWS - 1
-                    IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
-                        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
-                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS - 1, 0
-                    END IF
-                NEXT Row
+                ' Trail clearing handled by DrawAliens edge-clear (called after MarchAliens)
                 AlienOffsetX = AlienOffsetX - 1
             ELSE
                 ' Hit left edge - drop down and reverse
@@ -2427,6 +2379,31 @@ GearFast:
     RETURN
 GearPanic:
     PLAY si_bg_panic
+    RETURN
+END
+
+' --------------------------------------------
+' UpdateLivesHUD - Show lives remaining at HUD position 237
+' Replaces 4 identical IF/ELSEIF chains (invasion, death, extra life, wave start)
+' --------------------------------------------
+UpdateLivesHUD: PROCEDURE
+    IF Lives > 0 THEN
+        PRINT AT 237 COLOR COL_WHITE, "X"
+        PRINT AT 238 COLOR COL_WHITE, <> (Lives - 1)
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' DeactivateSaucer - Hide saucer sprites and reset flight state
+' Replaces 6 identical reset blocks
+' --------------------------------------------
+DeactivateSaucer: PROCEDURE
+    FlyState = 0
+    #FlyPhase = 0
+    #FlyLoopCount = RANDOM(360) + 180
+    SPRITE SPR_SAUCER, 0, 0, 0
+    SPRITE SPR_SAUCER2, 0, 0, 0
     RETURN
 END
 
@@ -2578,12 +2555,8 @@ MegaBeamKill: PROCEDURE
         IF #ScreenPos + 15 >= FlyX THEN
             IF #ScreenPos <= FlyX + 15 THEN
                 ' Destroy saucer
-                FlyState = 0
-                #FlyPhase = 0
-                #FlyLoopCount = RANDOM(360) + 180
+                GOSUB DeactivateSaucer
                 DEFINE GRAM_SAUCER, 1, SaucerGfx
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
                 SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                 SOUND 2, 150, 15
                 #Score = #Score + 100
@@ -2741,10 +2714,10 @@ END
 ' DrawAliens - Draw all aliens to background
 ' --------------------------------------------
 DrawAliens: PROCEDURE
-    ' Clear ALL rows above current alien position (handles multiple drops)
+    ' Clear rows above current alien position (only when new descent occurs)
     ' Cap at row 10 to protect HUD on row 11
-    IF AlienOffsetY > 0 THEN
-        FOR ClearRow = 0 TO AlienOffsetY - 1
+    IF AlienOffsetY > LastClearedY THEN
+        FOR ClearRow = LastClearedY TO AlienOffsetY - 1
             IF ALIEN_START_Y + ClearRow < 11 THEN
                 #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
                 FOR Col = 0 TO 19
@@ -2752,6 +2725,7 @@ DrawAliens: PROCEDURE
                 NEXT Col
             END IF
         NEXT ClearRow
+        LastClearedY = AlienOffsetY
     END IF
 
     ' Draw aliens and clear trail in ONE pass (no flicker)
@@ -2776,6 +2750,16 @@ DrawAliens: PROCEDURE
         ' card * 8 + color + $0800 (GRAM flag)
         #Card = AlienCard * 8 + AlienColor + $0800
 
+        ' Pre-check: is any boss on this row? (avoids FindBoss scan per cell)
+        RowHasBoss = 0
+        IF BossCount > 0 THEN
+            FOR BossIdx = 0 TO BossCount - 1
+                IF BossHP(BossIdx) > 0 THEN
+                    IF Row = BossRow(BossIdx) THEN RowHasBoss = 1
+                END IF
+            NEXT BossIdx
+        END IF
+
         IF RevealMode = 1 THEN
             ' Slide-in mode: clear row, draw left group and right group at separate offsets
             FOR Col = 0 TO 19
@@ -2786,7 +2770,7 @@ DrawAliens: PROCEDURE
                 IF #AlienRow(Row) AND #Mask THEN
                     ' Check for boss in dual-reveal mode
                     FoundBoss = 255
-                    IF BossCount > 0 THEN
+                    IF RowHasBoss THEN
                         AlienGridRow = Row : AlienGridCol = Col
                         GOSUB FindBoss
                     END IF
@@ -2837,7 +2821,7 @@ DrawAliens: PROCEDURE
                     ' Restore normal alien card for next column
                     #Card = AlienCard * 8 + AlienColor + $0800
                 END IF
-                #Mask = #Mask * 2
+                #Mask = #Mask + #Mask
             NEXT Col
         ELSE
             ' Standard mode: draw with column reveal gating
@@ -2847,7 +2831,7 @@ DrawAliens: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         ' Check if this cell is a boss (multi-boss support)
                         FoundBoss = 255
-                        IF BossCount > 0 THEN
+                        IF RowHasBoss THEN
                             AlienGridRow = Row : AlienGridCol = Col
                             GOSUB FindBoss
                         END IF
@@ -2896,7 +2880,7 @@ DrawAliens: PROCEDURE
                         PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
                     END IF
                 END IF
-                #Mask = #Mask * 2
+                #Mask = #Mask + #Mask
             NEXT Col
             ' Clear trail on BOTH edges to handle direction reversals cleanly
             IF AlienOffsetX > 0 THEN
@@ -2945,6 +2929,7 @@ LoadPatternB: PROCEDURE
     ' Reset alien positions (center the grid on screen)
     AlienOffsetX = 5
     AlienOffsetY = 0
+    LastClearedY = 0
     AlienDir = 1
     MarchCount = 0
     CurrentMarchSpeed = BaseMarchSpeed  ' Reset speed (don't inherit Pattern A's acceleration)
@@ -2981,7 +2966,7 @@ LoadPatternB: PROCEDURE
                 IF #AlienRow(Row) AND #Mask THEN
                     IF Col < HitRow THEN HitRow = Col
                 END IF
-                #Mask = #Mask * 2
+                #Mask = #Mask + #Mask
             NEXT Col
         END IF
     NEXT Row
@@ -3048,11 +3033,8 @@ CheckWaveWin: PROCEDURE
     ' Don't trigger wave win during game over sequence
     IF GameOver > 0 THEN RETURN
 
-    ' Count remaining aliens
-    #AliensAlive = 0
-    FOR LoopVar = 0 TO ALIEN_ROWS - 1
-        #AliensAlive = #AliensAlive + #AlienRow(LoopVar)
-    NEXT LoopVar
+    ' Check if any aliens remain (OR is single-cycle vs loop+add)
+    #AliensAlive = #AlienRow(0) OR #AlienRow(1) OR #AlienRow(2) OR #AlienRow(3) OR #AlienRow(4)
 
     ' Count active rogue as alive
     IF RogueState >= ROGUE_DIVE THEN #AliensAlive = #AliensAlive + 1
@@ -3108,6 +3090,7 @@ StartNewWave: PROCEDURE
     ' Reset alien positions
     AlienOffsetX = 0
     AlienOffsetY = 0
+    LastClearedY = 0
     AlienDir = 1
     MarchCount = 0
 
@@ -3182,20 +3165,7 @@ StartNewWave: PROCEDURE
     PRINT AT 220 COLOR COL_WHITE, "SCORE:"
     PRINT AT 227 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
-    IF Lives >= 6 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X"
-        PRINT AT 238, <> (Lives - 1)
-    ELSEIF Lives = 5 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X4"
-    ELSEIF Lives = 4 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X3"
-    ELSEIF Lives = 3 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X2"
-    ELSEIF Lives = 2 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X1"
-    ELSEIF Lives = 1 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X0"
-    END IF
+    GOSUB UpdateLivesHUD
 
     ' Silence any lingering SFX before transition WAITs
     SOUND 2, , 0
@@ -3824,19 +3794,11 @@ UpdateSaucer: PROCEDURE
         END IF
         FlyX = FlyX + 2
         IF FlyX > 167 THEN
-            FlyState = 0
-            #FlyPhase = 0
-            #FlyLoopCount = RANDOM(360) + 180
-            SPRITE SPR_SAUCER, 0, 0, 0
-            SPRITE SPR_SAUCER2, 0, 0, 0
+            GOSUB DeactivateSaucer
             RETURN
         END IF
         IF FlyY = 0 THEN
-            FlyState = 0
-            #FlyPhase = 0
-            #FlyLoopCount = RANDOM(360) + 180
-            SPRITE SPR_SAUCER, 0, 0, 0
-            SPRITE SPR_SAUCER2, 0, 0, 0
+            GOSUB DeactivateSaucer
             RETURN
         END IF
         GOTO SaucerAnimate
@@ -3849,24 +3811,14 @@ UpdateSaucer: PROCEDURE
         IF FlyState = 1 THEN
             FlyX = FlyX + 1
             IF FlyX > 167 THEN
-                ' Off screen right - deactivate
-                FlyState = 0
-                #FlyPhase = 0
-                #FlyLoopCount = RANDOM(360) + 180
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
+                GOSUB DeactivateSaucer
                 RETURN
             END IF
         ELSE
             IF FlyX > 0 THEN
                 FlyX = FlyX - 1
             ELSE
-                ' Off screen left - deactivate
-                FlyState = 0
-                #FlyPhase = 0
-                #FlyLoopCount = RANDOM(360) + 180
-                SPRITE SPR_SAUCER, 0, 0, 0
-                SPRITE SPR_SAUCER2, 0, 0, 0
+                GOSUB DeactivateSaucer
                 RETURN
             END IF
         END IF
@@ -3927,12 +3879,8 @@ SaucerAnimate:
                     IF BulletX <= FlyX + 16 THEN
                         ' HIT the saucer!
                         BulletActive = 0
-                        FlyState = 0
-                        #FlyPhase = 0
-                        #FlyLoopCount = RANDOM(360) + 180
+                        GOSUB DeactivateSaucer
                         DEFINE GRAM_SAUCER, 1, SaucerGfx  ' Reset to base frame
-                        SPRITE SPR_SAUCER, 0, 0, 0
-                        SPRITE SPR_SAUCER2, 0, 0, 0
                         ' Saucer crash SFX (deep rumble + descending pitch)
                         SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                         SOUND 2, 150, 15  ' Immediate tone hit on channel 3

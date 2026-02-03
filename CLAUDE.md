@@ -968,6 +968,53 @@ END IF
 
 **Also:** Terminal Enter key (`CONT.KEY = 11`) can ghost into jzIntv when launching from the command line. Avoid using Enter as an instant-action trigger on the title screen.
 
+### The `<>` operator writes multiple BACKTAB positions for multi-digit numbers
+
+IntyBASIC's `<>` (number-to-string) operator converts a number to its digit characters and writes them sequentially to BACKTAB starting at the `PRINT AT` position. A 3-digit number writes 3 consecutive positions:
+
+```basic
+' If Lives = 0 and Lives is unsigned 8-bit:
+Lives - 1 = 255        ' Underflow!
+PRINT AT 238, <> 255   ' Writes "2" at 238, "5" at 239, "5" at 240!
+'                        Position 240 is PAST BACKTAB ($2EF)!
+```
+
+This is especially dangerous near the end of BACKTAB (positions 237-239, the bottom-right corner). Always guard `<>` writes near BACKTAB boundaries:
+
+```basic
+' SAFE — guard against multi-digit overflow:
+IF Lives > 0 THEN
+    PRINT AT 238, <> (Lives - 1)   ' Lives 1-9 = single digit, fits
+END IF
+```
+
+**Symptom:** Seemingly random variable corruption or crashes when displaying numbers near the right edge or bottom of the screen. The extra digits silently write past position 239 into system RAM.
+
+### Guard grid operations against empty data sets
+
+When scanning arrays for min/max values (e.g., leftmost alive column in a grid), sentinel values from an empty scan can cause unsigned overflow if fed into arithmetic:
+
+```basic
+' Scanning for leftmost alive column:
+HitRow = 8              ' Sentinel: "not found"
+FOR LoopVar = 0 TO 9
+    IF #AlienRow(LoopVar) THEN HitRow = LoopVar : ' found leftmost
+NEXT LoopVar
+
+' BAD — if grid is empty, HitRow=8, LoopVar ended at 0:
+IF HitRow > 0 THEN
+    AlienOffsetX = AlienOffsetX + HitRow   ' Adds 8! Overflow!
+    BossCol = BossCol - HitRow             ' Underflows to 252!
+END IF
+
+' GOOD — verify scan found valid data:
+IF HitRow > 0 AND HitRow <= LoopVar THEN
+    ' Safe: HitRow is within actual data range
+END IF
+```
+
+**Symptom:** Crash or corruption at the exact moment the last element is removed (last alien killed, last item collected). The empty-set case is rarely tested and the sentinel value passes simple `> 0` guards.
+
 ### Unsigned AlienOffsetX limits left march range for sparse formations
 
 When using sparse alien formations (diamond, V-shape, etc.) where the leftmost alive column is > 0, the unsigned 8-bit `AlienOffsetX` creates an asymmetric march range. The grid can reach the right screen edge but stops early on the left because `AlienOffsetX` can't go below 0.
@@ -992,6 +1039,30 @@ END IF
 ```
 
 **Symptom:** Sparse formations march all the way to the right edge but reverse too early on the left, as if dead aliens are still present. The effect worsens as left-side aliens are killed.
+
+### Clear screen regions when switching drawing modes
+
+When two drawing modes use different offset calculations for the same screen region (e.g., a reveal animation vs standard gameplay), switching modes leaves "ghost" tiles from the old mode. The new mode's drawing and trail-clearing only covers its own coordinate range.
+
+```basic
+' Reveal mode draws at: WaveRevealCol + Col
+' Standard mode draws at: AlienOffsetX + Col
+' If AlienOffsetX > WaveRevealCol after normalization,
+' tiles at positions WaveRevealCol..AlienOffsetX-1 are never overwritten
+
+' Fix: one-time full clear of the shared screen region at mode switch
+IF RevealMode = 0 AND PrevRevealMode = 1 THEN
+    FOR Row = 0 TO ALIEN_ROWS - 1
+        FOR Col = 0 TO 19
+            PRINT AT RowStart + Col, 0
+        NEXT Col
+    NEXT Row
+END IF
+```
+
+**Symptom:** Ghost tiles (colored squares, partial characters) persist in a strip on one side of the screen after an animation completes. They never go away because neither the new mode's drawing nor its trail-clearing touches those positions.
+
+**General rule:** Whenever code switches between two drawing systems that use different offset calculations for the same BACKTAB region, clear the entire region once at the transition point.
 
 ### Reset state completely on wave/subwave transitions
 
@@ -1071,3 +1142,107 @@ ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 ' Access: #Mask = ColMaskData(index)
 ```
+
+### Use ADD instead of MUL for doubling
+
+The CP1610 has no hardware multiply — IntyBASIC's `* 2` compiles to a software multiply routine. Use `var + var` instead, which compiles to a single `ADD` instruction:
+
+```basic
+' BAD — calls software multiply (~50+ cycles):
+#Mask = #Mask * 2
+
+' GOOD — single ADD instruction (~6 cycles):
+#Mask = #Mask + #Mask
+```
+
+This applies to any power-of-2 multiply. For `* 4`, chain two adds: `#v = #v + #v : #v = #v + #v`. For arbitrary multiplies, stick with `*` since the alternatives are worse.
+
+### OR chain vs FOR loop for boolean checks
+
+When checking if ANY element in a small array is nonzero, an OR chain is faster than a loop with addition:
+
+```basic
+' SLOW — loop overhead per iteration (branch, increment, compare):
+#Sum = 0
+FOR Row = 0 TO 4
+    #Sum = #Sum + #AlienRow(Row)
+NEXT Row
+IF #Sum > 0 THEN ...
+
+' FAST — single expression, no loop overhead:
+IF #AlienRow(0) OR #AlienRow(1) OR #AlienRow(2) OR #AlienRow(3) OR #AlienRow(4) THEN ...
+```
+
+Best for small fixed-size arrays (5-10 elements). For larger or variable-size arrays, the loop is more maintainable.
+
+### Row-level pre-checks to skip expensive inner-loop operations
+
+When an inner loop calls a PROCEDURE conditionally (e.g., checking if a grid cell is a boss), hoist the check outside the column loop at the row level:
+
+```basic
+' SLOW — FindBoss scans boss array on every cell:
+FOR Col = 0 TO 9
+    IF BossCount > 0 THEN
+        GOSUB FindBoss    ' Called 10× per row even if no bosses on this row
+    END IF
+NEXT Col
+
+' FAST — pre-check once per row:
+RowHasBoss = 0
+FOR BossIdx = 0 TO BossCount - 1
+    IF Row = BossRow(BossIdx) THEN RowHasBoss = 1
+NEXT BossIdx
+FOR Col = 0 TO 9
+    IF RowHasBoss THEN
+        GOSUB FindBoss    ' Only called when this row actually has a boss
+    END IF
+NEXT Col
+```
+
+GOSUB has overhead (push R5, branch, return) even if the procedure does nothing. Avoiding unnecessary calls in tight inner loops saves significant frame budget.
+
+### Track "last cleared" state to avoid redundant BACKTAB writes
+
+When game logic progressively changes a screen region (e.g., aliens descending row by row), track what was last cleared to avoid re-clearing already-empty rows:
+
+```basic
+' BAD — clears rows 0 through AlienOffsetY every frame:
+FOR ClearRow = 0 TO AlienOffsetY - 1
+    ' Clear entire row... (redundantly re-clears rows cleared last frame)
+NEXT ClearRow
+
+' GOOD — only clear newly vacated rows:
+IF AlienOffsetY > LastClearedY THEN
+    FOR ClearRow = LastClearedY TO AlienOffsetY - 1
+        ' Clear row...
+    NEXT ClearRow
+    LastClearedY = AlienOffsetY
+END IF
+```
+
+Reset the tracking variable (`LastClearedY = 0`) at wave/level transitions. Each `PRINT AT 0` is a BACKTAB write (~12 cycles); clearing 20 columns × 5 rows = 100 unnecessary writes per frame.
+
+### Extract repeated code blocks into PROCEDUREs
+
+When the same 3+ line block appears in multiple places, extract it into a PROCEDURE. This saves ROM words (each duplicate costs the full instruction count) at the cost of one GOSUB/RETURN overhead per call:
+
+```basic
+' Before: 6 identical copies × 5 lines = 30 lines / ~60 ROM words
+FlyState = 0
+#FlyPhase = 0
+#FlyLoopCount = RANDOM(360) + 180
+SPRITE SPR_SAUCER, 0, 0, 0
+SPRITE SPR_SAUCER2, 0, 0, 0
+
+' After: 1 procedure + 6 GOSUB calls = ~17 ROM words saved per duplicate
+DeactivateSaucer: PROCEDURE
+    FlyState = 0
+    #FlyPhase = 0
+    #FlyLoopCount = RANDOM(360) + 180
+    SPRITE SPR_SAUCER, 0, 0, 0
+    SPRITE SPR_SAUCER2, 0, 0, 0
+    RETURN
+END
+```
+
+**Rule of thumb:** Extract if 3+ copies exist and the block is 3+ lines. Don't extract single-use code — the GOSUB overhead isn't worth it.
