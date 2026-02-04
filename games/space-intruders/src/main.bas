@@ -75,6 +75,12 @@ CONST GRAM_BOMB1    = 54        ' Bomb alien left half frame 1
 CONST GRAM_BOMB2    = 55        ' Bomb alien right half frame 1
 CONST GRAM_BOMB1_F1 = 56        ' Bomb alien left half frame 2
 CONST GRAM_BOMB2_F1 = 57        ' Bomb alien right half frame 2
+CONST GRAM_CHAIN_CH = 58        ' Compact "CH" for chain display
+CONST GRAM_CHAIN_AI = 59        ' Compact "AI" for chain display
+CONST GRAM_CHAIN_N  = 60        ' Compact "N" for chain display
+CONST GRAM_SCORE_SC = 61        ' Compact "SC" for score label
+CONST GRAM_SCORE_OR = 62        ' Compact "OR" for score label
+CONST GRAM_SCORE_E  = 63        ' Compact "E" for score label
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -263,7 +269,7 @@ SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=
 DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #NextLife   = 1000              ' Score threshold for next extra life
-#MegaTimer  = 0                 ' Mega beam countdown (300 frames = 5 sec, 0 = normal)
+#MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
 MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
 AutoFire    = 0                 ' Auto-fire toggle (0=off, 1=on)
@@ -276,6 +282,7 @@ RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sid
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
 #HighScore  = 0                 ' Session high score (persists until ROM reset)
 ChainCount  = 0                 ' Consecutive alien kills (chain combo, max 5)
+ChainMax    = 0                 ' Best chain this game (shown as current/best)
 ' Rogue alien variables
 RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
 RogueTimer     = 0                 ' Cooldown / countdown timer
@@ -437,6 +444,18 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx
     WAIT
     DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx
+    WAIT
+    DEFINE GRAM_CHAIN_CH, 1, ChainCHGfx
+    WAIT
+    DEFINE GRAM_CHAIN_AI, 1, ChainAIGfx
+    WAIT
+    DEFINE GRAM_CHAIN_N, 1, ChainNGfx
+    WAIT
+    DEFINE GRAM_SCORE_SC, 1, ScoreSCGfx
+    WAIT
+    DEFINE GRAM_SCORE_OR, 1, ScoreORGfx
+    WAIT
+    DEFINE GRAM_SCORE_E, 1, ScoreEGfx
     WAIT
 
     ' Initialize wave colors for PRESS FIRE shimmer (GRAM font, supports colors 8+)
@@ -1057,8 +1076,11 @@ StartGame:
     RevealMode = 0
     RightRevealCol = ALIEN_COLS - 1
 
-    ' Draw score and lives
-    PRINT AT 220 COLOR COL_WHITE, "SCORE: 0"
+    ' Draw score and lives (compact GRAM tiles for "SCORE")
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, "0"
     ' Lives ship icon (GRAM card 0, green, Color Stack mode)
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     PRINT AT 237 COLOR COL_WHITE, "X3"
@@ -1077,6 +1099,7 @@ StartGame:
     TitleColor = PowerUpWeights(RANDOM(8))
     TitleJitter = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
+    ChainMax = 0    ' Reset best chain for new game
     RogueState = 0 : RogueTimer = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
@@ -1458,6 +1481,7 @@ ChainDone:
                             ' PARRY! Bullets collide - destroy both
                             BulletActive = 0
                             ABulletActive = 0
+                            ChainCount = 0  ' Defensive shot — break chain
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
                             ' Skill bonus for the risky parry
@@ -1485,7 +1509,7 @@ ChainDone:
                             SPRITE SPR_FLYER, 0, 0, 0
                             #Score = #Score + 50
                             ChainCount = ChainCount + 1
-                            IF ChainCount > 5 THEN ChainCount = 5
+                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
                             SOUND 2, 180, 14
                             ' Show explosion at rogue position
@@ -1588,14 +1612,19 @@ ChainDone:
                 ' "GAME OVER" in tan at row 2 col 5, centered
                 PRINT AT 45 COLOR COL_TAN, "GAME OVER"
                 ' Score at row 5, centered
-                PRINT AT 105 COLOR COL_WHITE, "SCORE "
+                PRINT AT 104 COLOR COL_WHITE, "SCORE  "
                 PRINT AT 111, <>#Score
-                ' High score at row 6 (always shown)
+                ' High score at row 6 (centered under score)
                 IF #Score >= #HighScore THEN
-                    PRINT AT 123 COLOR COL_YELLOW, "NEW HIGH!"
+                    PRINT AT 125 COLOR COL_YELLOW, "NEW HIGH!"
                 ELSE
                     PRINT AT 122 COLOR COL_YELLOW, "HIGH SCORE "
                     PRINT AT 133, <>#HighScore
+                END IF
+                ' Best chain at row 7 (if achieved a chain)
+                IF ChainMax > 1 THEN
+                    PRINT AT 143 COLOR COL_BLUE, "BEST CHAIN "
+                    PRINT AT 154, <>ChainMax
                 END IF
                 ' "PRESS FIRE" at row 10, centered
                 PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
@@ -1656,7 +1685,8 @@ ChainDone:
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
-        MegaBeamCol = (PlayerX + 4) / 8
+        ' Sprite-to-BACKTAB offset: col = (spriteX - 8) / 8, centered on ship (+4)
+        MegaBeamCol = (PlayerX - 4) / 8
         IF MegaBeamCol > 19 THEN MegaBeamCol = 19
         ' Kill aliens in new column position
         GOSUB MegaBeamKill
@@ -1689,7 +1719,7 @@ ChainDone:
     GOSUB DrawAlienBullet
 
     ' Update score display
-    PRINT AT 227 COLOR COL_WHITE, <>#Score
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
 
     ' Extra life every 1000 points
     IF #Score >= #NextLife THEN
@@ -1705,20 +1735,38 @@ ChainDone:
     END IF
 
     ' Tutorial message: "GET THE POWERUP!" (flashing, first drop only)
-    IF TutorialTimer > 0 THEN
-        IF TutorialTimer < 255 THEN
-            TutorialTimer = TutorialTimer - 1
-            IF TutorialTimer = 0 THEN
-                ' Clear message when timer expires
-                PRINT AT 200, "                    "
+    ' TutorialTimer: 255=ready, 1-254=showing, 0=done
+    IF TutorialTimer > 0 AND TutorialTimer < 255 THEN
+        TutorialTimer = TutorialTimer - 1
+        IF TutorialTimer = 0 THEN
+            ' Clear message when timer expires
+            PRINT AT 180, "                    "
+        ELSE
+            ' Flash every 4 frames (2 on, 2 off) - row 9 centered
+            IF TutorialTimer AND 2 THEN
+                PRINT AT 182 COLOR 6, "GET THE POWERUP!"
             ELSE
-                ' Flash every 8 frames (4 on, 4 off)
-                IF TutorialTimer AND 4 THEN
-                    PRINT AT 204 COLOR 6, "GET THE POWERUP!"
-                ELSE
-                    PRINT AT 200, "                    "
-                END IF
+                PRINT AT 180, "                    "
             END IF
+        END IF
+    ELSE
+        ' Chain multiplier display (when tutorial not active: timer=0 or 255)
+        IF ChainCount > 1 THEN
+            ' Flash blue every 4 frames (use BulletColor as frame counter)
+            IF BulletColor AND 4 THEN
+                ' Compact 3-tile "CHAIN" + current/best format
+                PRINT AT 200, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+                PRINT AT 201, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+                PRINT AT 202, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+                PRINT AT 203, <>ChainCount
+                PRINT AT 204 COLOR COL_BLUE, "/"
+                PRINT AT 205, <>ChainMax
+            ELSE
+                PRINT AT 200, "      "
+            END IF
+        ELSE
+            ' Clear chain display when no chain active
+            PRINT AT 200, "      "
         END IF
     END IF
 
@@ -1792,7 +1840,7 @@ MovePlayer: PROCEDURE
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
-                MegaBeamCol = (PlayerX + 4) / 8
+                MegaBeamCol = (PlayerX - 4) / 8
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
                 ' Reset beam damage tracker for each boss
@@ -2116,6 +2164,7 @@ CheckOneColumn: PROCEDURE
                     IF BossHP(FoundBoss) > 0 THEN
                         ' Damaged but alive — stop bullet, update color
                         BulletActive = 0
+                        ChainCount = 0  ' Not a kill — break chain
                         IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
                         IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
@@ -2126,6 +2175,8 @@ CheckOneColumn: PROCEDURE
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
                             BulletActive = 0
+                            ChainCount = ChainCount + 1  ' Bomb kill counts!
+                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             GOSUB BombExplode
                             RETURN
                         ELSE
@@ -2139,6 +2190,8 @@ CheckOneColumn: PROCEDURE
                             ' Big score + explosion
                             #Score = #Score + BOSS_SCORE
                             BulletActive = 0
+                            ChainCount = ChainCount + 1  ' Skull boss kill counts!
+                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             ExplosionTimer = 20
                             IF #ExplosionPos < 220 THEN
                                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
@@ -2158,10 +2211,14 @@ CheckOneColumn: PROCEDURE
                     BulletActive = 0
                 END IF
 
-                ' Chain combo scoring: 10, 20, 30, 40, 50, 50, 50...
+                ' Chain combo scoring: 10, 20, 30, 40, 50 max (but count keeps going)
                 ChainCount = ChainCount + 1
-                IF ChainCount > 5 THEN ChainCount = 5
-                #Score = #Score + ChainCount * 10
+                IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                IF ChainCount > 5 THEN
+                    #Score = #Score + 50
+                ELSE
+                    #Score = #Score + ChainCount * 10
+                END IF
 
                 ' Noise explosion SFX (short punchy crunch)
                 SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
@@ -2724,8 +2781,12 @@ MegaBeamKill: PROCEDURE
                                 ' Normal alien kill
                                 #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
                                 ChainCount = ChainCount + 1
-                                IF ChainCount > 5 THEN ChainCount = 5
-                                #Score = #Score + ChainCount * 10
+                                IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                                IF ChainCount > 5 THEN
+                                    #Score = #Score + 50
+                                ELSE
+                                    #Score = #Score + ChainCount * 10
+                                END IF
                             END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
                             IF #ExplosionPos < 220 THEN
@@ -2852,7 +2913,7 @@ UpdatePowerUp: PROCEDURE
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
                 ELSE
-                    #MegaTimer = 300
+                    #MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : DualTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 END IF
@@ -3214,8 +3275,10 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
 
     ' Redraw HUD (cleared by above loop at row 11)
-    PRINT AT 220 COLOR COL_WHITE, "SCORE:"
-    PRINT AT 227 COLOR COL_WHITE, <>#Score
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
 
     ' Visual/audio cue: "ALERT!" flash
@@ -3280,6 +3343,7 @@ StartNewWave: PROCEDURE
     SOUND 2, , 0
     SfxVolume = 0
     SfxType = 0
+    ChainCount = 0  ' Reset kill chain for new wave
 
     ' Increment level
     Level = Level + 1
@@ -3379,8 +3443,10 @@ StartNewWave: PROCEDURE
     CLS
 
     ' Redraw HUD
-    PRINT AT 220 COLOR COL_WHITE, "SCORE:"
-    PRINT AT 227 COLOR COL_WHITE, <>#Score
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     GOSUB UpdateLivesHUD
 
@@ -4105,6 +4171,7 @@ SaucerAnimate: PROCEDURE
                     IF BulletX <= FlyX + 16 THEN
                         ' HIT the saucer!
                         BulletActive = 0
+                        ChainCount = 0  ' Saucer is not an alien — break chain
                         GOSUB DeactivateSaucer
                         ' Saucer crash SFX (deep rumble + descending pitch)
                         SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
@@ -5056,6 +5123,74 @@ SquidRightF2Gfx:
     BITMAP "XXX.X..."
     BITMAP "..X.X..."
     BITMAP "XX......"
+
+' --- COMPACT CHAIN TEXT (3 tiles, 5px tall) ---
+' Tile 1: CH
+ChainCHGfx:
+    BITMAP "........"
+    BITMAP ".###.#.#"
+    BITMAP ".#...#.#"
+    BITMAP ".#...###"
+    BITMAP ".#...#.#"
+    BITMAP ".###.#.#"
+    BITMAP "........"
+    BITMAP "........"
+
+' Tile 2: AI
+ChainAIGfx:
+    BITMAP "........"
+    BITMAP "..#..#.#"
+    BITMAP ".#.#.#.#"
+    BITMAP ".###.#.#"
+    BITMAP ".#.#.#.#"
+    BITMAP ".#.#.#.#"
+    BITMAP "........"
+    BITMAP "........"
+
+' Tile 3: N
+ChainNGfx:
+    BITMAP "........"
+    BITMAP "..#....."
+    BITMAP "#.#....."
+    BITMAP "###....."
+    BITMAP ".##....."
+    BITMAP "..#....."
+    BITMAP "........"
+    BITMAP "........"
+
+' --- COMPACT SCORE TEXT (3 tiles) ---
+' Tile 1: SC
+ScoreSCGfx:
+    BITMAP "........"
+    BITMAP ".##..##."
+    BITMAP "#...#..."
+    BITMAP ".#..#..."
+    BITMAP "..#.#..."
+    BITMAP "##...##."
+    BITMAP "........"
+    BITMAP "........"
+
+' Tile 2: OR
+ScoreORGfx:
+    BITMAP "........"
+    BITMAP ".#..##.."
+    BITMAP "#.#.#.#."
+    BITMAP "#.#.##.."
+    BITMAP "#.#.#.#."
+    BITMAP ".#..#.#."
+    BITMAP "........"
+    BITMAP "........"
+
+' Tile 3: E
+ScoreEGfx:
+    BITMAP "........"
+    BITMAP "###....."
+    BITMAP "#....#.."
+    BITMAP "##......"
+    BITMAP "#....#.."
+    BITMAP "###....."
+    BITMAP "........"
+    BITMAP "........"
 
 ' --- WIDE CRAB (14x7 → padded to 16x8) ---
 WideCrabLeftF1Gfx:
