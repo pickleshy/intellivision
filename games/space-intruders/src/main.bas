@@ -281,8 +281,9 @@ SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formatio
 RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sides)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
 #HighScore  = 0                 ' Session high score (persists until ROM reset)
-ChainCount  = 0                 ' Consecutive alien kills (chain combo, max 5)
-ChainMax    = 0                 ' Best chain this game (shown as current/best)
+ChainCount  = 0                 ' Consecutive successful shots (chain combo)
+ChainMax    = 0                 ' Best chain this game
+ShotLanded  = 0                 ' 1 if current shot hit something (alien, bullet, boss)
 ' Rogue alien variables
 RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
 RogueTimer     = 0                 ' Cooldown / countdown timer
@@ -1076,12 +1077,19 @@ StartGame:
     RevealMode = 0
     RightRevealCol = ALIEN_COLS - 1
 
-    ' Draw score and lives (compact GRAM tiles for "SCORE")
-    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 223 COLOR COL_WHITE, "0"
-    ' Lives ship icon (GRAM card 0, green, Color Stack mode)
+    ' Draw HUD: CHAIN (left) | SCORE (middle) | LIVES (right)
+    ' Chain label at 220-222, count at 223 (grows right: 223-225 for 3 digits)
+    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+    PRINT AT 223 COLOR COL_BLUE, "0"
+    PRINT AT 224, 0 : PRINT AT 225, 0  ' Clear space for multi-digit counts
+    ' Score label at 226-228, value at 229+
+    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 229 COLOR COL_WHITE, "0"
+    ' Lives ship icon at 236, count at 237
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     PRINT AT 237 COLOR COL_WHITE, "X3"
 
@@ -1481,7 +1489,7 @@ ChainDone:
                             ' PARRY! Bullets collide - destroy both
                             BulletActive = 0
                             ABulletActive = 0
-                            ChainCount = 0  ' Defensive shot — break chain
+                            ShotLanded = 1  ' Parry counts as a successful hit — chain preserved
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
                             ' Skill bonus for the risky parry
@@ -1508,6 +1516,7 @@ ChainDone:
                             RogueTimer = 0
                             SPRITE SPR_FLYER, 0, 0, 0
                             #Score = #Score + 50
+                            ShotLanded = 1
                             ChainCount = ChainCount + 1
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
@@ -1718,8 +1727,8 @@ ChainDone:
     GOSUB DrawBullet
     GOSUB DrawAlienBullet
 
-    ' Update score display
-    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    ' Update score display (position 229+ in new HUD layout)
+    PRINT AT 229 COLOR COL_WHITE, <>#Score
 
     ' Extra life every 1000 points
     IF #Score >= #NextLife THEN
@@ -1750,23 +1759,15 @@ ChainDone:
             END IF
         END IF
     ELSE
-        ' Chain multiplier display (when tutorial not active: timer=0 or 255)
-        IF ChainCount > 1 THEN
-            ' Flash blue every 4 frames (use BulletColor as frame counter)
-            IF BulletColor AND 4 THEN
-                ' Compact 3-tile "CHAIN" + current/best format
-                PRINT AT 200, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-                PRINT AT 201, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-                PRINT AT 202, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-                PRINT AT 203, <>ChainCount
-                PRINT AT 204 COLOR COL_BLUE, "/"
-                PRINT AT 205, <>ChainMax
-            ELSE
-                PRINT AT 200, "      "
-            END IF
-        ELSE
-            ' Clear chain display when no chain active
-            PRINT AT 200, "      "
+        ' Chain counter is now static in HUD (no flashing)
+        ' Count at position 223, right after CHAIN label
+        PRINT AT 223 COLOR COL_BLUE, <>ChainCount
+        ' Clear trailing digits when count shrinks (10->9, 100->99)
+        IF ChainCount < 10 THEN
+            PRINT AT 224, 0
+        END IF
+        IF ChainCount < 100 THEN
+            PRINT AT 225, 0
         END IF
     END IF
 
@@ -1861,6 +1862,7 @@ MovePlayer: PROCEDURE
                 BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
                 BulletY = PLAYER_Y - 4
                 BulletActive = 1
+                ShotLanded = 0     ' New shot — hasn't hit anything yet
                 ' Quad laser SFX: rising burst energy weapon
                 SfxType = 8 : SfxVolume = 14 : #SfxPitch = 500
                 SOUND 2, 500, 14
@@ -1877,6 +1879,7 @@ MovePlayer: PROCEDURE
                     END IF
                     BulletY = PLAYER_Y - 4
                     BulletActive = 1
+                    ShotLanded = 0     ' New shot — hasn't hit anything yet
                     IF BeamTimer > 0 THEN
                         ' Chain reaction laser SFX: kill music, dual-tone + noise
                         PLAY OFF
@@ -1920,7 +1923,7 @@ MoveBullet: PROCEDURE
                 BulletY = BulletY - RAPID_SPEED
             ELSE
                 BulletActive = 0
-                ChainCount = 0   ' Missed — break chain
+                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
             END IF
         ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
             ' Quad laser / beam: flat 2px/frame
@@ -1928,7 +1931,7 @@ MoveBullet: PROCEDURE
                 BulletY = BulletY - 2
             ELSE
                 BulletActive = 0
-                ChainCount = 0   ' Missed — break chain
+                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
             END IF
         ELSE
             ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
@@ -1941,7 +1944,7 @@ MoveBullet: PROCEDURE
                 BulletY = BulletY - LoopVar
             ELSE
                 BulletActive = 0
-                ChainCount = 0   ' Missed — break chain
+                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
             END IF
         END IF
     END IF
@@ -2164,7 +2167,7 @@ CheckOneColumn: PROCEDURE
                     IF BossHP(FoundBoss) > 0 THEN
                         ' Damaged but alive — stop bullet, update color
                         BulletActive = 0
-                        ChainCount = 0  ' Not a kill — break chain
+                        ShotLanded = 1  ' Hit landed — chain preserved
                         IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
                         IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
@@ -2175,6 +2178,7 @@ CheckOneColumn: PROCEDURE
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
                             BulletActive = 0
+                            ShotLanded = 1
                             ChainCount = ChainCount + 1  ' Bomb kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             GOSUB BombExplode
@@ -2190,6 +2194,7 @@ CheckOneColumn: PROCEDURE
                             ' Big score + explosion
                             #Score = #Score + BOSS_SCORE
                             BulletActive = 0
+                            ShotLanded = 1
                             ChainCount = ChainCount + 1  ' Skull boss kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             ExplosionTimer = 20
@@ -2211,14 +2216,11 @@ CheckOneColumn: PROCEDURE
                     BulletActive = 0
                 END IF
 
-                ' Chain combo scoring: 10, 20, 30, 40, 50 max (but count keeps going)
+                ' Chain combo scoring: 10, 20, 30, 40... (no cap!)
+                ShotLanded = 1
                 ChainCount = ChainCount + 1
                 IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                IF ChainCount > 5 THEN
-                    #Score = #Score + 50
-                ELSE
-                    #Score = #Score + ChainCount * 10
-                END IF
+                #Score = #Score + ChainCount * 10
 
                 ' Noise explosion SFX (short punchy crunch)
                 SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
@@ -3275,10 +3277,14 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
 
     ' Redraw HUD (cleared by above loop at row 11)
-    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+    PRINT AT 223 COLOR COL_BLUE, "0"
+    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 229 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
 
     ' Visual/audio cue: "ALERT!" flash
@@ -3443,10 +3449,16 @@ StartNewWave: PROCEDURE
     CLS
 
     ' Redraw HUD
-    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+    PRINT AT 223 COLOR COL_BLUE, <>ChainCount
+    IF ChainCount < 10 THEN PRINT AT 224, 0
+    IF ChainCount < 100 THEN PRINT AT 225, 0
+    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 229 COLOR COL_WHITE, <>#Score
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     GOSUB UpdateLivesHUD
 
