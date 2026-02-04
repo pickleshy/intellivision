@@ -284,6 +284,7 @@ RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mod
 ChainCount  = 0                 ' Consecutive successful shots (chain combo)
 ChainMax    = 0                 ' Best chain this game
 ShotLanded  = 0                 ' 1 if current shot hit something (alien, bullet, boss)
+ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
 ' Rogue alien variables
 RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
 RogueTimer     = 0                 ' Cooldown / countdown timer
@@ -1078,10 +1079,11 @@ StartGame:
 
     ' Draw HUD: CHAIN (left) | SCORE (middle) | LIVES (right)
     ' Chain label at 220-222, count at 223 (grows right: 223-225 for 3 digits)
-    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-    PRINT AT 223 COLOR COL_BLUE, "0"
+    ' Start grey + hyphen since ChainCount = 0
+    PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 223, 111                            ' GROM hyphen in white
     PRINT AT 224, 0 : PRINT AT 225, 0  ' Clear space for multi-digit counts
     ' Score label at 226-228, value at 229+
     PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
@@ -1361,12 +1363,15 @@ GameLoop:
     END IF
 
     ' Update explosion effect (BACKTAB tile with 3-frame animation)
-    ' 15 total frames: 5 per animation frame (~83ms each, ~250ms total)
+    ' 16 frames for chain kills (1 white flash + 15 explosion), 15 otherwise
     IF ExplosionTimer > 0 THEN
         ExplosionTimer = ExplosionTimer - 1
         IF #ExplosionPos < 220 THEN
         IF ExplosionTimer = 0 THEN
             PRINT AT #ExplosionPos, 0  ' Clear
+        ELSEIF ExplosionTimer > 15 THEN
+            ' Chain flash: 1 frame white (frame 16 only)
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
         ELSEIF ExplosionTimer > 10 THEN
             ' Frame 1: tight pop (frames 15-11) - Pink (color 12)
             PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -1518,6 +1523,8 @@ ChainDone:
                             ShotLanded = 1
                             ChainCount = ChainCount + 1
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                            IF ChainCount > 50 THEN ChainCount = 50
+                            ChainTimeout = 90
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
                             SOUND 2, 180, 14
                             ' Show explosion at rogue position
@@ -1526,8 +1533,13 @@ ChainDone:
                             END IF
                             #ExplosionPos = (RogueY - 8) / 8 * 20 + (RogueX - 8) / 8
                             IF #ExplosionPos < 220 THEN
-                                ExplosionTimer = 15
-                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                                IF ChainCount >= 2 THEN
+                                    ExplosionTimer = 16
+                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
+                                ELSE
+                                    ExplosionTimer = 15
+                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                                END IF
                             END IF
                         END IF
                     END IF
@@ -1758,15 +1770,36 @@ ChainDone:
             END IF
         END IF
     ELSE
-        ' Chain counter is now static in HUD (no flashing)
-        ' Count at position 223, right after CHAIN label
-        PRINT AT 223 COLOR COL_BLUE, <>ChainCount
-        ' Clear trailing digits when count shrinks (10->9, 100->99)
-        IF ChainCount < 10 THEN
-            PRINT AT 224, 0
+        ' Chain timeout: goes cold after 1.5 sec (90 frames) without a kill
+        IF ChainCount > 0 THEN
+            IF ChainTimeout > 0 THEN
+                ChainTimeout = ChainTimeout - 1
+            ELSE
+                ChainCount = 0  ' Timeout — chain goes cold
+            END IF
         END IF
-        IF ChainCount < 100 THEN
+        ' Chain counter display: grey when inactive, blue when active
+        IF ChainCount = 0 THEN
+            ' Grey label + hyphen for inactive chain
+            PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
+            PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
+            PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
+            PRINT AT 223, 111                        ' GROM hyphen
+            PRINT AT 224, 0                          ' Clear any leftover digits
             PRINT AT 225, 0
+        ELSE
+            ' Blue label + count for active chain
+            PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+            PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+            PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+            PRINT AT 223 COLOR COL_BLUE, <>ChainCount
+            ' Clear trailing digits when count shrinks (10->9, 100->99)
+            IF ChainCount < 10 THEN
+                PRINT AT 224, 0
+            END IF
+            IF ChainCount < 100 THEN
+                PRINT AT 225, 0
+            END IF
         END IF
     END IF
 
@@ -2179,6 +2212,8 @@ CheckOneColumn: PROCEDURE
                             ShotLanded = 1
                             ChainCount = ChainCount + 1  ' Bomb kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                            IF ChainCount > 50 THEN ChainCount = 50
+                            ChainTimeout = 90
                             GOSUB BombExplode
                             RETURN
                         ELSE
@@ -2195,6 +2230,8 @@ CheckOneColumn: PROCEDURE
                             ShotLanded = 1
                             ChainCount = ChainCount + 1  ' Skull boss kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                            IF ChainCount > 50 THEN ChainCount = 50
+                            ChainTimeout = 90
                             ExplosionTimer = 20
                             IF #ExplosionPos < 220 THEN
                                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
@@ -2214,10 +2251,12 @@ CheckOneColumn: PROCEDURE
                     BulletActive = 0
                 END IF
 
-                ' Chain combo scoring: 10, 20, 30, 40... (no cap!)
+                ' Chain combo scoring: 10, 20, 30, 40... (cap at 50)
                 ShotLanded = 1
                 ChainCount = ChainCount + 1
                 IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                IF ChainCount > 50 THEN ChainCount = 50
+                ChainTimeout = 90
                 #Score = #Score + ChainCount * 10
 
                 ' Noise explosion SFX (short punchy crunch)
@@ -2230,10 +2269,14 @@ CheckOneColumn: PROCEDURE
                 END IF
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
-                ExplosionTimer = 15  ' Show for 15 frames (~250ms total)
-                ' Frame 1 starts pink (color 12 = $1804 for GRAM)
                 IF #ExplosionPos < 220 THEN
-                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                    IF ChainCount >= 2 THEN
+                        ExplosionTimer = 16
+                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
+                    ELSE
+                        ExplosionTimer = 15
+                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                    END IF
                 END IF
             END IF
         END IF
@@ -2782,6 +2825,8 @@ MegaBeamKill: PROCEDURE
                                 #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
                                 ChainCount = ChainCount + 1
                                 IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                                IF ChainCount > 50 THEN ChainCount = 50
+                                ChainTimeout = 90
                                 IF ChainCount > 5 THEN
                                     #Score = #Score + 50
                                 ELSE
@@ -2790,11 +2835,15 @@ MegaBeamKill: PROCEDURE
                             END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
                             IF #ExplosionPos < 220 THEN
-                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                                IF ChainCount >= 2 THEN
+                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
+                                ELSE
+                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                                END IF
                             END IF
                         END IF
                     NEXT LoopVar
-                    ExplosionTimer = 15
+                    IF ChainCount >= 2 THEN ExplosionTimer = 16 ELSE ExplosionTimer = 15
                 END IF
             END IF
         END IF
@@ -3274,11 +3323,11 @@ LoadPatternB: PROCEDURE
         NEXT Col
     NEXT LoopVar
 
-    ' Redraw HUD (cleared by above loop at row 11)
-    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-    PRINT AT 223 COLOR COL_BLUE, "0"
+    ' Redraw HUD (cleared by above loop at row 11) - grey since chain resets
+    PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 223, 111                            ' GROM hyphen
     PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
     PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
     PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
@@ -3446,13 +3495,21 @@ StartNewWave: PROCEDURE
     ' Clear screen (aliens will paint in via game loop)
     CLS
 
-    ' Redraw HUD
-    PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-    PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-    PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-    PRINT AT 223 COLOR COL_BLUE, <>ChainCount
-    IF ChainCount < 10 THEN PRINT AT 224, 0
-    IF ChainCount < 100 THEN PRINT AT 225, 0
+    ' Redraw HUD - respect chain state
+    IF ChainCount = 0 THEN
+        PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
+        PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
+        PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
+        PRINT AT 223, 111                        ' GROM hyphen
+        PRINT AT 224, 0 : PRINT AT 225, 0
+    ELSE
+        PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+        PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+        PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+        PRINT AT 223 COLOR COL_BLUE, <>ChainCount
+        IF ChainCount < 10 THEN PRINT AT 224, 0
+        IF ChainCount < 100 THEN PRINT AT 225, 0
+    END IF
     PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
     PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
     PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
@@ -5161,9 +5218,9 @@ ChainAIGfx:
 ChainNGfx:
     BITMAP "........"
     BITMAP "..#....."
-    BITMAP "#.#....."
+    BITMAP "#.#.#..."
     BITMAP "###....."
-    BITMAP ".##....."
+    BITMAP ".##.#..."
     BITMAP "..#....."
     BITMAP "........"
     BITMAP "........"

@@ -7,6 +7,7 @@
   - [x] Chain current/best display (N/N format)
   - [x] Tutorial text repositioned (row 9 centered, faster flash)
   - [ ] Lives display styling (see below)
+  - [ ] Active powerup indicator (see below)
 - [ ] Color tuning and visual consistency
 - [ ] Physics/collision refinement
 - [ ] Performance optimization (saucer CPU spikes)
@@ -28,6 +29,38 @@
 | Lives bar | +2 cards | Filled/empty segments |
 
 **Decision:** TBD - thinking about it
+
+---
+
+### 0b. Active Powerup Indicator (HUD Polish)
+**Current:** No visual indicator of active powerup in HUD — player must remember what they picked up.
+
+**Concept:** Display compact icon or text showing active weapon (BEAM, RAPID, QUAD, MEGA) in HUD.
+
+**Technical approach:**
+- Reuse title-screen-only GRAM cards (25-36) during gameplay
+- DEFINE 4 powerup icons into cards 25-28 at StartGame
+- Display active powerup icon in HUD (position 234-235 gap, or near lives)
+- Clear/hide when no powerup active
+
+**Options:**
+
+| Style | GRAM Cost | Look |
+|-------|-----------|------|
+| 4 compact icons (B/R/Q/M) | 4 cards (reuse) | Matches CHAIN/SCORE style |
+| Single "active" slot + icon | 1-4 cards | Icon changes with powerup |
+| GROM text labels | 0 cards | "BEAM"/"RAPID"/etc (simpler) |
+| Colored pip/dot | 1 card | Color-coded indicator |
+
+**HUD placement options:**
+- Position 234-235 (gap between SCORE and lives)
+- Above/below existing HUD row
+- Replace part of lives display area
+
+**GRAM cost:** 0-4 cards (reuse title font slots 25-28)
+**Variables:** 0 (use existing BeamTimer/RapidTimer/DualTimer/MegaTimer checks)
+
+**Decision:** TBD - nice-to-have polish
 
 ---
 
