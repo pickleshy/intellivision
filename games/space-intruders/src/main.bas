@@ -1061,6 +1061,11 @@ END
 StartGame:
     CLS
 
+    ' Restore skull boss GRAM cards (title screen animation corrupts them)
+    DEFINE GRAM_BAND1, 1, Band1Gfx
+    WAIT
+    DEFINE GRAM_BAND2, 1, Band2Gfx
+
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = $1FF
