@@ -2119,7 +2119,33 @@ BombExplode: PROCEDURE
     #Mask = ColMaskData(BombExpCol + 1)
     #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
 
-    ' XOR out all aliens in blast radius (4 cols × 3 rows)
+    ' --- OPTIMIZATION: Pre-scan bosses in blast radius (4 checks vs 48) ---
+    ' Check each boss once; if in blast radius, kill it now
+    FOR BossIdx = 0 TO BossCount - 1
+        IF BossHP(BossIdx) > 0 THEN
+            ' Check if boss row is in blast radius (BombExpRow-1 to BombExpRow+1)
+            IF BossRow(BossIdx) >= BombExpRow - 1 THEN
+            IF BossRow(BossIdx) <= BombExpRow + 1 THEN
+                ' Check if boss columns overlap blast radius (BombExpCol-1 to BombExpCol+2)
+                ' Boss occupies BossCol and BossCol+1
+                IF BossCol(BossIdx) + 1 >= BombExpCol - 1 THEN
+                IF BossCol(BossIdx) <= BombExpCol + 2 THEN
+                    ' Boss is in blast radius - kill it
+                    Row = BossRow(BossIdx)
+                    Col = BossCol(BossIdx)
+                    BossHP(BossIdx) = 0
+                    ' XOR out both boss columns from alien grid
+                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col)
+                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
+                    #Score = #Score + 10
+                END IF
+                END IF
+            END IF
+            END IF
+        END IF
+    NEXT BossIdx
+
+    ' XOR out all regular aliens in blast radius (no FindBoss needed now)
     FOR Row = BombExpRow - 1 TO BombExpRow + 1
         IF Row >= 0 THEN
         IF Row < ALIEN_ROWS THEN
@@ -2131,31 +2157,17 @@ BombExplode: PROCEDURE
                         IF Col = BombExpCol OR Col = BombExpCol + 1 THEN
                             Col = Col  ' No-op, let loop continue
                         ELSE
-                            ' Kill alien at this position
+                            ' Kill regular alien at this position (bosses already handled)
                             #Mask = ColMaskData(Col)
                             IF #AlienRow(Row) AND #Mask THEN
-                                ' Check if it's also a special alien
-                                AlienGridRow = Row : AlienGridCol = Col
-                                GOSUB FindBoss
-                                IF FoundBoss < 255 THEN
-                                    ' Chain-kill a boss: clear its HP and XOR second column
-                                    BossHP(FoundBoss) = 0
-                                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
-                                END IF
                                 #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                                 #Score = #Score + 10
                             END IF
                         END IF
                     ELSE
-                        ' Different row — always kill
+                        ' Different row — kill regular alien
                         #Mask = ColMaskData(Col)
                         IF #AlienRow(Row) AND #Mask THEN
-                            AlienGridRow = Row : AlienGridCol = Col
-                            GOSUB FindBoss
-                            IF FoundBoss < 255 THEN
-                                BossHP(FoundBoss) = 0
-                                #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
-                            END IF
                             #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                             #Score = #Score + 10
                         END IF
@@ -2196,9 +2208,20 @@ CheckOneColumn: PROCEDURE
             #Mask = ColMaskData(AlienGridCol)
 
             IF #AlienRow(AlienGridRow) AND #Mask THEN
-                ' Multi-boss intercept
-                IF BossCount > 0 THEN GOSUB FindBoss
-                IF BossCount > 0 AND FoundBoss < 255 THEN
+                ' Multi-boss intercept (inlined FindBoss for speed)
+                FoundBoss = 255
+                IF BossCount > 0 THEN
+                    FOR BossIdx = 0 TO BossCount - 1
+                        IF BossHP(BossIdx) > 0 THEN
+                            IF AlienGridRow = BossRow(BossIdx) THEN
+                                IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
+                                    FoundBoss = BossIdx
+                                END IF
+                            END IF
+                        END IF
+                    NEXT BossIdx
+                END IF
+                IF FoundBoss < 255 THEN
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                     IF BossHP(FoundBoss) > 0 THEN
                         ' Damaged but alive — stop bullet, update color
@@ -2798,11 +2821,21 @@ MegaBeamKill: PROCEDURE
                     ' Kill alien in every row at this column
                     FOR LoopVar = 0 TO ALIEN_ROWS - 1
                         IF #AlienRow(LoopVar) AND #Mask THEN
-                            ' Multi-boss intercept in mega beam (capped at 2 damage per activation)
+                            ' Multi-boss intercept in mega beam (inlined FindBoss)
                             AlienGridRow = LoopVar
                             FoundBoss = 255
-                            IF BossCount > 0 THEN GOSUB FindBoss
-                            IF BossCount > 0 AND FoundBoss < 255 THEN
+                            IF BossCount > 0 THEN
+                                FOR BossIdx = 0 TO BossCount - 1
+                                    IF BossHP(BossIdx) > 0 THEN
+                                        IF AlienGridRow = BossRow(BossIdx) THEN
+                                            IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
+                                                FoundBoss = BossIdx
+                                            END IF
+                                        END IF
+                                    END IF
+                                NEXT BossIdx
+                            END IF
+                            IF FoundBoss < 255 THEN
                                 ' Only deal 1 damage per boss per beam activation
                                 IF BossBeamHit(FoundBoss) < 1 THEN
                                     BossBeamHit(FoundBoss) = BossBeamHit(FoundBoss) + 1
@@ -3729,9 +3762,20 @@ CaptureHitscan: PROCEDURE
     ' Check if alien is alive at this position
     IF (#AlienRow(AlienGridRow) AND #Mask) = 0 THEN RETURN
 
-    ' Multi-boss intercept
-    IF BossCount > 0 THEN GOSUB FindBoss
-    IF BossCount > 0 AND FoundBoss < 255 THEN
+    ' Multi-boss intercept (inlined FindBoss for speed)
+    FoundBoss = 255
+    IF BossCount > 0 THEN
+        FOR BossIdx = 0 TO BossCount - 1
+            IF BossHP(BossIdx) > 0 THEN
+                IF AlienGridRow = BossRow(BossIdx) THEN
+                    IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
+                        FoundBoss = BossIdx
+                    END IF
+                END IF
+            END IF
+        NEXT BossIdx
+    END IF
+    IF FoundBoss < 255 THEN
         BossHP(FoundBoss) = BossHP(FoundBoss) - 1
         CapBulletActive = 0
         IF BossHP(FoundBoss) > 0 THEN
