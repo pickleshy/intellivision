@@ -298,7 +298,6 @@ RogueCenterX   = 0                 ' Circle center X during dive
 RogueCenterY   = 0                 ' Circle center Y during dive
 ' Capture wingman variables
 CaptureActive  = 0                 ' 1 = wingman alive and orbiting
-CaptureCard    = 0                 ' GRAM card of captured alien type
 CaptureColor   = 0                 ' Color of captured alien type
 CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
@@ -1817,7 +1816,6 @@ MovePlayer: PROCEDURE
                 IF CaptureActive = 0 THEN
                     ' Capture the rogue alien as wingman
                     CaptureActive = 1
-                    CaptureCard = RogueCard
                     CaptureColor = RogueColor
                     CaptureStep = 0
                     CaptureTimer = CAPTURE_FIRE_RATE
@@ -2925,7 +2923,7 @@ UpdatePowerUp: PROCEDURE
                 IF TutorialTimer > 0 THEN
                     IF TutorialTimer < 255 THEN
                         TutorialTimer = 0
-                        PRINT AT 200, "                    "
+                        PRINT AT 180, "                    "
                     END IF
                 END IF
                 ' Weighted random next power-up type
