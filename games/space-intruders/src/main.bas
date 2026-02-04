@@ -1242,11 +1242,13 @@ GameLoop:
     END IF
 
     ' Animate alien walk frames independently (every 16 frames)
+    ' Reuse HitCol as dirty flag (avoids new variable, gets reset later anyway)
+    HitCol = 0
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 16 THEN
         ShimmerCount = 0
         AnimFrame = AnimFrame XOR 1
-        GOSUB DrawAliens
+        HitCol = 1  ' Animation changed, need redraw
     END IF
 
     ' Advance wave reveal
@@ -1254,7 +1256,7 @@ GameLoop:
         ' Standard left-to-right reveal (Pattern A) or fully revealed
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             WaveRevealCol = WaveRevealCol + 1
-            GOSUB DrawAliens
+            HitCol = 1  ' Reveal advanced
         END IF
     ELSE
         ' Dual-slide mode (Pattern B) - halves fly in from screen edges
@@ -1286,8 +1288,11 @@ GameLoop:
                 END IF
             END IF
         END IF
-        GOSUB DrawAliens
+        HitCol = 1  ' Pattern B always redraws during slide-in
     END IF
+
+    ' Single DrawAliens call per frame (if needed)
+    IF HitCol THEN GOSUB DrawAliens
 
     ' Check if reveal is complete
     HitCol = 0
