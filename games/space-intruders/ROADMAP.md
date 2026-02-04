@@ -135,9 +135,61 @@
 
 ---
 
+## Interactive Features
+
+### 4. Player 2 Controls Zod (Title/Game Over)
+**Concept:** Second player can grab controller 2 and fly Zod around on title screen and game over screen.
+
+**Technical approach:**
+- Read CONT1 (controller 2) disc input during title/game over states
+- If CONT1 input detected, switch from auto-pilot to manual control
+- Map disc directions to Zod X/Y velocity
+- Revert to auto-pilot after ~3 seconds of no input
+
+**Controls:**
+- Disc: 8-direction movement
+- Fire button: Shoot (game over only, see below)
+
+**States affected:**
+- Title screen (GameState = 0)
+- Game over screen (GameOver = 5, 6)
+
+**Cost:** Minimal - just input reading and position updates
+
+---
+
+### 5. Zod Shoots Away Letters (Game Over)
+**Concept:** On game over, Player 2 (or auto-Zod) can shoot the letters, making them disappear or explode.
+
+**Technical approach:**
+- Zod fires small projectile (reuse alien bullet sprite or BACKTAB?)
+- Check projectile collision against BACKTAB text positions
+- On hit: clear that BACKTAB position (letter disappears)
+- Optional: show small explosion at hit position
+- Could track "letters destroyed" as mini-game score
+
+**Target letters:**
+- "GAME OVER" (row 2, positions 45-53)
+- "SCORE XXXX" (row 5)
+- "NEW HIGH!" or "HIGH SCORE" (row 6)
+- "BEST CHAIN X" (row 7)
+- "PRESS FIRE" (row 10)
+
+**Gameplay loop:**
+- Auto-Zod or P2 flies around shooting
+- Each letter hit = satisfying pop
+- Could respawn letters after all destroyed for endless fun
+
+**Cost:**
+- 1 variable for Zod bullet active/position
+- Collision check against BACKTAB rows
+- Reuse existing explosion SFX
+
+---
+
 ## Ideas Parking Lot
 - Different alien formations per wave
-- Two-player mode?
+- Two-player co-op mode?
 - Sound improvements (more musical variety)
 - High score persistence (requires SRAM/JLP)
 - Easter eggs / cheat codes
