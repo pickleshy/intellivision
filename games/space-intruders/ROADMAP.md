@@ -135,6 +135,60 @@
 
 ---
 
+### 14. CP1610 Assembly Optimization (Future)
+**Context:** IntyBASIC generates reasonable CP1610 assembly, but at 894.886 KHz (NTSC) we're always fighting for cycles. Hand-optimized assembly for hot paths could reclaim significant headroom.
+
+**Why this matters:**
+- ~14,915 cycles per frame (60Hz NTSC)
+- Every instruction counts in the main loop
+- IntyBASIC can't know our specific access patterns
+- Some patterns compile to suboptimal sequences
+
+**Candidate routines for hand-optimization:**
+
+| Routine | Current Cost | Opportunity |
+|---------|--------------|-------------|
+| Collision detection loops | High | Unroll loops, use register caching |
+| Alien grid iteration | High | Precompute row addresses |
+| BACKTAB writes (PRINT AT) | Medium | Batch writes, avoid redundant color setup |
+| Sprite position updates | Medium | Combine MOB register writes |
+| Random number generation | Low | Inline LFSR if needed frequently |
+
+**Optimization techniques:**
+```
+; IntyBASIC pattern (conceptual):
+    MVI  var, R0       ; Load variable
+    ADDI #1, R0        ; Increment
+    MVO  R0, var       ; Store back
+
+; Hand-optimized:
+    INCR @var          ; Single instruction (if supported)
+    ; Or keep hot variables in registers across loop iterations
+```
+
+**Register allocation opportunities:**
+- R0-R3 are general purpose
+- Keep loop counters in registers instead of RAM
+- Cache frequently-read values (AlienOffsetX, etc.)
+
+**When to do this:**
+- After gameplay is feature-complete
+- Profile first — identify actual bottlenecks with border color timing
+- Start with hottest routines (collision, grid rendering)
+- Preserve IntyBASIC source as reference
+
+**Risk:**
+- Maintenance burden (two codebases to sync)
+- Harder to debug
+- Only worth it for proven bottlenecks
+
+**Documentation needed:**
+- Add CP1610 instruction timing reference to CLAUDE.md
+- Document which routines have been hand-optimized
+- Keep IntyBASIC version as comments
+
+---
+
 ## Interactive Features
 
 ### 4. Player 2 Controls Zod (Title/Game Over)

@@ -1296,3 +1296,149 @@ END
 ```
 
 **Rule of thumb:** Extract if 3+ copies exist and the block is 3+ lines. Don't extract single-use code — the GOSUB overhead isn't worth it.
+
+## CP1610 Processor Reference
+
+The Intellivision uses a General Instrument CP1610 microprocessor (circa 1975). Understanding the CPU is essential for performance optimization and hand-tuned assembly routines.
+
+### Architecture Overview
+
+| Spec | Value |
+|------|-------|
+| Word size | 16-bit |
+| Clock | 894.886 kHz (NTSC), 1.0 MHz (PAL) |
+| Cycles per frame | ~14,915 (NTSC 60Hz), ~20,000 (PAL 50Hz) |
+| Address space | 64K words (16-bit addressing) |
+| Manufacturer | General Instrument, 1975 |
+
+### Registers
+
+| Register | Purpose | Notes |
+|----------|---------|-------|
+| R0 | General purpose | Freely usable |
+| R1 | General purpose | Freely usable |
+| R2 | General purpose | Freely usable |
+| R3 | General purpose | Freely usable |
+| R4 | IntyBASIC stack pointer | **MUST PRESERVE in USR routines** |
+| R5 | Return address | Used by PULR PC pattern |
+| R6 | Hardware stack pointer | System stack |
+| R7 | Program counter | Execution pointer |
+
+R4 and R5 support **auto-increment** addressing modes (`MVI@ R4, R0` reads from [R4] then increments R4). IntyBASIC relies on R4 as its variable stack — corrupting it causes delayed crashes.
+
+### Common Instructions
+
+| Instruction | Cycles | Description |
+|-------------|--------|-------------|
+| `MVI addr, Rd` | 10 | Load from memory to register |
+| `MVO Rs, addr` | 11 | Store from register to memory |
+| `MVII #imm, Rd` | 8 | Load immediate to register |
+| `MVI@ Rs, Rd` | 8 | Load indirect (auto-increment if Rs=R4/R5) |
+| `MVO@ Rs, Rd` | 9 | Store indirect (auto-increment if Rd=R4/R5) |
+| `ADD Rs, Rd` | 6 | Rd = Rd + Rs |
+| `ADDI #imm, Rd` | 8 | Rd = Rd + immediate |
+| `SUB Rs, Rd` | 6 | Rd = Rd - Rs |
+| `SUBI #imm, Rd` | 8 | Rd = Rd - immediate |
+| `INCR Rd` | 6 | Rd = Rd + 1 |
+| `DECR Rd` | 6 | Rd = Rd - 1 |
+| `AND Rs, Rd` | 6 | Rd = Rd AND Rs |
+| `XOR Rs, Rd` | 6 | Rd = Rd XOR Rs |
+| `CMP Rs, Rd` | 6 | Compare (sets flags, no store) |
+| `CMPI #imm, Rd` | 8 | Compare with immediate |
+| `B addr` | 9 | Unconditional branch |
+| `BC addr` | 7/9 | Branch if carry (7 if not taken, 9 if taken) |
+| `BEQ addr` | 7/9 | Branch if equal/zero |
+| `BNE addr` | 7/9 | Branch if not equal |
+| `BPL addr` | 7/9 | Branch if plus (positive) |
+| `BMI addr` | 7/9 | Branch if minus (negative) |
+| `PSHR Rs` | 9 | Push register to stack (R6) |
+| `PULR Rd` | 11 | Pull from stack to register |
+| `JSR R5, addr` | 12 | Jump to subroutine (saves return in R5) |
+| `CLRR Rd` | 6 | Clear register (Rd = 0) |
+| `NEGR Rd` | 6 | Negate register (Rd = -Rd) |
+| `SWAP Rd` | 6 | Swap bytes in register |
+
+### Cycle Budget Planning
+
+At ~14,915 cycles per frame (NTSC), here's how common operations cost:
+
+| Operation | Approx Cycles | % of Frame |
+|-----------|---------------|------------|
+| Single BACKTAB write | 12-15 | 0.1% |
+| Clear full screen (240 cards) | ~3,000 | 20% |
+| IntyBASIC GOSUB/RETURN | ~25 | 0.17% |
+| IntyBASIC FOR loop iteration | ~30 | 0.2% |
+| IntyBASIC IF/THEN | ~15-25 | 0.1-0.17% |
+| Multiply (software) | ~50-80 | 0.3-0.5% |
+| Sprite update (1 MOB) | ~40 | 0.27% |
+
+**Red flag thresholds:**
+- If a single procedure takes >1,000 cycles, profile it
+- If total game loop exceeds ~12,000 cycles, you'll see slowdown
+- Leave ~2,000-3,000 cycles for ISR overhead (music, input)
+
+### Memory-Mapped Hardware
+
+| Address | Device |
+|---------|--------|
+| `$0000-$003F` | Scratchpad RAM (8-bit vars) |
+| `$0100-$035F` | System RAM |
+| `$0200-$02EF` | BACKTAB (screen memory) |
+| `$01F0-$01FF` | PSG (AY-3-8914 sound chip) |
+| `$0000-$003F` | STIC control registers |
+| `$3800-$39FF` | GRAM (64 cards × 8 bytes) |
+| `$5000-$6FFF` | Cartridge ROM (default 8K) |
+
+### Assembly Calling Convention (IntyBASIC)
+
+When writing `USR`-callable assembly:
+
+```asm
+MY_ROUTINE: PROC
+    PSHR    R5          ; Save return address
+    PSHR    R4          ; CRITICAL: Save IntyBASIC stack pointer
+
+    ; R0 contains first parameter from USR call
+    ; Use R0-R3 freely
+    ; Do NOT use MVI@/MVO@ with R4
+
+    ; Return value goes in R0
+    MVII    #42, R0     ; Example: return 42
+
+    PULR    R4          ; Restore IntyBASIC stack
+    PULR    PC          ; Return (pops R5 into PC)
+    ENDP
+```
+
+### Optimization Quick Reference
+
+| Pattern | Slow | Fast |
+|---------|------|------|
+| Multiply by 2 | `* 2` (~50 cyc) | `+ var` (~6 cyc) |
+| Loop for shift | `FOR...* 2...NEXT` (~305 cyc) | DATA table lookup (~31 cyc) |
+| Clear array | FOR loop | Inline assignments for small arrays |
+| Check any nonzero | FOR + sum | OR chain for fixed-size arrays |
+| Repeated GOSUB | GOSUB in inner loop | Pre-check, hoist outside loop |
+
+### Useful jzIntv Debugger Commands
+
+When running `jzintv` with `--debugger`:
+
+```
+g               ; Go (run)
+b $5000         ; Set breakpoint at address
+s               ; Step one instruction
+r               ; Show registers
+m $200 $20      ; Dump memory (BACKTAB start)
+w               ; Watch expression
+q               ; Quit
+```
+
+Use `--sym-file=game.sym` (if generated) for symbolic debugging with labels.
+
+### References
+
+- **jzIntv SDK Documentation**: Included with jzIntv distribution
+- **CP1610 Programmer's Reference**: AtariAge archives
+- **as1600 Assembler Manual**: `~/jzintv/doc/` directory
+- **Oscar Toledo G.'s Books**: Cover assembly optimization in depth
