@@ -1741,9 +1741,9 @@ ChainDone:
     ' Update score display (position 229+ in new HUD layout)
     PRINT AT 229 COLOR COL_WHITE, <>#Score
 
-    ' Extra life every 1000 points
+    ' Extra life: first at 1000, then every 5000
     IF #Score >= #NextLife THEN
-        #NextLife = #NextLife + 1000
+        #NextLife = #NextLife + 5000
         IF Lives < 9 THEN
             Lives = Lives + 1
             GOSUB UpdateLivesHUD
@@ -3107,35 +3107,47 @@ DrawAliens: PROCEDURE
                         ' Special alien in slide-in mode
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Flash red/white when bomb alien at HP=1
-                            AlienColor = BossColor(FoundBoss)
+                            HitCol = BossColor(FoundBoss)
                             IF BossHP(FoundBoss) = 1 THEN
-                                IF ShimmerCount AND 4 THEN AlienColor = COL_WHITE ELSE AlienColor = COL_RED
+                                IF ShimmerCount AND 4 THEN HitCol = COL_WHITE ELSE HitCol = COL_RED
+                            END IF
+                            ' Compute color offset: pastel colors (8+) need $1800, others $0800
+                            IF HitCol >= 8 THEN
+                                #Card = (HitCol AND 7) + $1800
+                            ELSE
+                                #Card = HitCol + $0800
                             END IF
                             IF Col = BossCol(FoundBoss) THEN
                                 IF AnimFrame = 0 THEN
-                                    #Card = GRAM_BOMB1 * 8 + AlienColor + $0800
+                                    #Card = GRAM_BOMB1 * 8 + #Card
                                 ELSE
-                                    #Card = GRAM_BOMB1_F1 * 8 + AlienColor + $0800
+                                    #Card = GRAM_BOMB1_F1 * 8 + #Card
                                 END IF
                             ELSE
                                 IF AnimFrame = 0 THEN
-                                    #Card = GRAM_BOMB2 * 8 + AlienColor + $0800
+                                    #Card = GRAM_BOMB2 * 8 + #Card
                                 ELSE
-                                    #Card = GRAM_BOMB2_F1 * 8 + AlienColor + $0800
+                                    #Card = GRAM_BOMB2_F1 * 8 + #Card
                                 END IF
                             END IF
                         ELSE
+                            ' Compute color offset: pastel colors (8+) need $1800, others $0800
+                            IF BossColor(FoundBoss) >= 8 THEN
+                                #Card = (BossColor(FoundBoss) AND 7) + $1800
+                            ELSE
+                                #Card = BossColor(FoundBoss) + $0800
+                            END IF
                             IF Col = BossCol(FoundBoss) THEN
                                 IF AnimFrame = 0 THEN
-                                    #Card = GRAM_BAND1 * 8 + BossColor(FoundBoss) + $0800
+                                    #Card = GRAM_BAND1 * 8 + #Card
                                 ELSE
-                                    #Card = GRAM_BAND1_F1 * 8 + BossColor(FoundBoss) + $0800
+                                    #Card = GRAM_BAND1_F1 * 8 + #Card
                                 END IF
                             ELSE
                                 IF AnimFrame = 0 THEN
-                                    #Card = GRAM_BAND2 * 8 + BossColor(FoundBoss) + $0800
+                                    #Card = GRAM_BAND2 * 8 + #Card
                                 ELSE
-                                    #Card = GRAM_BAND2_F1 * 8 + BossColor(FoundBoss) + $0800
+                                    #Card = GRAM_BAND2_F1 * 8 + #Card
                                 END IF
                             END IF
                         END IF
@@ -3170,42 +3182,54 @@ DrawAliens: PROCEDURE
                         END IF
                         IF FoundBoss < 255 THEN
                             ' Special alien — bomb (squid) or skull boss
+                            ' Compute color offset: pastel colors (8+) need $1800, others $0800
                             IF BossType(FoundBoss) = BOMB_TYPE THEN
-                                ' Bomb alien (squid) left/right halves
-                                ' Flash red/white when bomb alien at HP=1
-                                AlienColor = BossColor(FoundBoss)
+                                ' Bomb alien: use BossColor, but flash red/white at HP=1
+                                HitCol = BossColor(FoundBoss)
                                 IF BossHP(FoundBoss) = 1 THEN
-                                    IF ShimmerCount AND 4 THEN AlienColor = COL_WHITE ELSE AlienColor = COL_RED
+                                    IF ShimmerCount AND 4 THEN HitCol = COL_WHITE ELSE HitCol = COL_RED
+                                END IF
+                                IF HitCol >= 8 THEN
+                                    #Card = (HitCol AND 7) + $1800
+                                ELSE
+                                    #Card = HitCol + $0800
                                 END IF
                                 IF Col = BossCol(FoundBoss) THEN
                                     IF AnimFrame = 0 THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1 * 8 + AlienColor + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1 * 8 + #Card
                                     ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1_F1 * 8 + AlienColor + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB1_F1 * 8 + #Card
                                     END IF
                                 ELSE
                                     IF AnimFrame = 0 THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2 * 8 + AlienColor + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2 * 8 + #Card
                                     ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2_F1 * 8 + AlienColor + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BOMB2_F1 * 8 + #Card
                                     END IF
                                 END IF
                             ELSE
-                                ' Skull boss left/right halves
+                                ' Skull boss: use BossColor directly
+                                IF BossColor(FoundBoss) >= 8 THEN
+                                    #Card = (BossColor(FoundBoss) AND 7) + $1800
+                                ELSE
+                                    #Card = BossColor(FoundBoss) + $0800
+                                END IF
                                 IF Col = BossCol(FoundBoss) THEN
                                     IF AnimFrame = 0 THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1 * 8 + BossColor(FoundBoss) + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1 * 8 + #Card
                                     ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1_F1 * 8 + BossColor(FoundBoss) + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND1_F1 * 8 + #Card
                                     END IF
                                 ELSE
                                     IF AnimFrame = 0 THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2 * 8 + BossColor(FoundBoss) + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2 * 8 + #Card
                                     ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2_F1 * 8 + BossColor(FoundBoss) + $0800
+                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_BAND2_F1 * 8 + #Card
                                     END IF
                                 END IF
                             END IF
+                            ' Restore normal alien card for subsequent columns
+                            #Card = AlienCard * 8 + AlienColor + $0800
                         ELSE
                             PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
                         END IF
@@ -3283,7 +3307,7 @@ LoadPatternB: PROCEDURE
     IF Level = 2 THEN
         BossCount = 1
         BossCol(0) = 4 : BossRow(0) = 2
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor2
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 10  ' Orange complements blue row
     END IF
 
     ' Normalize grid: shift bitmasks so leftmost alive column = 0
@@ -3443,16 +3467,17 @@ StartNewWave: PROCEDURE
     BossCount = 0 : BombExpTimer = 0
 
     ' Wave 3: 2 skull bosses + 1 bomb alien
+    ' Boss colors complement their row: Row 0=Cyan(9), Row 1-2=Orange(10), Row 3-4=Pink(12)
     IF Level = 3 THEN
         BossCount = 3
         BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor0
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9   ' Cyan complements yellow row 0
         BossType(0) = SKULL_TYPE
         BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = WaveColor0
+        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9   ' Cyan complements yellow row 0
         BossType(1) = SKULL_TYPE
         BossCol(2) = 4 : BossRow(2) = 3
-        BossHP(2) = 2 : BossColor(2) = WaveColor2
+        BossHP(2) = 2 : BossColor(2) = 12            ' Pink complements green row 3
         BossType(2) = BOMB_TYPE
     END IF
 
@@ -3460,16 +3485,16 @@ StartNewWave: PROCEDURE
     IF Level >= 4 THEN
         BossCount = 4
         BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = WaveColor0
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9   ' Cyan complements yellow row 0
         BossType(0) = SKULL_TYPE
         BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = WaveColor0
+        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9   ' Cyan complements yellow row 0
         BossType(1) = SKULL_TYPE
         BossCol(2) = 3 : BossRow(2) = 1
-        BossHP(2) = BOSS_HP_MAX : BossColor(2) = WaveColor1
+        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 10  ' Orange complements blue row 1
         BossType(2) = SKULL_TYPE
         BossCol(3) = 4 : BossRow(3) = 3
-        BossHP(3) = 2 : BossColor(3) = WaveColor2
+        BossHP(3) = 2 : BossColor(3) = 12            ' Pink complements green row 3
         BossType(3) = BOMB_TYPE
     END IF
 
