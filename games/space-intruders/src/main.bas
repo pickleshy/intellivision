@@ -4163,7 +4163,7 @@ RogueUpdate: PROCEDURE
             ' Fire periodically (~1 per second)
             IF RogueTimer >= 60 THEN
                 RogueTimer = 0
-                IF #GameFlags = #GameFlags AND $FFFD THEN
+                IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
                     IF FlyState <> SAUCER_CHASE THEN
                         ABulletX = RogueX + 3
                         ABulletY = RogueY + 8
