@@ -102,6 +102,10 @@ CONST GRAM_SCORE_SC = 61        ' Compact "SC" for score label
 CONST GRAM_SCORE_OR = 62        ' Compact "OR" for score label
 CONST GRAM_SCORE_E  = 63        ' Compact "E" for score label
 
+' Wingman sprite (Mooninite-style) - uses free slots 13 and 18
+CONST GRAM_WINGMAN_F1 = 13      ' Wingman frame 1 (legs together)
+CONST GRAM_WINGMAN_F2 = 18      ' Wingman frame 2 (legs apart)
+
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
 CONST SPR_FLYER     = 5         ' Title screen flying alien
@@ -417,6 +421,10 @@ FlyTransSpd = 0                 ' Pixels per frame during transition
     WAIT
     DEFINE GRAM_CRAB_F2, 1, SmallCrabF2Gfx
     WAIT
+    DEFINE GRAM_WINGMAN_F1, 1, WingmanF1Gfx
+    WAIT
+    DEFINE GRAM_WINGMAN_F2, 1, WingmanF2Gfx
+    WAIT
     DEFINE GRAM_SPARK_UP, 1, SparkUpGfx
     WAIT
     DEFINE GRAM_SPARK_DN, 1, SparkDnGfx
@@ -560,6 +568,11 @@ TitleScreen:
     DEFINE GRAM_FONT_E, 4, FontEGfx  ' Cards 29-32: E, I, N, T
     WAIT
     DEFINE GRAM_FONT_R, 4, FontRGfx  ' Cards 33-36: R, U, D, F
+    WAIT
+    ' Restore star graphics (overwritten by game over screen's G, M font tiles)
+    DEFINE GRAM_STAR1, 1, Star1Gfx   ' Card 37
+    WAIT
+    DEFINE GRAM_STAR2, 1, Star2Gfx   ' Card 38
 
     TitleFrame = 0
     TitleMarchDir = 1      ' 1=right, 0=left
@@ -971,7 +984,14 @@ SilenceSfx: PROCEDURE
     RETURN
 END
 
-' --- ClearEnemyState: Reset rogue alien and wingman state ---
+' --- ClearRogueOnly: Reset rogue alien state (preserves wingman) ---
+ClearRogueOnly: PROCEDURE
+    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
+    SPRITE SPR_FLYER, 0, 0, 0
+    RETURN
+END
+
+' --- ClearEnemyState: Reset rogue alien AND wingman state (used on player death) ---
 ClearEnemyState: PROCEDURE
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
@@ -1633,8 +1653,17 @@ ChainDone:
                 BeamTimer = 0 : RapidTimer = 0
                 DualTimer = 0 : #MegaTimer = 0 : ShieldHits = 0
                 #GameFlags = #GameFlags AND $FFFD
-                ' Cancel active rogue alien and wingman
-                GOSUB ClearEnemyState
+                ' Clear active player bullet (prevents ghost kills during death animation)
+                #GameFlags = #GameFlags AND $FFFE
+                SPRITE SPR_PBULLET, 0, 0, 0
+                ' Clear wingman (dies with player)
+                #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
+                SPRITE SPR_POWERUP, 0, 0, 0
+                ' Rogue: if diving, let it complete escape animation; otherwise clear it
+                IF RogueState <> ROGUE_DIVE THEN
+                    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
+                    SPRITE SPR_FLYER, 0, 0, 0
+                END IF
                 IF Lives = 0 THEN
                     ' Pre-game-over: play death explosion, then aliens crawl
                     GameOver = 3
@@ -2609,22 +2638,19 @@ MoveAlienBullet: PROCEDURE
         RETURN
     END IF
 
-    ' Check wingman collision (bullet sponge - absorbs hits for player)
+    ' Check wingman collision (bullet sponge - absorbs hits, wingman survives!)
     IF #GameFlags AND FLAG_CAPTURE THEN
         ' Wingman hitbox: 8x8 sprite at RogueX, RogueY
         IF ABulletY >= RogueY - 2 THEN
             IF ABulletY <= RogueY + 8 THEN
                 IF ABulletX >= RogueX - 2 THEN
                     IF ABulletX <= RogueX + 8 THEN
-                        ' Wingman absorbs the hit!
-                        #GameFlags = #GameFlags AND $FFFB
-                        #GameFlags = #GameFlags AND $FFF7
-                        #GameFlags = #GameFlags AND $FFFD
+                        ' Wingman absorbs the hit - destroy bullet, wingman lives!
+                        #GameFlags = #GameFlags AND $FFFD  ' Clear alien bullet only
                         SPRITE SPR_ABULLET, 0, 0, 0
-                        SPRITE SPR_POWERUP, 0, 0, 0
-                        ' Explosion SFX (alien death sound)
-                        SfxType = 1 : SfxVolume = 12 : #SfxPitch = 400
-                        SOUND 2, 400, 12
+                        ' Shield ping SFX (different from death)
+                        SfxType = 6 : SfxVolume = 10 : #SfxPitch = 300
+                        SOUND 2, 300, 10
                         RETURN
                     END IF
                 END IF
@@ -3484,11 +3510,11 @@ LoadPatternB: PROCEDURE
     SfxVolume = 0
     SfxType = 0
 
-    ' Clear active bullets, rogue, wingman, and sprites
+    ' Clear active bullets, rogue (but preserve wingman!)
     #GameFlags = #GameFlags AND $FFFE
     #GameFlags = #GameFlags AND $FFFD
     MegaBeamTimer = 0
-    GOSUB ClearEnemyState
+    GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
@@ -3721,12 +3747,12 @@ StartNewWave: PROCEDURE
         BossType(3) = BOMB_TYPE
     END IF
 
-    ' Clear any active bullets (power-ups persist until death)
+    ' Clear any active bullets (power-ups AND wingman persist until death!)
     #GameFlags = #GameFlags AND $FFFE
     #GameFlags = #GameFlags AND $FFFD
     #MegaTimer = 0
     MegaBeamTimer = 0
-    GOSUB ClearEnemyState
+    GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
@@ -3871,12 +3897,12 @@ UpdateCapture: PROCEDURE
     IF RogueX > 160 THEN RogueX = 160
 
     ' Render wingman (skip if power-up capsule is using the sprite)
-    ' Uses SmallCrab centered graphics (GRAM_CRAB_F1/F2) with captured alien's color
+    ' Uses Mooninite-style graphics (GRAM_WINGMAN_F1/F2) in green to show friendly
     IF TitleFrame = 0 THEN
         IF AnimFrame = 0 THEN
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_CRAB_F1 * 8 + CaptureColor + $0800
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + COL_GREEN + $0800
         ELSE
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_CRAB_F2 * 8 + CaptureColor + $0800
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + COL_GREEN + $0800
         END IF
     END IF
 
@@ -5128,6 +5154,28 @@ SmallCrabF2Gfx:
     BITMAP "........"
     BITMAP ".X....X."
 
+' --- WINGMAN (Mooninite-style, 8x8) ---
+' Blocky rectangular alien with attitude
+WingmanF1Gfx:
+    BITMAP "........"
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP ".X....X."
+    BITMAP "..X..X.."
+    BITMAP "........"
+
+WingmanF2Gfx:
+    BITMAP "........"
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP ".XXXXXX."
+    BITMAP "..X..X.."
+    BITMAP ".X....X."
+    BITMAP ".X....X."
+    BITMAP "........"
+
 ' ============================================
 ' Custom Title Font - "SPACE INTRUDERS"
 ' Outlined / hollow style - wide and spacey
@@ -5436,14 +5484,14 @@ MegaBeamGfx:
 
 ' Quad laser (4 thin lines spread across 8px)
 QuadGfx:
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
-    BITMAP "X.X..X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
+    BITMAP ".X.X.X.X"
 
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:

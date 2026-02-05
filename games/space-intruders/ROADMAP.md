@@ -8,6 +8,11 @@
   - [x] Tutorial text repositioned (row 9 centered, faster flash)
   - [ ] Lives display styling (see below)
   - [ ] Active powerup indicator (see below)
+- [x] Rogue Alien / Wingman revamp (see 0c below)
+  - [x] Mooninite-style sprite design
+  - [x] Persistent across wave/pattern transitions
+  - [x] Bullet sponge behavior (absorbs enemy fire)
+  - [ ] Better firing as partner (optional tuning)
 - [ ] Color tuning and visual consistency
 - [ ] Physics/collision refinement
 - [ ] Performance optimization (saucer CPU spikes)
@@ -61,6 +66,69 @@
 **Variables:** 0 (use existing BeamTimer/RapidTimer/DualTimer/MegaTimer checks)
 
 **Decision:** TBD - nice-to-have polish
+
+---
+
+### 0c. Rogue Alien / Wingman Revamp (Gameplay Polish)
+
+**Current issues:**
+- Captured alien disappears too quickly (feels fragile)
+- Always uses "Zod" sprite regardless of which alien was captured
+- Resets on wave/pattern transitions
+- Doesn't feel like a true ally/partner
+
+**Goals:**
+1. **Persistent wingman** — captured alien stays with player until death (survives pattern transitions, wave clears)
+2. **Bullet sponge** — wingman absorbs enemy fire, making it feel invincible and protective
+3. **Active partner** — fires more aggressively alongside player
+4. **New sprite design** — Mooninite-inspired 8x8 pixel alien (blocky, angular, attitude)
+
+**Sprite concept (Mooninite homage):**
+```
+Frame 1:        Frame 2:
+........        ........
+.XXXXXX.        .XXXXXX.
+.X.XX.X.        .X.XX.X.
+.XXXXXX.        .XXXXXX.
+.X....X.        ..X..X..
+.X.XX.X.        .X.XX.X.
+..XXXX..        .X....X.
+........        ........
+```
+Blocky rectangular body, simple face, slight animation. Color: green or cyan to distinguish from enemies.
+
+**Technical approach:**
+
+| Change | Implementation |
+|--------|----------------|
+| Persistence | Don't reset `WingmanActive` in `LoadPatternB` or `StartNewWave` |
+| Bullet absorption | Check wingman hitbox in `MoveAlienBullet`, destroy bullet but not wingman |
+| Correct sprite | Use captured alien's type to select GRAM card, or use dedicated wingman card |
+| Firing | Increase fire rate, maybe sync with player shots |
+| Position | Float near player (offset X), mirror player movement |
+
+**State machine:**
+- `WINGMAN_IDLE` (0) — no wingman active
+- `WINGMAN_ACTIVE` (1) — wingman following player, firing, absorbing shots
+- `WINGMAN_LOST` (2) — brief "goodbye" animation when player dies (optional)
+
+**Variables needed:**
+- Reuse existing `RogueState`, `RogueX`, `RogueY` for wingman
+- Or add `WingmanActive`, `WingmanX`, `WingmanY` (cleaner separation)
+
+**GRAM cost:** 1-2 cards for wingman sprite (can reuse rogue slots during wingman phase)
+**Variables:** 0-3 depending on approach (reuse vs. dedicated)
+
+**Subtasks:**
+- [ ] Design Mooninite-style sprite bitmap (2 frames)
+- [ ] Add GRAM constant and bitmap data
+- [ ] Implement persistent wingman state (survives transitions)
+- [ ] Add bullet absorption collision
+- [ ] Fix sprite selection (use correct/dedicated graphic)
+- [ ] Tune firing behavior (rate, sync with player)
+- [ ] Test across wave transitions and player death
+
+**Priority:** High — this is core gameplay feel
 
 ---
 
