@@ -56,18 +56,20 @@ CONST GRAM_FONT_D = 35          ' Reused as GRAM_HUD_11 during gameplay
 CONST GRAM_FONT_F = 36          ' Reused as GRAM_HUD_12 during gameplay
 
 ' Gameplay HUD slots (reuse title font cards 25-36 after title screen)
-CONST GRAM_HUD_1  = 25          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_2  = 26          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_3  = 27          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_4  = 28          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_5  = 29          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_6  = 30          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_7  = 31          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_8  = 32          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_9  = 33          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_10 = 34          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_11 = 35          ' Available for powerup/HUD graphics
-CONST GRAM_HUD_12 = 36          ' Available for powerup/HUD graphics
+' Powerup HUD indicator GRAM slots (reuse title font cards 25-32)
+CONST GRAM_PWR_BE = 25          ' BEAM tile 1: "BE"
+CONST GRAM_PWR_AM = 26          ' BEAM tile 2: "AM"
+CONST GRAM_PWR_RP = 27          ' RAPID tile 1: "RP"
+CONST GRAM_PWR_ID = 28          ' RAPID tile 2: "ID"
+CONST GRAM_PWR_QU = 29          ' QUAD tile 1: "QU"
+CONST GRAM_PWR_AD = 30          ' QUAD tile 2: "AD"
+CONST GRAM_PWR_ME = 31          ' MEGA tile 1: "ME"
+CONST GRAM_PWR_GA = 32          ' MEGA tile 2: "GA"
+' Remaining HUD slots (title font cards 33-36)
+CONST GRAM_HUD_9  = 33          ' Available for future HUD graphics
+CONST GRAM_HUD_10 = 34          ' Available for future HUD graphics
+CONST GRAM_HUD_11 = 35          ' Available for future HUD graphics
+CONST GRAM_HUD_12 = 36          ' Available for future HUD graphics
 CONST GRAM_STAR1  = 37        ' Star dot (upper-left pixel)
 CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
 CONST GRAM_SAUCER = 39         ' Flying saucer (bonus target)
@@ -521,7 +523,7 @@ ResetToTitle:
     MarchCount = 0
     #GameFlags = #GameFlags AND $FFFE
     #GameFlags = #GameFlags AND $FFFD : ABulFrame = 0
-    RogueState = 0 : RogueTimer = 0
+    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0
     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7 : Key0Held = 0
@@ -544,6 +546,15 @@ ResetToTitle:
 ' ============================================
 TitleScreen:
     CLS
+
+    ' Restore title font GRAM cards (overwritten by gameplay powerup tiles)
+    ' Cards 25-36 = S, P, A, C, E, I, N, T, R, U, D, F
+    DEFINE GRAM_FONT_S, 4, FontSGfx  ' Cards 25-28: S, P, A, C
+    WAIT
+    DEFINE GRAM_FONT_E, 4, FontEGfx  ' Cards 29-32: E, I, N, T
+    WAIT
+    DEFINE GRAM_FONT_R, 4, FontRGfx  ' Cards 33-36: R, U, D, F
+
     TitleFrame = 0
     TitleMarchDir = 1      ' 1=right, 0=left
     TitleMarchCount = 0    ' Frame counter for march steps
@@ -956,7 +967,7 @@ END
 
 ' --- ClearEnemyState: Reset rogue alien and wingman state ---
 ClearEnemyState: PROCEDURE
-    RogueState = 0 : RogueTimer = 0
+    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
@@ -1094,13 +1105,11 @@ StartGame:
     WAIT
     DEFINE GRAM_BAND2, 1, Band2Gfx
 
-    ' Redefine title font GRAM cards (25-36) for gameplay HUD use
-    ' These 12 slots are now available for powerup indicators, etc.
-    DEFINE GRAM_HUD_1, 4, HudPlaceholderGfx  ' Cards 25-28 (4 slots)
+    ' Redefine title font GRAM cards (25-32) for powerup HUD indicators
+    ' 8 tiles: BEAM(BE,AM), RAPID(RP,ID), QUAD(QU,AD), MEGA(ME,GA)
+    DEFINE GRAM_PWR_BE, 4, PowerupBEGfx  ' Cards 25-28: BE, AM, RP, ID
     WAIT
-    DEFINE GRAM_HUD_5, 4, HudPlaceholderGfx  ' Cards 29-32 (4 slots)
-    WAIT
-    DEFINE GRAM_HUD_9, 4, HudPlaceholderGfx  ' Cards 33-36 (4 slots)
+    DEFINE GRAM_PWR_QU, 4, PowerupQUGfx  ' Cards 29-32: QU, AD, ME, GA
 
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
@@ -1118,20 +1127,25 @@ StartGame:
     #GameFlags = #GameFlags AND $FEFF
     RightRevealCol = ALIEN_COLS - 1
 
-    ' Draw HUD: CHAIN (left) | SCORE (middle) | LIVES (right)
-    ' Chain label at 220-222, count at 223 (grows right: 223-225 for 3 digits)
+    ' Draw HUD: SCORE (left) | CHAIN | POWERUP | LIVES (right)
+    ' New layout: 220-222=SCORE, 223-227=digits, 228-230=CHAIN, 231-232=count,
+    '             233-234=powerup (when active), 235=ship, 236=X, 237=lives
+    ' Score label at 220-222, value at 223+
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, "0"
+    PRINT AT 224, 0 : PRINT AT 225, 0 : PRINT AT 226, 0 : PRINT AT 227, 0
+    ' Chain label at 228-230, count at 231-232
     ' Start grey + hyphen since ChainCount = 0
-    PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
-    PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
-    PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
-    PRINT AT 223, 111                            ' GROM hyphen in white
-    PRINT AT 224, 0 : PRINT AT 225, 0  ' Clear space for multi-digit counts
-    ' Score label at 226-228, value at 229+
-    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 229 COLOR COL_WHITE, "0"
-    ' Lives ship icon at 236, count at 237
+    PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 231, 111                            ' GROM hyphen in white
+    PRINT AT 232, 0                              ' Clear second digit slot
+    ' Powerup indicator at 233-234 (clear initially)
+    PRINT AT 233, 0 : PRINT AT 234, 0
+    ' Lives ship icon at 236, X at 237, count at 238
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     PRINT AT 237 COLOR COL_WHITE, "X3"
 
@@ -1150,7 +1164,7 @@ StartGame:
     TitleJitter = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
     ChainMax = 0    ' Reset best chain for new game
-    RogueState = 0 : RogueTimer = 0
+    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
@@ -1362,7 +1376,7 @@ GameLoop:
                     BeamTimer = 0 : RapidTimer = 0
                     DualTimer = 0 : #MegaTimer = 0
                     #GameFlags = #GameFlags AND $FFFD : #GameFlags = #GameFlags AND $FFFE
-                    RogueState = ROGUE_IDLE : RogueTimer = 0
+                    RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
                     GOSUB SilenceSfx
                     SPRITE SPR_PLAYER, 0, 0, 0
@@ -1563,7 +1577,7 @@ ChainDone:
                             #GameFlags = #GameFlags AND $FFFE
                             SPRITE SPR_PBULLET, 0, 0, 0
                             RogueState = ROGUE_IDLE
-                            RogueTimer = 0
+                            RogueTimer = 0 : RogueDivePhase = 0
                             SPRITE SPR_FLYER, 0, 0, 0
                             #Score = #Score + 50
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
@@ -1741,6 +1755,24 @@ ChainDone:
         #MegaTimer = #MegaTimer - 1
     END IF
 
+    ' Update powerup HUD indicator (positions 233-234, yellow color)
+    IF BeamTimer > 0 THEN
+        PRINT AT 233, GRAM_PWR_BE * 8 + COL_YELLOW + $0800
+        PRINT AT 234, GRAM_PWR_AM * 8 + COL_YELLOW + $0800
+    ELSEIF RapidTimer > 0 THEN
+        PRINT AT 233, GRAM_PWR_RP * 8 + COL_YELLOW + $0800
+        PRINT AT 234, GRAM_PWR_ID * 8 + COL_YELLOW + $0800
+    ELSEIF DualTimer > 0 THEN
+        PRINT AT 233, GRAM_PWR_QU * 8 + COL_YELLOW + $0800
+        PRINT AT 234, GRAM_PWR_AD * 8 + COL_YELLOW + $0800
+    ELSEIF #MegaTimer > 0 THEN
+        PRINT AT 233, GRAM_PWR_ME * 8 + COL_YELLOW + $0800
+        PRINT AT 234, GRAM_PWR_GA * 8 + COL_YELLOW + $0800
+    ELSE
+        ' No powerup active - clear indicator
+        PRINT AT 233, 0 : PRINT AT 234, 0
+    END IF
+
     ' Mega beam display countdown + sweep-up from turret + color cycling
     ' Beam follows ship movement and kills aliens it sweeps over
     IF MegaBeamTimer > 0 THEN
@@ -1785,7 +1817,7 @@ ChainDone:
     GOSUB DrawAlienBullet
 
     ' Update score display (position 229+ in new HUD layout)
-    PRINT AT 229 COLOR COL_WHITE, <>#Score
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
 
     ' Extra life: first at 1000, then every 5000
     IF #Score >= #NextLife THEN
@@ -1827,24 +1859,20 @@ ChainDone:
         ' Chain counter display: grey when inactive, blue when active
         IF ChainCount = 0 THEN
             ' Grey label + hyphen for inactive chain
-            PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
-            PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
-            PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
-            PRINT AT 223, 111                        ' GROM hyphen
-            PRINT AT 224, 0                          ' Clear any leftover digits
-            PRINT AT 225, 0
+            PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+            PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+            PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+            PRINT AT 231, 111                        ' GROM hyphen
+            PRINT AT 232, 0                          ' Clear second digit slot
         ELSE
             ' Blue label + count for active chain
-            PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-            PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-            PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-            PRINT AT 223 COLOR COL_BLUE, <>ChainCount
-            ' Clear trailing digits when count shrinks (10->9, 100->99)
+            PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+            PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+            PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+            PRINT AT 231 COLOR COL_BLUE, <>ChainCount
+            ' Clear trailing digit when count shrinks (10->9)
             IF ChainCount < 10 THEN
-                PRINT AT 224, 0
-            END IF
-            IF ChainCount < 100 THEN
-                PRINT AT 225, 0
+                PRINT AT 232, 0
             END IF
         END IF
     END IF
@@ -2320,13 +2348,18 @@ CheckOneColumn: PROCEDURE
                     #GameFlags = #GameFlags AND $FFFE
                 END IF
 
-                ' Chain combo scoring: 10, 20, 30, 40... (cap at 50)
+                ' Chain combo scoring: 10, 20, 30, 40, 50 (bonus capped at 50)
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
                 ChainCount = ChainCount + 1
                 IF ChainCount > ChainMax THEN ChainMax = ChainCount
                 IF ChainCount > 50 THEN ChainCount = 50
                 ChainTimeout = 90
-                #Score = #Score + ChainCount * 10
+                ' Bonus caps at 50 points (chain 5+), but chain counter keeps growing for display
+                IF ChainCount <= 5 THEN
+                    #Score = #Score + ChainCount * 10
+                ELSE
+                    #Score = #Score + 50
+                END IF
 
                 ' Noise explosion SFX (short punchy crunch)
                 SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
@@ -3427,14 +3460,20 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
 
     ' Redraw HUD (cleared by above loop at row 11) - grey since chain resets
-    PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
-    PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
-    PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
-    PRINT AT 223, 111                            ' GROM hyphen
-    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 229 COLOR COL_WHITE, <>#Score
+    ' Score at 220-227
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    ' Chain at 228-232 (grey/inactive)
+    PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 231, 111                            ' GROM hyphen
+    PRINT AT 232, 0
+    ' Powerup cleared
+    PRINT AT 233, 0 : PRINT AT 234, 0
+    ' Lives at 236-238
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
 
     ' Visual/audio cue: "ALERT!" flash
@@ -3599,25 +3638,28 @@ StartNewWave: PROCEDURE
     ' Clear screen (aliens will paint in via game loop)
     CLS
 
-    ' Redraw HUD - respect chain state
+    ' Redraw HUD - Score at 220-227, Chain at 228-232, Powerup at 233-234, Lives at 235-237
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    ' Chain - respect chain state
     IF ChainCount = 0 THEN
-        PRINT AT 220, GRAM_CHAIN_CH * 8 + $1800
-        PRINT AT 221, GRAM_CHAIN_AI * 8 + $1800
-        PRINT AT 222, GRAM_CHAIN_N * 8 + $1800
-        PRINT AT 223, 111                        ' GROM hyphen
-        PRINT AT 224, 0 : PRINT AT 225, 0
+        PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+        PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+        PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+        PRINT AT 231, 111                        ' GROM hyphen
+        PRINT AT 232, 0
     ELSE
-        PRINT AT 220, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-        PRINT AT 221, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-        PRINT AT 222, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-        PRINT AT 223 COLOR COL_BLUE, <>ChainCount
-        IF ChainCount < 10 THEN PRINT AT 224, 0
-        IF ChainCount < 100 THEN PRINT AT 225, 0
+        PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+        PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+        PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+        PRINT AT 231 COLOR COL_BLUE, <>ChainCount
+        IF ChainCount < 10 THEN PRINT AT 232, 0
     END IF
-    PRINT AT 226, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 227, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 228, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 229 COLOR COL_WHITE, <>#Score
+    ' Powerup indicator cleared
+    PRINT AT 233, 0 : PRINT AT 234, 0
+    ' Lives at 236-238
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
     GOSUB UpdateLivesHUD
 
@@ -4007,7 +4049,7 @@ RogueUpdate: PROCEDURE
             RogueY = RogueY + 2
             IF RogueY >= 112 THEN
                 RogueState = ROGUE_IDLE
-                RogueTimer = 0
+                RogueTimer = 0 : RogueDivePhase = 0
                 SPRITE SPR_FLYER, 0, 0, 0
                 RETURN
             END IF
@@ -4117,7 +4159,7 @@ RogueDiveRender:
                             IF RogueX <= PlayerX + 8 THEN
                                 #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                                 RogueState = ROGUE_IDLE
-                                RogueTimer = 0
+                                RogueTimer = 0 : RogueDivePhase = 0
                                 SPRITE SPR_FLYER, 0, 0, 0
                                 SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
                                 SOUND 2, 100, 15
@@ -5434,43 +5476,90 @@ ExplosionGfx3:
 
 ' (Figure-8 path data moved to Segment 2 — see Flight Patterns section)
 
-' Placeholder HUD graphics - 4 cards for powerup indicators
-' User can replace with actual designs later
-HudPlaceholderGfx:
-    ' Card 1 - empty placeholder
+' Powerup HUD indicator graphics (8 tiles, 2 per powerup)
+' Displayed in yellow (color 6) when powerup is active
+
+' === BEAM powerup (tiles 1-2) ===
+PowerupBEGfx:
+    BITMAP "........"
+    BITMAP "##..###."
+    BITMAP "#.#.#..."
+    BITMAP "##..##.."
+    BITMAP "#.#.#..."
+    BITMAP "##..###."
     BITMAP "........"
     BITMAP "........"
+
+PowerupAMGfx:
+    BITMAP "........"
+    BITMAP ".#..#.#."
+    BITMAP "#.#.###."
+    BITMAP "###.###."
+    BITMAP "#.#.#.#."
+    BITMAP "#.#.#.#."
     BITMAP "........"
     BITMAP "........"
+
+' === RAPID powerup (tiles 3-4) ===
+PowerupRPGfx:
+    BITMAP "........"
+    BITMAP "##..##.."
+    BITMAP "#.#.#.#."
+    BITMAP "##..##.."
+    BITMAP "#.#.#..."
+    BITMAP "#.#.#..."
     BITMAP "........"
     BITMAP "........"
+
+PowerupIDGfx:
+    BITMAP "........"
+    BITMAP ".#..##.."
+    BITMAP ".#..#.#."
+    BITMAP ".#..#.#."
+    BITMAP ".#..#.#."
+    BITMAP ".#..##.."
     BITMAP "........"
     BITMAP "........"
-    ' Card 2 - empty placeholder
+
+' === QUAD powerup (tiles 5-6) ===
+PowerupQUGfx:
+    BITMAP "........"
+    BITMAP ".##.#.#."
+    BITMAP "#..##.#."
+    BITMAP "#..##.#."
+    BITMAP "#.##.#.."
+    BITMAP ".###.#.."
     BITMAP "........"
     BITMAP "........"
+
+PowerupADGfx:
+    BITMAP "........"
+    BITMAP ".#..##.."
+    BITMAP "#.#.#.#."
+    BITMAP "###.#.#."
+    BITMAP "#.#.#.#."
+    BITMAP "#.#.##.."
     BITMAP "........"
     BITMAP "........"
+
+' === MEGA powerup (tiles 7-8) ===
+PowerupMEGfx:
+    BITMAP "........"
+    BITMAP "#.#.###."
+    BITMAP "###.#..."
+    BITMAP "###.##.."
+    BITMAP "#.#.#..."
+    BITMAP "#.#.###."
     BITMAP "........"
     BITMAP "........"
+
+PowerupGAGfx:
     BITMAP "........"
-    BITMAP "........"
-    ' Card 3 - empty placeholder
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    ' Card 4 - empty placeholder
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
+    BITMAP ".##..#.."
+    BITMAP "#...#.#."
+    BITMAP "#.#.###."
+    BITMAP "#.#.#.#."
+    BITMAP ".##.#.#."
     BITMAP "........"
     BITMAP "........"
 
