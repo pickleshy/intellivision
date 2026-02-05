@@ -14,7 +14,7 @@ set -e
 
 # Navigate to project root (IDE directory)
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-GAME_DIR="$(dirname "$0")"
+GAME_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$GAME_DIR/build"
 
 # Tool paths
@@ -23,6 +23,7 @@ AS1600=~/jzintv/bin/as1600
 JZINTV=~/jzintv/bin/jzintv
 EXEC_ROM=~/jzintv/bin/exec.bin
 GROM_ROM=~/jzintv/bin/grom.bin
+ECS_ROM=~/jzintv/bin/ecs.bin
 
 # File names
 SRC="$GAME_DIR/src/main.bas"
@@ -58,17 +59,21 @@ echo "LST: $LST"
 # Run in emulator if requested
 if [ "$1" = "run" ]; then
     echo ""
-    echo "=== Launching jzIntv ==="
+    echo "=== Launching jzIntv (with ECS) ==="
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
+        --ecsimg="$ECS_ROM" \
+        -z3 \
         "$ROM"
 elif [ "$1" = "voice" ]; then
     echo ""
-    echo "=== Launching jzIntv (with Intellivoice) ==="
+    echo "=== Launching jzIntv (with Intellivoice + ECS) ==="
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
+        --ecsimg="$ECS_ROM" \
         --voice=1 \
+        -z3 \
         "$ROM"
 fi

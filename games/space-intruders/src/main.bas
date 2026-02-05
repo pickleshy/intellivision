@@ -106,6 +106,22 @@ CONST GRAM_SCORE_E  = 63        ' Compact "E" for score label
 CONST GRAM_WINGMAN_F1 = 13      ' Wingman frame 1 (legs together)
 CONST GRAM_WINGMAN_F2 = 18      ' Wingman frame 2 (legs apart)
 
+' Animated title font GRAM card bases (TITLE SCREEN ONLY)
+' Animated font: 3 frames per letter (full, 60°, edge), 33 cards total
+' Uses gameplay-only cards during title, reloaded at StartGame
+' Avoids reserved: 9-12 (band), 19-24 (crab/sparks), 25-36 (GRAM_FONT), 37-38 (stars)
+CONST TGRAM_S = 0               ' Cards 0-2 (full, 60°, edge)
+CONST TGRAM_P = 3               ' Cards 3-5
+CONST TGRAM_A = 6               ' Cards 6-8
+CONST TGRAM_C = 13              ' Cards 13-15 (skip 9-12 band)
+CONST TGRAM_E = 16              ' Cards 16-18
+CONST TGRAM_I = 39              ' Cards 39-41 (skip 19-38)
+CONST TGRAM_N = 42              ' Cards 42-44
+CONST TGRAM_T = 45              ' Cards 45-47
+CONST TGRAM_R = 48              ' Cards 48-50
+CONST TGRAM_U = 51              ' Cards 51-53
+CONST TGRAM_D = 54              ' Cards 54-56
+
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
 CONST SPR_FLYER     = 5         ' Title screen flying alien
@@ -277,6 +293,11 @@ FlyCenterX  = 0                 ' Saucer swirl circle center X
 FlyCenterY  = 0                 ' Saucer swirl circle center Y
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
 SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
+' Title animation state (Y-axis rotation cascade)
+' Uses dynamic frame calculation instead of array (saves 15 8-bit vars)
+TitleAnimState = 0              ' 0=reveal, 1=normal, 2=vanish, 3=done
+RevealCol   = 0                 ' Current letter revealing (0-14)
+VanishCol   = 255               ' Current letter vanishing (255=not started)
 ' Starfield variables
 DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
 DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
@@ -561,15 +582,15 @@ ResetToTitle:
 TitleScreen:
     CLS
 
-    ' Restore title font GRAM cards (overwritten by gameplay powerup tiles)
-    ' Cards 25-36 = S, P, A, C, E, I, N, T, R, U, D, F
-    DEFINE GRAM_FONT_S, 4, FontSGfx  ' Cards 25-28: S, P, A, C
-    WAIT
-    DEFINE GRAM_FONT_E, 4, FontEGfx  ' Cards 29-32: E, I, N, T
-    WAIT
-    DEFINE GRAM_FONT_R, 4, FontRGfx  ' Cards 33-36: R, U, D, F
-    WAIT
-    ' Restore star graphics (overwritten by game over screen's G, M font tiles)
+    ' Initialize Y-axis letter animation state
+    TitleAnimState = 0     ' 0=reveal phase (uses dynamic frame calculation)
+    RevealCol = 0          ' Current reveal position (0-14)
+    VanishCol = 0          ' Current vanish position (0-14)
+
+    ' Load animated title font GRAM (uses gameplay cards 0-55, preserves band/crab/sparks/stars)
+    GOSUB LoadAnimatedFont
+
+    ' Restore star graphics (cards 37-38, not touched by animated font)
     DEFINE GRAM_STAR1, 1, Star1Gfx   ' Card 37
     WAIT
     DEFINE GRAM_STAR2, 1, Star2Gfx   ' Card 38
@@ -579,8 +600,8 @@ TitleScreen:
     TitleMarchCount = 0    ' Frame counter for march steps
     TitleGridCol = 4       ' BACKTAB column of grid left edge
 
-    ' Display title text - row 1 (procedure in Segment 1 to save Seg 0 space)
-    GOSUB DrawTitleText
+    ' Display title text with initial animation frames (edge view)
+    GOSUB DrawTitleAnimated
 
     ' Generate scrolling starfield on safe rows (3, 4, 8, 9, 11)
     StarTimer = 0
@@ -696,6 +717,30 @@ TitleLoop:
         ELSE
             SPRITE SPR_FLYER, FlyX + SPR_VISIBLE, FlyY, GRAM_CRAB_F2 * 8 + FlyColor + $0800
         END IF
+    END IF
+
+    ' --- Y-Axis Letter Animation ---
+    ' Simple: Zod's X position directly determines which letters are revealed
+    IF TitleAnimState = 0 THEN
+        ' RevealCol = FlyX / 6, capped at 14
+        Col = FlyX / 6
+        IF Col > 14 THEN Col = 14
+        IF Col <> RevealCol THEN
+            RevealCol = Col
+            GOSUB DrawTitleAnimated
+        END IF
+        ' All letters revealed when RevealCol reaches 14
+        IF RevealCol >= 14 THEN
+            TitleAnimState = 1
+            GOSUB DrawTitleAnimated  ' Redraw all letters as full (state 1)
+        END IF
+    END IF
+
+    ' Vanish cascade: VanishCol increments, letters vanish left to right
+    IF TitleAnimState = 2 THEN
+        VanishCol = VanishCol + 1
+        GOSUB DrawTitleAnimated
+        IF VanishCol >= 15 THEN TitleAnimState = 3
     END IF
 
     ' March animation - move grid 1 card every 32 frames
@@ -946,17 +991,27 @@ SkipPressfire:
         Key1Held = 0
     END IF
     IF Key1Held >= 4 THEN
-        ' Silence any lingering PSG state before gameplay
-        SOUND 0, , 0
-        SOUND 1, , 0
-        SOUND 2, , 0
-        POKE $1F8, $3F  ' Disable all tone + noise channels
-        ' Start gameplay music (slow for wave 1)
-        PLAY SIMPLE
-        PLAY VOLUME 12
-        PLAY si_bg_slow
-        SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
-        GOTO StartGame
+        ' Handle fire button based on animation state
+        IF TitleAnimState = 0 OR TitleAnimState = 1 THEN
+            ' Start vanish cascade
+            TitleAnimState = 2
+            VanishCol = 0
+            Key1Held = 0  ' Reset to prevent instant transition
+        ELSEIF TitleAnimState = 3 THEN
+            ' Vanish complete, proceed to gameplay
+            ' Silence any lingering PSG state before gameplay
+            SOUND 0, , 0
+            SOUND 1, , 0
+            SOUND 2, , 0
+            POKE $1F8, $3F  ' Disable all tone + noise channels
+            ' Start gameplay music (slow for wave 1)
+            PLAY SIMPLE
+            PLAY VOLUME 12
+            PLAY si_bg_slow
+            SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
+            GOTO StartGame
+        END IF
+        ' TitleAnimState=2 (vanish in progress) - do nothing, wait for completion
     END IF
 
     GOTO TitleLoop
@@ -1020,6 +1075,107 @@ DrawTitleText: PROCEDURE
     PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
     RETURN
 END
+
+    SEGMENT 3   ' Title animation procedures (Seg 1 near capacity)
+
+' --- LoadAnimatedFont: Load 33 frames (3 per letter: full, 60°, edge) ---
+' Loads frames 1, 3, 4 for each letter (skips frame 2 for smoother 3-step)
+' Preserves: 9-12 (band), 19-38 (crab/sparks/font/stars)
+LoadAnimatedFont: PROCEDURE
+    ' S: cards 0-2 (full, 60°, edge)
+    DEFINE 0, 1, FontSY1Gfx : WAIT
+    DEFINE 1, 1, FontSY3Gfx : WAIT
+    DEFINE 2, 1, FontSY4Gfx : WAIT
+    ' P: cards 3-5
+    DEFINE 3, 1, FontPY1Gfx : WAIT
+    DEFINE 4, 1, FontPY3Gfx : WAIT
+    DEFINE 5, 1, FontPY4Gfx : WAIT
+    ' A: cards 6-8
+    DEFINE 6, 1, FontAY1Gfx : WAIT
+    DEFINE 7, 1, FontAY3Gfx : WAIT
+    DEFINE 8, 1, FontAY4Gfx : WAIT
+    ' C: cards 13-15 (skip 9-12 band)
+    DEFINE 13, 1, FontCY1Gfx : WAIT
+    DEFINE 14, 1, FontCY3Gfx : WAIT
+    DEFINE 15, 1, FontCY4Gfx : WAIT
+    ' E: cards 16-18
+    DEFINE 16, 1, FontEY1Gfx : WAIT
+    DEFINE 17, 1, FontEY3Gfx : WAIT
+    DEFINE 18, 1, FontEY4Gfx : WAIT
+    ' I: cards 39-41 (skip 19-38)
+    DEFINE 39, 1, FontIY1Gfx : WAIT
+    DEFINE 40, 1, FontIY3Gfx : WAIT
+    DEFINE 41, 1, FontIY4Gfx : WAIT
+    ' N: cards 42-44
+    DEFINE 42, 1, FontNY1Gfx : WAIT
+    DEFINE 43, 1, FontNY3Gfx : WAIT
+    DEFINE 44, 1, FontNY4Gfx : WAIT
+    ' T: cards 45-47
+    DEFINE 45, 1, FontTY1Gfx : WAIT
+    DEFINE 46, 1, FontTY3Gfx : WAIT
+    DEFINE 47, 1, FontTY4Gfx : WAIT
+    ' R: cards 48-50
+    DEFINE 48, 1, FontRY1Gfx : WAIT
+    DEFINE 49, 1, FontRY3Gfx : WAIT
+    DEFINE 50, 1, FontRY4Gfx : WAIT
+    ' U: cards 51-53
+    DEFINE 51, 1, FontUY1Gfx : WAIT
+    DEFINE 52, 1, FontUY3Gfx : WAIT
+    DEFINE 53, 1, FontUY4Gfx : WAIT
+    ' D: cards 54-56
+    DEFINE 54, 1, FontDY1Gfx : WAIT
+    DEFINE 55, 1, FontDY3Gfx : WAIT
+    DEFINE 56, 1, FontDY4Gfx : WAIT
+    RETURN
+END
+
+' --- DrawTitleAnimated: Draw title text using computed animation frames ---
+' 3 frames: 0=full, 1=60°, 2=edge. Smoother reveal/vanish cascade.
+' State 0 (reveal): Row < RevealCol=full, Row=RevealCol=60°, Row > RevealCol=edge
+' State 1 (normal): all full
+' State 2 (vanish): Row < VanishCol=edge, Row=VanishCol=60°, Row > VanishCol=full
+' State 3 (done): all edge
+DrawTitleAnimated: PROCEDURE
+    FOR Row = 0 TO 14
+        IF Row = 5 THEN GOTO DrawAnimSkip  ' Skip space position
+
+        ' Compute frame: 0=full, 1=60°, 2=edge
+        Col = 2  ' Default: edge
+        IF TitleAnimState = 0 THEN
+            ' Reveal: before RevealCol=full, at RevealCol=60°, after=edge
+            IF Row < RevealCol THEN Col = 0
+            IF Row = RevealCol THEN Col = 1
+        END IF
+        IF TitleAnimState = 1 THEN Col = 0  ' Normal: all full
+        IF TitleAnimState = 2 THEN
+            ' Vanish: before VanishCol=edge, at VanishCol=60°, after=full
+            Col = 0  ' Default full
+            IF Row < VanishCol THEN Col = 2
+            IF Row = VanishCol THEN Col = 1
+        END IF
+
+        ' Lookup GRAM card from appropriate frame table
+        IF Col = 0 THEN LoopVar = TitleGramF0(Row)
+        IF Col = 1 THEN LoopVar = TitleGramF1(Row)
+        IF Col = 2 THEN LoopVar = TitleGramF2(Row)
+        #Card = LoopVar * 8 + COL_TAN + $0800
+        PRINT AT 22 + Row, #Card
+
+DrawAnimSkip:
+    NEXT Row
+    RETURN
+END
+
+' GRAM card lookup tables for 3 frames (full, 60°, edge)
+' Index: 0=S, 1=P, 2=A, 3=C, 4=E, 5=skip, 6=I, 7=N, 8=T, 9=R, 10=U, 11=D, 12=E, 13=R, 14=S
+TitleGramF0:
+    DATA 0, 3, 6, 13, 16, 0, 39, 42, 45, 48, 51, 54, 16, 48, 0
+TitleGramF1:
+    DATA 1, 4, 7, 14, 17, 0, 40, 43, 46, 49, 52, 55, 17, 49, 1
+TitleGramF2:
+    DATA 2, 5, 8, 15, 18, 0, 41, 44, 47, 50, 53, 56, 18, 50, 2
+
+    SEGMENT 1   ' Back to Segment 1 for remaining procedures
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
@@ -1126,7 +1282,20 @@ END
 StartGame:
     CLS
 
-    ' Restore skull boss GRAM cards (all 4 animation frames)
+    ' Reload ALL gameplay GRAM cards overwritten by animated title font
+    ' Cards 0-8: Ship, aliens, bullet
+    DEFINE GRAM_SHIP, 2, ShipGfx          ' Cards 0-1
+    WAIT
+    DEFINE GRAM_ALIEN1, 2, Alien1Gfx      ' Cards 2-3
+    WAIT
+    DEFINE GRAM_ALIEN2, 2, Alien2Gfx      ' Cards 4-5
+    WAIT
+    DEFINE GRAM_ALIEN3, 2, Alien3Gfx      ' Cards 6-7
+    WAIT
+    DEFINE GRAM_BULLET, 1, BulletGfx      ' Card 8
+    WAIT
+    ' Cards 9-12: Band (preserved during title - already correct from init)
+    ' But reload to ensure consistency after any title animation quirks
     DEFINE GRAM_BAND1, 1, Band1Gfx
     WAIT
     DEFINE GRAM_BAND2, 1, Band2Gfx
@@ -1134,6 +1303,18 @@ StartGame:
     DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx
     WAIT
     DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx
+    WAIT
+    ' Cards 13-18: Wingman, explosions, ship accent
+    DEFINE GRAM_WINGMAN_F1, 1, WingmanF1Gfx  ' Card 13
+    WAIT
+    DEFINE GRAM_EXPLOSION, 1, ExplosionGfx    ' Card 14
+    WAIT
+    DEFINE GRAM_EXPLOSION2, 1, ExplosionGfx2  ' Card 15
+    WAIT
+    DEFINE GRAM_EXPLOSION3, 1, ExplosionGfx3  ' Card 16
+    WAIT
+    DEFINE GRAM_SHIP_ACCENT, 2, ShipAccentGfx ' Cards 17-18
+    WAIT
 
     ' Redefine title font GRAM cards (25-32) for powerup HUD indicators
     ' 8 tiles: BEAM(BE,AM), RAPID(RP,ID), QUAD(QU,AD), MEGA(ME,GA)
@@ -1143,6 +1324,28 @@ StartGame:
     WAIT
     DEFINE GRAM_SHIELD, 1, ShieldArcGfx  ' Card 33: Shield arc
     WAIT
+    ' Cards 39-55: Saucer, beams, capsules, bombs, zigzag
+    DEFINE GRAM_SAUCER, 1, SaucerGfx      ' Card 39
+    WAIT
+    DEFINE GRAM_BEAM, 1, BeamGfx          ' Card 40
+    WAIT
+    DEFINE GRAM_SAUCER_F2, 3, SaucerF2Gfx ' Cards 42-44 (skips 41=POWERUP, reused from capsule)
+    WAIT
+    DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx   ' Card 45
+    WAIT
+    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx ' Card 46
+    WAIT
+    DEFINE GRAM_QUAD, 1, QuadGfx          ' Card 47
+    WAIT
+    DEFINE GRAM_CAP_F1, 4, CapsuleF1Gfx   ' Cards 48-51
+    WAIT
+    DEFINE GRAM_ZIGZAG1, 2, ZigzagF1Gfx   ' Cards 52-53
+    WAIT
+    DEFINE GRAM_BOMB1, 2, SquidLeftF1Gfx  ' Cards 54-55
+    WAIT
+    DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx  ' Card 56 (overwritten by title anim)
+    WAIT
+    DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx ' Card 57
 
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
@@ -6957,3 +7160,493 @@ si_dnb_panic_loop:
   MUSIC G5X, -,   -, M2
 
   MUSIC JUMP si_dnb_panic_loop
+
+' ============================================
+' Y-AXIS ANIMATED TITLE FONT
+' 4 rotation frames per letter (0°, 30°, 60°, 90°)
+' Used during title screen cascade reveal/vanish
+' ============================================
+
+' Letter S - Frame 1 (0° full view)
+FontSY1Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP ".XXXXX.."
+    BITMAP ".....XX."
+    BITMAP ".....XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter S - Frame 2 (30°)
+FontSY2Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP ".XXXXX.."
+    BITMAP ".....XX."
+    BITMAP ".....XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter S - Frame 3 (60°)
+FontSY3Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX......"
+    BITMAP ".XXXXX.."
+    BITMAP ".....X.."
+    BITMAP ".....X.."
+    BITMAP "XX...X.."
+    BITMAP ".XXXXX.."
+
+' Letter S - Frame 4 (90° edge view)
+FontSY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter P - Frame 1 (0°)
+FontPY1Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+
+' Letter P - Frame 2 (30°)
+FontPY2Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+
+' Letter P - Frame 3 (60°)
+FontPY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+
+' Letter P - Frame 4 (90°)
+FontPY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter A - Frame 1 (0°)
+FontAY1Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX..XXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter A - Frame 2 (30°)
+FontAY2Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX..XXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter A - Frame 3 (60°)
+FontAY3Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+
+' Letter A - Frame 4 (90°)
+FontAY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter C - Frame 1 (0°)
+FontCY1Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter C - Frame 2 (30°)
+FontCY2Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter C - Frame 3 (60°)
+FontCY3Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX...X.."
+    BITMAP ".XXXXX.."
+
+' Letter C - Frame 4 (90°)
+FontCY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter E - Frame 1 (0°)
+FontEY1Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+
+' Letter E - Frame 2 (30°)
+FontEY2Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXXX."
+
+' Letter E - Frame 3 (60°)
+FontEY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XXXXXX.."
+
+' Letter E - Frame 4 (90°)
+FontEY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter I - Frame 1 (0°)
+FontIY1Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "XXXXXXX."
+
+' Letter I - Frame 2 (30°)
+FontIY2Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "XXXXXXX."
+
+' Letter I - Frame 3 (60°)
+FontIY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "XXXXXX.."
+
+' Letter I - Frame 4 (90°)
+FontIY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter N - Frame 1 (0°)
+FontNY1Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XXX..XX."
+    BITMAP "XXXX.XX."
+    BITMAP "XX.XXXX."
+    BITMAP "XX..XXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter N - Frame 2 (30°)
+FontNY2Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XXX..XX."
+    BITMAP "XXXX.XX."
+    BITMAP "XX.XXXX."
+    BITMAP "XX..XXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter N - Frame 3 (60°)
+FontNY3Gfx:
+    BITMAP "XX...X.."
+    BITMAP "XXX..X.."
+    BITMAP "XXXX.X.."
+    BITMAP "XX.XXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+
+' Letter N - Frame 4 (90°)
+FontNY4Gfx:
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter T - Frame 1 (0°)
+FontTY1Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter T - Frame 2 (30°)
+FontTY2Gfx:
+    BITMAP "XXXXXXX."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter T - Frame 3 (60°)
+FontTY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter T - Frame 4 (90°)
+FontTY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter R - Frame 1 (0°)
+FontRY1Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter R - Frame 2 (30°)
+FontRY2Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter R - Frame 3 (60°)
+FontRY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+
+' Letter R - Frame 4 (90°)
+FontRY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter U - Frame 1 (0°)
+FontUY1Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter U - Frame 2 (30°)
+FontUY2Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter U - Frame 3 (60°)
+FontUY3Gfx:
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP ".XXXXX.."
+
+' Letter U - Frame 4 (90°)
+FontUY4Gfx:
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter D - Frame 1 (0°)
+FontDY1Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+
+' Letter D - Frame 2 (30°)
+FontDY2Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XXXXXX.."
+
+' Letter D - Frame 3 (60°)
+FontDY3Gfx:
+    BITMAP "XXXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XXXXXX.."
+
+' Letter D - Frame 4 (90°)
+FontDY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
