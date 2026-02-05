@@ -41,19 +41,33 @@ CONST GRAM_SPARK_DN = 22        ' Bolt spark below letter frame 1
 CONST GRAM_SPARK_UP2 = 23       ' Bolt spark above letter frame 2 (trailing)
 CONST GRAM_SPARK_DN2 = 24       ' Bolt spark below letter frame 2 (trailing)
 
-' Custom title font
-CONST GRAM_FONT_S = 25
-CONST GRAM_FONT_P = 26
-CONST GRAM_FONT_A = 27
-CONST GRAM_FONT_C = 28
-CONST GRAM_FONT_E = 29
-CONST GRAM_FONT_I = 30
-CONST GRAM_FONT_N = 31
-CONST GRAM_FONT_T = 32
-CONST GRAM_FONT_R = 33
-CONST GRAM_FONT_U = 34
-CONST GRAM_FONT_D = 35
-CONST GRAM_FONT_F = 36
+' Custom title font (TITLE SCREEN ONLY - redefined at StartGame for gameplay HUD)
+CONST GRAM_FONT_S = 25          ' Reused as GRAM_HUD_1 during gameplay
+CONST GRAM_FONT_P = 26          ' Reused as GRAM_HUD_2 during gameplay
+CONST GRAM_FONT_A = 27          ' Reused as GRAM_HUD_3 during gameplay
+CONST GRAM_FONT_C = 28          ' Reused as GRAM_HUD_4 during gameplay
+CONST GRAM_FONT_E = 29          ' Reused as GRAM_HUD_5 during gameplay
+CONST GRAM_FONT_I = 30          ' Reused as GRAM_HUD_6 during gameplay
+CONST GRAM_FONT_N = 31          ' Reused as GRAM_HUD_7 during gameplay
+CONST GRAM_FONT_T = 32          ' Reused as GRAM_HUD_8 during gameplay
+CONST GRAM_FONT_R = 33          ' Reused as GRAM_HUD_9 during gameplay
+CONST GRAM_FONT_U = 34          ' Reused as GRAM_HUD_10 during gameplay
+CONST GRAM_FONT_D = 35          ' Reused as GRAM_HUD_11 during gameplay
+CONST GRAM_FONT_F = 36          ' Reused as GRAM_HUD_12 during gameplay
+
+' Gameplay HUD slots (reuse title font cards 25-36 after title screen)
+CONST GRAM_HUD_1  = 25          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_2  = 26          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_3  = 27          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_4  = 28          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_5  = 29          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_6  = 30          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_7  = 31          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_8  = 32          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_9  = 33          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_10 = 34          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_11 = 35          ' Available for powerup/HUD graphics
+CONST GRAM_HUD_12 = 36          ' Available for powerup/HUD graphics
 CONST GRAM_STAR1  = 37        ' Star dot (upper-left pixel)
 CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
 CONST GRAM_SAUCER = 39         ' Flying saucer (bonus target)
@@ -164,6 +178,19 @@ CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
 CONST SPR_VISIBLE   = $0200     ' Make sprite visible
 CONST SPR_HIT       = $0100     ' Enable collision detection
 
+' Bit-packed game flags (saves 9 8-bit variable slots using 1 16-bit slot)
+' Usage: Set=#GameFlags OR flag, Clear=#GameFlags AND ($FFFF XOR flag), Test=#GameFlags AND flag
+CONST FLAG_BULLET    = 1        ' Bit 0: BulletActive
+CONST FLAG_ABULLET   = 2        ' Bit 1: ABulletActive
+CONST FLAG_CAPTURE   = 4        ' Bit 2: CaptureActive
+CONST FLAG_CAPBULLET = 8        ' Bit 3: CapBulletActive
+CONST FLAG_PLAYERHIT = 16       ' Bit 4: PlayerHit
+CONST FLAG_SHOTLAND  = 32       ' Bit 5: ShotLanded
+CONST FLAG_AUTOFIRE  = 64       ' Bit 6: AutoFire
+CONST FLAG_DEBUG     = 128      ' Bit 7: DebugMode
+CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode
+CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
+
 ' --------------------------------------------
 ' Variables
 ' --------------------------------------------
@@ -171,6 +198,7 @@ DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, need
 ' FlyPathX/Y moved to ROM DATA tables (see Segment 1) to save 128 8-bit vars
 DIM FlyColors(6)               ' Color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
+#GameFlags  = 0                 ' Bit-packed booleans (see FLAG_* constants)
 PlayerX     = 80                ' Player X position (center)
 AnimFrame   = 0                 ' Animation frame (0 or 1)
 ShimmerCount = 0                ' Frame counter for shimmer updates
@@ -181,17 +209,17 @@ AlienDir    = 1                 ' Movement direction (1=right, 255=left using un
 MarchCount  = 0                 ' Frame counter for march timing
 BulletX     = 0                 ' Bullet X position
 BulletY     = 0                 ' Bullet Y position
-BulletActive = 0                ' 1 = bullet flying, 0 = ready to fire
+' BulletActive packed into #GameFlags (FLAG_BULLET)
 BulletColor = 0                 ' Bullet color phase (0-2 for color cycling)
 LaserColor  = 0                 ' Current laser color (calculated each frame)
 ABulletX    = 0                 ' Alien bullet X position
 ABulletY    = 0                 ' Alien bullet Y position
-ABulletActive = 0               ' 1 = alien bullet flying
+' ABulletActive packed into #GameFlags (FLAG_ABULLET)
 ABulFrame   = 0                 ' Animation frame toggle (0 or 1)
 ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 #Score      = 0                 ' Player score
-PlayerHit   = 0                 ' 1 = player was hit
+' PlayerHit packed into #GameFlags (FLAG_PLAYERHIT)
 DeathTimer  = 0                 ' Countdown during death animation
 Invincible  = 0                 ' Invincibility timer after respawn
 Lives       = STARTING_LIVES    ' Player lives remaining
@@ -233,7 +261,7 @@ FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
 SaucerCard  = GRAM_SAUCER       ' Current saucer GRAM card (animation frame)
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
-FlyAngry    = 0                 ' 1=saucer will turn hostile at midpoint
+' FlyAngry packed into #GameFlags (FLAG_ANGRY)
 FlyCenterX  = 0                 ' Saucer swirl circle center X
 FlyCenterY  = 0                 ' Saucer swirl circle center Y
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
@@ -272,18 +300,18 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
 MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
-AutoFire    = 0                 ' Auto-fire toggle (0=off, 1=on)
+' AutoFire packed into #GameFlags (FLAG_AUTOFIRE)
 Key1Held    = 0                 ' Debounce flag for keypad 1
-DebugMode   = 0                 ' CPU profiling display (0=off, 1=on)
+' DebugMode packed into #GameFlags (FLAG_DEBUG)
 CheatState  = 0                 ' Cheat code entry: 0=idle, 1=got '3'
 CheatHeld   = 0                 ' Debounce for cheat code keys
 SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
-RevealMode  = 0                 ' 0=left-to-right reveal, 1=dual-entry (both sides)
+' RevealMode packed into #GameFlags (FLAG_REVEAL)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
 #HighScore  = 0                 ' Session high score (persists until ROM reset)
 ChainCount  = 0                 ' Consecutive successful shots (chain combo)
 ChainMax    = 0                 ' Best chain this game
-ShotLanded  = 0                 ' 1 if current shot hit something (alien, bullet, boss)
+' ShotLanded packed into #GameFlags (FLAG_SHOTLAND)
 ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
 ' Rogue alien variables
 RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
@@ -298,12 +326,12 @@ RogueDivePhase = 0                 ' Circle step index (0-31) or 255=exit
 RogueCenterX   = 0                 ' Circle center X during dive
 RogueCenterY   = 0                 ' Circle center Y during dive
 ' Capture wingman variables
-CaptureActive  = 0                 ' 1 = wingman alive and orbiting
+' CaptureActive packed into #GameFlags (FLAG_CAPTURE)
 CaptureColor   = 0                 ' Color of captured alien type
 CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
 Key0Held       = 0                 ' Debounce: 1 = keypad 0 was held last frame
-CapBulletActive = 0                ' 1 = wingman bullet in flight
+' CapBulletActive packed into #GameFlags (FLAG_CAPBULLET)
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
 ' Boss alien state (array-based, up to MAX_BOSSES simultaneous)
@@ -491,19 +519,19 @@ ResetToTitle:
     LastClearedY = 0
     AlienDir = 1
     MarchCount = 0
-    BulletActive = 0
-    ABulletActive = 0 : ABulFrame = 0
+    #GameFlags = #GameFlags AND $FFFE
+    #GameFlags = #GameFlags AND $FFFD : ABulFrame = 0
     RogueState = 0 : RogueTimer = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0
-    CaptureActive = 0 : CapBulletActive = 0 : Key0Held = 0
+    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7 : Key0Held = 0
     DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
-    AutoFire = 0
+    #GameFlags = #GameFlags AND $FFBF
     Key1Held = 0
     SubWave = 0
-    RevealMode = 0
+    #GameFlags = #GameFlags AND $FEFF
     RightRevealCol = ALIEN_COLS - 1
     DeathTimer = 0
     Invincible = 0
@@ -851,10 +879,10 @@ SkipPressfire:
         IF CheatHeld = 0 THEN
             CheatHeld = 5
             IF CheatState = 1 THEN
-                DebugMode = 1 - DebugMode
+                #GameFlags = #GameFlags XOR FLAG_DEBUG
                 CheatState = 0
                 ' Flash border to confirm
-                IF DebugMode THEN
+                IF #GameFlags AND FLAG_DEBUG THEN
                     BORDER COL_RED
                     PRINT AT 219 COLOR COL_RED, "DEBUG"
                 ELSE
@@ -929,7 +957,7 @@ END
 ' --- ClearEnemyState: Reset rogue alien and wingman state ---
 ClearEnemyState: PROCEDURE
     RogueState = 0 : RogueTimer = 0
-    CaptureActive = 0 : CapBulletActive = 0
+    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
     RETURN
@@ -1066,6 +1094,14 @@ StartGame:
     WAIT
     DEFINE GRAM_BAND2, 1, Band2Gfx
 
+    ' Redefine title font GRAM cards (25-36) for gameplay HUD use
+    ' These 12 slots are now available for powerup indicators, etc.
+    DEFINE GRAM_HUD_1, 4, HudPlaceholderGfx  ' Cards 25-28 (4 slots)
+    WAIT
+    DEFINE GRAM_HUD_5, 4, HudPlaceholderGfx  ' Cards 29-32 (4 slots)
+    WAIT
+    DEFINE GRAM_HUD_9, 4, HudPlaceholderGfx  ' Cards 33-36 (4 slots)
+
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = $1FF
@@ -1079,7 +1115,7 @@ StartGame:
     MusicGear = 0
     WaveRevealCol = 0             ' Start column sweep from left
     SubWave = 0
-    RevealMode = 0
+    #GameFlags = #GameFlags AND $FEFF
     RightRevealCol = ALIEN_COLS - 1
 
     ' Draw HUD: CHAIN (left) | SCORE (middle) | LIVES (right)
@@ -1117,7 +1153,7 @@ StartGame:
     RogueState = 0 : RogueTimer = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
-    CaptureActive = 0 : CapBulletActive = 0
+    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
     TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
@@ -1155,7 +1191,7 @@ StartGame:
 GameLoop:
     WAIT
     ' Debug mode: CPU profiling — red border during game logic
-    IF DebugMode THEN BORDER COL_RED
+    IF #GameFlags AND FLAG_DEBUG THEN BORDER COL_RED
 
     ' Screen shake effect
     IF ShakeTimer > 0 THEN
@@ -1232,7 +1268,7 @@ GameLoop:
                 GOTO ResetToTitle
             END IF
         END IF
-        IF DebugMode THEN BORDER 0
+        IF #GameFlags AND FLAG_DEBUG THEN BORDER 0
         GOTO GameLoop
     END IF
 
@@ -1252,7 +1288,7 @@ GameLoop:
     END IF
 
     ' Advance wave reveal
-    IF RevealMode = 0 THEN
+    IF (#GameFlags AND FLAG_REVEAL) = 0 THEN
         ' Standard left-to-right reveal (Pattern A) or fully revealed
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             WaveRevealCol = WaveRevealCol + 1
@@ -1270,7 +1306,7 @@ GameLoop:
             IF WaveRevealCol >= 5 THEN
                 IF RightRevealCol <= 5 THEN
                     ' Slide complete - switch to normal march mode
-                    RevealMode = 0
+                    #GameFlags = #GameFlags AND $FEFF
                     WaveRevealCol = ALIEN_COLS - 1
                     MarchCount = 0
                     ' Clear alien area: reveal drew at WaveRevealCol+Col but
@@ -1325,9 +1361,9 @@ GameLoop:
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
                     DualTimer = 0 : #MegaTimer = 0
-                    ABulletActive = 0 : BulletActive = 0
+                    #GameFlags = #GameFlags AND $FFFD : #GameFlags = #GameFlags AND $FFFE
                     RogueState = ROGUE_IDLE : RogueTimer = 0
-                    CaptureActive = 0 : CapBulletActive = 0
+                    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
                     GOSUB SilenceSfx
                     SPRITE SPR_PLAYER, 0, 0, 0
                     SPRITE SPR_SHIP_ACCENT, 0, 0, 0
@@ -1357,7 +1393,7 @@ GameLoop:
     END IF ' reveal complete gate
 
     ' Update bullets
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         GOSUB MoveBullet
     END IF
 
@@ -1365,10 +1401,10 @@ GameLoop:
     GOSUB AlienShoot
 
     ' Update captured wingman position (before bullet collision check)
-    IF CaptureActive THEN GOSUB UpdateCapture
+    IF #GameFlags AND FLAG_CAPTURE THEN GOSUB UpdateCapture
 
     ' Update alien bullet
-    IF ABulletActive THEN
+    IF #GameFlags AND FLAG_ABULLET THEN
         GOSUB MoveAlienBullet
     END IF
 
@@ -1493,17 +1529,17 @@ ChainDone:
     END IF
 
     ' Check bullet-vs-bullet collision (PARRY - tight hitbox, high reward)
-    IF BulletActive THEN
-        IF ABulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
+        IF #GameFlags AND FLAG_ABULLET THEN
             ' Tight hitbox: X within 3 pixels, Y within 4 pixels (skill shot!)
             IF BulletX >= ABulletX - 3 THEN
                 IF BulletX <= ABulletX + 3 THEN
                     IF BulletY >= ABulletY - 4 THEN
                         IF BulletY <= ABulletY + 4 THEN
                             ' PARRY! Bullets collide - destroy both
-                            BulletActive = 0
-                            ABulletActive = 0
-                            ShotLanded = 1  ' Parry counts as a successful hit — chain preserved
+                            #GameFlags = #GameFlags AND $FFFE
+                            #GameFlags = #GameFlags AND $FFFD
+                            #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Parry counts as a successful hit — chain preserved
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
                             ' Skill bonus for the risky parry
@@ -1518,19 +1554,19 @@ ChainDone:
     END IF
 
     ' Check player bullet vs rogue alien
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         IF RogueState = ROGUE_DIVE THEN
             IF BulletY >= RogueY - 4 THEN
                 IF BulletY <= RogueY + 8 THEN
                     IF BulletX >= RogueX - 4 THEN
                         IF BulletX <= RogueX + 10 THEN
-                            BulletActive = 0
+                            #GameFlags = #GameFlags AND $FFFE
                             SPRITE SPR_PBULLET, 0, 0, 0
                             RogueState = ROGUE_IDLE
                             RogueTimer = 0
                             SPRITE SPR_FLYER, 0, 0, 0
                             #Score = #Score + 50
-                            ShotLanded = 1
+                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             IF ChainCount > 50 THEN ChainCount = 50
@@ -1559,16 +1595,16 @@ ChainDone:
     END IF
 
     ' Check if player was hit (only if not already dying or invincible)
-    IF PlayerHit THEN
+    IF #GameFlags AND FLAG_PLAYERHIT THEN
         IF DeathTimer = 0 THEN
             IF Invincible = 0 THEN
-                PlayerHit = 0
+                #GameFlags = #GameFlags AND $FFEF
                 Lives = Lives - 1
                 GOSUB UpdateLivesHUD
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 DualTimer = 0 : #MegaTimer = 0
-                ABulletActive = 0
+                #GameFlags = #GameFlags AND $FFFD
                 ' Cancel active rogue alien and wingman
                 GOSUB ClearEnemyState
                 IF Lives = 0 THEN
@@ -1584,10 +1620,10 @@ ChainDone:
                     SPRITE SPR_PLAYER, 0, 0, 0
                 END IF
             ELSE
-                PlayerHit = 0
+                #GameFlags = #GameFlags AND $FFEF
             END IF
         ELSE
-            PlayerHit = 0
+            #GameFlags = #GameFlags AND $FFEF
         END IF
     END IF
 
@@ -1621,7 +1657,7 @@ ChainDone:
                 GameOver = 4
             ELSEIF GameOver = 4 THEN
                 ' Alien crawl done — fancy Game Over screen
-                CaptureActive = 0 : CapBulletActive = 0
+                #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
                 GOSUB SilenceSfx
                 ' Game-over music: intensity matches how far the player got
                 IF Level >= 5 THEN
@@ -1814,7 +1850,7 @@ ChainDone:
     END IF
 
     ' Debug mode: end CPU profiling — black border shows idle time
-    IF DebugMode THEN BORDER 0
+    IF #GameFlags AND FLAG_DEBUG THEN BORDER 0
 
     GOTO GameLoop
 
@@ -1840,8 +1876,8 @@ MovePlayer: PROCEDURE
     IF CONT.KEY = 1 THEN
         IF Key1Held = 0 THEN
             Key1Held = 1
-            AutoFire = 1 - AutoFire
-            IF AutoFire THEN
+            #GameFlags = #GameFlags XOR FLAG_AUTOFIRE
+            IF #GameFlags AND FLAG_AUTOFIRE THEN
                 IF VOICE.AVAILABLE THEN VOICE PLAY auto_on_phrase
             ELSE
                 IF VOICE.AVAILABLE THEN VOICE PLAY auto_off_phrase
@@ -1856,9 +1892,9 @@ MovePlayer: PROCEDURE
         IF Key0Held = 0 THEN
             Key0Held = 1
             IF RogueDivePhase = 254 THEN
-                IF CaptureActive = 0 THEN
+                IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN
                     ' Capture the rogue alien as wingman
-                    CaptureActive = 1
+                    #GameFlags = #GameFlags OR FLAG_CAPTURE
                     CaptureColor = RogueColor
                     CaptureStep = 0
                     CaptureTimer = CAPTURE_FIRE_RATE
@@ -1877,8 +1913,8 @@ MovePlayer: PROCEDURE
     END IF
 
     ' Fire: side buttons (not keypad) or auto-fire
-    IF CONT.BUTTON OR AutoFire THEN
-    IF CONT.KEY >= 12 OR AutoFire THEN
+    IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
+    IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
         IF #MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
@@ -1899,18 +1935,18 @@ MovePlayer: PROCEDURE
             END IF
         ELSEIF DualTimer > 0 THEN
             ' Quad laser: single center bullet with wide hitbox
-            IF BulletActive = 0 THEN
+            IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
                 BulletY = PLAYER_Y - 4
-                BulletActive = 1
-                ShotLanded = 0     ' New shot — hasn't hit anything yet
+                #GameFlags = #GameFlags OR FLAG_BULLET
+                #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
                 ' Quad laser SFX: rising burst energy weapon
                 SfxType = 8 : SfxVolume = 14 : #SfxPitch = 500
                 SOUND 2, 500, 14
             END IF
         ELSE
             ' Normal/beam/rapid: single center shot
-            IF BulletActive = 0 THEN
+            IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 IF TitleJitter = 0 THEN
                     ' Beam drawn at BulletX-3, normal drawn at BulletX
                     IF BeamTimer > 0 THEN
@@ -1919,8 +1955,8 @@ MovePlayer: PROCEDURE
                         BulletX = PlayerX  ' Normal/rapid: direct draw position
                     END IF
                     BulletY = PLAYER_Y - 4
-                    BulletActive = 1
-                    ShotLanded = 0     ' New shot — hasn't hit anything yet
+                    #GameFlags = #GameFlags OR FLAG_BULLET
+                    #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
                     IF BeamTimer > 0 THEN
                         ' Chain reaction laser SFX: kill music, dual-tone + noise
                         PLAY OFF
@@ -1958,21 +1994,21 @@ MoveBullet: PROCEDURE
     GOSUB CheckBulletHit
 
     ' Then move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         IF RapidTimer > 0 THEN
             IF BulletY > BULLET_TOP + RAPID_SPEED THEN
                 BulletY = BulletY - RAPID_SPEED
             ELSE
-                BulletActive = 0
-                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
+                #GameFlags = #GameFlags AND $FFFE
+                IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
         ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
             ' Quad laser / beam: flat 2px/frame
             IF BulletY > BULLET_TOP + 2 THEN
                 BulletY = BulletY - 2
             ELSE
-                BulletActive = 0
-                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
+                #GameFlags = #GameFlags AND $FFFE
+                IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
         ELSE
             ' 4-frame cycle: 1,1,1,2 for effective 1.25 px/frame
@@ -1984,8 +2020,8 @@ MoveBullet: PROCEDURE
             IF BulletY > BULLET_TOP + LoopVar THEN
                 BulletY = BulletY - LoopVar
             ELSE
-                BulletActive = 0
-                IF ShotLanded = 0 THEN ChainCount = 0   ' Whiff — break chain
+                #GameFlags = #GameFlags AND $FFFE
+                IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
         END IF
     END IF
@@ -2004,7 +2040,7 @@ CheckBulletHit: PROCEDURE
     GOSUB CheckRowForHit
 
     ' Also check row above (bullet may be straddling boundary)
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         IF BulletY > 16 THEN
             HitRow = (BulletY - 12) / 8
             GOSUB CheckRowForHit
@@ -2032,12 +2068,12 @@ CheckRowForHit: PROCEDURE
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 8) / 8
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
@@ -2048,17 +2084,17 @@ CheckRowForHit: PROCEDURE
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX + 4) / 8
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX + 12) / 8
                     GOSUB CheckOneColumn
                 END IF
@@ -2069,17 +2105,17 @@ CheckRowForHit: PROCEDURE
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 6) / 8
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
 
-                IF BulletActive THEN
+                IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 2) / 8
                     GOSUB CheckOneColumn
                 END IF
@@ -2230,8 +2266,8 @@ CheckOneColumn: PROCEDURE
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                     IF BossHP(FoundBoss) > 0 THEN
                         ' Damaged but alive — stop bullet, update color
-                        BulletActive = 0
-                        ShotLanded = 1  ' Hit landed — chain preserved
+                        #GameFlags = #GameFlags AND $FFFE
+                        #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Hit landed — chain preserved
                         IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
                         IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
@@ -2241,8 +2277,8 @@ CheckOneColumn: PROCEDURE
                         ' Boss dead! Check type
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
-                            BulletActive = 0
-                            ShotLanded = 1
+                            #GameFlags = #GameFlags AND $FFFE
+                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1  ' Bomb kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             IF ChainCount > 50 THEN ChainCount = 50
@@ -2259,8 +2295,8 @@ CheckOneColumn: PROCEDURE
                             IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
                             ' Big score + explosion
                             #Score = #Score + BOSS_SCORE
-                            BulletActive = 0
-                            ShotLanded = 1
+                            #GameFlags = #GameFlags AND $FFFE
+                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1  ' Skull boss kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
                             IF ChainCount > 50 THEN ChainCount = 50
@@ -2281,11 +2317,11 @@ CheckOneColumn: PROCEDURE
 
                 ' Beam pierces through; normal bullet stops
                 IF BeamTimer = 0 THEN
-                    BulletActive = 0
+                    #GameFlags = #GameFlags AND $FFFE
                 END IF
 
                 ' Chain combo scoring: 10, 20, 30, 40... (cap at 50)
-                ShotLanded = 1
+                #GameFlags = #GameFlags OR FLAG_SHOTLAND
                 ChainCount = ChainCount + 1
                 IF ChainCount > ChainMax THEN ChainMax = ChainCount
                 IF ChainCount > 50 THEN ChainCount = 50
@@ -2374,7 +2410,7 @@ END
 ' DrawBullet - Update bullet sprite with color cycling
 ' --------------------------------------------
 DrawBullet: PROCEDURE
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         ' Increment color timer, switch color every 4 frames
         BulletColor = BulletColor + 1
         IF BulletColor >= 8 THEN BulletColor = 0
@@ -2415,7 +2451,7 @@ AlienShoot: PROCEDURE
     ShootTimer = ShootTimer + 1
     IF ShootTimer >= ALIEN_SHOOT_RATE THEN
         ShootTimer = 0
-        IF ABulletActive = 0 THEN
+        IF #GameFlags = #GameFlags AND $FFFD THEN
             ' Pick random column
             ShootCol = RANDOM(ALIEN_COLS)
             ' Find bottom-most alien in that column and spawn bullet
@@ -2444,7 +2480,7 @@ FindShooter: PROCEDURE
         ' Convert BACKTAB coords to sprite coords (+8 offset) and position at alien center/bottom
         ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 11  ' +8 sprite offset, +3 to center
         ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 16   ' +8 sprite offset, +8 to bottom of card
-        ABulletActive = 1
+        #GameFlags = #GameFlags OR FLAG_ABULLET
     END IF
     RETURN
 END
@@ -2458,22 +2494,22 @@ MoveAlienBullet: PROCEDURE
 
     ' Check if bullet went off screen
     IF ABulletY >= 104 THEN
-        ABulletActive = 0
+        #GameFlags = #GameFlags AND $FFFD
         SPRITE SPR_ABULLET, 0, 0, 0
         RETURN
     END IF
 
     ' Check wingman collision (bullet sponge - absorbs hits for player)
-    IF CaptureActive THEN
+    IF #GameFlags AND FLAG_CAPTURE THEN
         ' Wingman hitbox: 8x8 sprite at RogueX, RogueY
         IF ABulletY >= RogueY - 2 THEN
             IF ABulletY <= RogueY + 8 THEN
                 IF ABulletX >= RogueX - 2 THEN
                     IF ABulletX <= RogueX + 8 THEN
                         ' Wingman absorbs the hit!
-                        CaptureActive = 0
-                        CapBulletActive = 0
-                        ABulletActive = 0
+                        #GameFlags = #GameFlags AND $FFFB
+                        #GameFlags = #GameFlags AND $FFF7
+                        #GameFlags = #GameFlags AND $FFFD
                         SPRITE SPR_ABULLET, 0, 0, 0
                         SPRITE SPR_POWERUP, 0, 0, 0
                         ' Explosion SFX (alien death sound)
@@ -2493,8 +2529,8 @@ MoveAlienBullet: PROCEDURE
                 IF ABulletY <= PLAYER_Y + 8 THEN
                     IF ABulletX >= PlayerX - 2 THEN
                         IF ABulletX <= PlayerX + 10 THEN
-                            PlayerHit = 1
-                            ABulletActive = 0
+                            #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                            #GameFlags = #GameFlags AND $FFFD
                             SPRITE SPR_ABULLET, 0, 0, 0
                             SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
                             SOUND 2, 0, 15
@@ -2513,7 +2549,7 @@ END
 ' DrawAlienBullet - Draw alien bullet sprite with color phase animation
 ' --------------------------------------------
 DrawAlienBullet: PROCEDURE
-    IF ABulletActive THEN
+    IF #GameFlags AND FLAG_ABULLET THEN
         IF ABulFrame THEN
             SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_WHITE + $0800
         ELSE
@@ -3119,7 +3155,7 @@ DrawAliens: PROCEDURE
             NEXT BossIdx
         END IF
 
-        IF RevealMode = 1 THEN
+        IF #GameFlags AND FLAG_REVEAL THEN
             ' Slide-in mode: clear only trail columns (not all 20!)
             ' Left group slides right → clear previous left edge
             IF WaveRevealCol > 0 THEN
@@ -3311,8 +3347,8 @@ LoadPatternB: PROCEDURE
     SfxType = 0
 
     ' Clear active bullets, rogue, wingman, and sprites
-    BulletActive = 0
-    ABulletActive = 0
+    #GameFlags = #GameFlags AND $FFFE
+    #GameFlags = #GameFlags AND $FFFD
     MegaBeamTimer = 0
     GOSUB ClearEnemyState
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -3378,7 +3414,7 @@ LoadPatternB: PROCEDURE
     END IF
 
     ' Set dual-slide mode: halves fly in from screen edges
-    RevealMode = 1
+    #GameFlags = #GameFlags OR FLAG_REVEAL
     WaveRevealCol = 0              ' Left group starts at far left
     RightRevealCol = 10            ' Right group starts at far right
 
@@ -3542,8 +3578,8 @@ StartNewWave: PROCEDURE
     END IF
 
     ' Clear any active bullets (power-ups persist until death)
-    BulletActive = 0
-    ABulletActive = 0
+    #GameFlags = #GameFlags AND $FFFE
+    #GameFlags = #GameFlags AND $FFFD
     #MegaTimer = 0
     MegaBeamTimer = 0
     GOSUB ClearEnemyState
@@ -3557,7 +3593,7 @@ StartNewWave: PROCEDURE
     TitleJitter = 0
     WaveRevealCol = 0             ' Start column sweep from left
     SubWave = 0
-    RevealMode = 0
+    #GameFlags = #GameFlags AND $FEFF
     RightRevealCol = ALIEN_COLS - 1
 
     ' Clear screen (aliens will paint in via game loop)
@@ -3696,13 +3732,13 @@ UpdateCapture: PROCEDURE
         CaptureTimer = CaptureTimer - 1
     ELSE
         CaptureTimer = CAPTURE_FIRE_RATE
-        IF CapBulletActive = 0 THEN
+        IF (#GameFlags AND FLAG_CAPBULLET) = 0 THEN
             ' Launch visible upward bullet from wingman position
             CapBulletCol = (RogueX - 8) / 8
             IF CapBulletCol > 19 THEN CapBulletCol = 19
             CapBulletRow = (RogueY - 8) / 8
             IF CapBulletRow > 11 THEN CapBulletRow = 11
-            CapBulletActive = 1
+            #GameFlags = #GameFlags OR FLAG_CAPBULLET
             ' SFX: soft pew on channel 3
             SfxType = 1 : SfxVolume = 6 : #SfxPitch = 500
             SOUND 2, 500, 6
@@ -3710,7 +3746,7 @@ UpdateCapture: PROCEDURE
     END IF
 
     ' Update capture bullet (move up one row per frame)
-    IF CapBulletActive THEN
+    IF #GameFlags AND FLAG_CAPBULLET THEN
         ' Clear previous tile (skip row 0 = score display)
         IF CapBulletRow > 0 THEN
             #ScreenPos = CapBulletRow * 20 + CapBulletCol
@@ -3722,7 +3758,7 @@ UpdateCapture: PROCEDURE
         ' Move up — stop at row 1 (don't enter score row 0)
         IF CapBulletRow <= 1 THEN
             ' Reached top of play area, deactivate
-            CapBulletActive = 0
+            #GameFlags = #GameFlags AND $FFF7
             GOTO CapBulletDone
         END IF
         CapBulletRow = CapBulletRow - 1
@@ -3731,7 +3767,7 @@ UpdateCapture: PROCEDURE
         GOSUB CaptureHitscan
 
         ' Draw bullet tile if still active
-        IF CapBulletActive THEN
+        IF #GameFlags AND FLAG_CAPBULLET THEN
             #ScreenPos = CapBulletRow * 20 + CapBulletCol
             IF #ScreenPos < 240 THEN
                 PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_WHITE + $0800
@@ -3782,7 +3818,7 @@ CaptureHitscan: PROCEDURE
     END IF
     IF FoundBoss < 255 THEN
         BossHP(FoundBoss) = BossHP(FoundBoss) - 1
-        CapBulletActive = 0
+        #GameFlags = #GameFlags AND $FFF7
         IF BossHP(FoundBoss) > 0 THEN
             ' Damaged but alive
             IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
@@ -3828,7 +3864,7 @@ CaptureHitscan: PROCEDURE
     #Score = #Score + 10
 
     ' Deactivate bullet (it hit something)
-    CapBulletActive = 0
+    #GameFlags = #GameFlags AND $FFF7
 
     ' Brief explosion visual
     IF #ScreenPos < 220 THEN
@@ -4003,11 +4039,11 @@ RogueUpdate: PROCEDURE
             ' Fire periodically (~1 per second)
             IF RogueTimer >= 60 THEN
                 RogueTimer = 0
-                IF ABulletActive = 0 THEN
+                IF #GameFlags = #GameFlags AND $FFFD THEN
                     IF FlyState <> SAUCER_CHASE THEN
                         ABulletX = RogueX + 3
                         ABulletY = RogueY + 8
-                        ABulletActive = 1
+                        #GameFlags = #GameFlags OR FLAG_ABULLET
                     END IF
                 END IF
             END IF
@@ -4055,11 +4091,11 @@ RogueUpdate: PROCEDURE
         ' Fire bullet at bottom of circle (step 8, closest to player)
         IF RogueDivePhase = 8 THEN
             IF (RogueTimer AND 1) = 0 THEN
-                IF ABulletActive = 0 THEN
+                IF #GameFlags = #GameFlags AND $FFFD THEN
                     IF FlyState <> SAUCER_CHASE THEN
                         ABulletX = RogueX + 3
                         ABulletY = RogueY + 8
-                        ABulletActive = 1
+                        #GameFlags = #GameFlags OR FLAG_ABULLET
                     END IF
                 END IF
             END IF
@@ -4076,7 +4112,7 @@ RogueDiveRender:
                     IF RogueY <= PLAYER_Y + 6 THEN
                         IF RogueX >= PlayerX - 6 THEN
                             IF RogueX <= PlayerX + 8 THEN
-                                PlayerHit = 1
+                                #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                                 RogueState = ROGUE_IDLE
                                 RogueTimer = 0
                                 SPRITE SPR_FLYER, 0, 0, 0
@@ -4118,9 +4154,9 @@ UpdateSaucer: PROCEDURE
             FlyColor = 4        ' Dark Green
             ' Rare chance: saucer will go hostile at midpoint (1-in-8)
             IF RANDOM(8) = 0 THEN
-                FlyAngry = 1
+                #GameFlags = #GameFlags OR FLAG_ANGRY
             ELSE
-                FlyAngry = 0
+                #GameFlags = #GameFlags AND $FDFF
             END IF
         END IF
         RETURN
@@ -4191,10 +4227,10 @@ UpdateSaucer: PROCEDURE
         FlySpeed = FlySpeed + 1
         IF FlySpeed >= CHASE_FIRE_RATE THEN
             FlySpeed = 0
-            IF ABulletActive = 0 THEN
+            IF #GameFlags = #GameFlags AND $FFFD THEN
                 ABulletX = FlyX + 4
                 ABulletY = FlyY + 8
-                ABulletActive = 1
+                #GameFlags = #GameFlags OR FLAG_ABULLET
             END IF
         END IF
         ' Body collision: saucer reached player altitude
@@ -4202,7 +4238,7 @@ UpdateSaucer: PROCEDURE
             IF Invincible = 0 THEN
             IF FlyX >= PlayerX - 8 THEN
                 IF FlyX <= PlayerX + 16 THEN
-                    PlayerHit = 1
+                    #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                 END IF
             END IF
             END IF
@@ -4254,17 +4290,17 @@ UpdateSaucer: PROCEDURE
         FlyColorTimer = FlyColorTimer + 1
         IF FlyColorTimer >= 90 THEN
             FlyColorTimer = 0
-            IF ABulletActive = 0 THEN
+            IF #GameFlags = #GameFlags AND $FFFD THEN
                 ABulletX = FlyX + 4
                 ABulletY = FlyY + 8
-                ABulletActive = 1
+                #GameFlags = #GameFlags OR FLAG_ABULLET
             END IF
         END IF
         ' Midpoint check: angry saucer goes hostile at ~50% across screen
-        IF FlyAngry THEN
+        IF #GameFlags AND FLAG_ANGRY THEN
             IF FlyX >= 72 THEN
                 IF FlyX <= 88 THEN
-                    FlyAngry = 0
+                    #GameFlags = #GameFlags AND $FDFF
                     FlyState = SAUCER_SWIRL
                     FlyCenterX = FlyX
                     FlyCenterY = FlyY + 12
@@ -4310,13 +4346,13 @@ SaucerAnimate: PROCEDURE
     SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, SaucerCard * 8 + FlyColor + $0800
 
     ' Check collision with player bullet (Y range follows saucer position)
-    IF BulletActive THEN
+    IF #GameFlags AND FLAG_BULLET THEN
         IF BulletY + 6 >= FlyY THEN
             IF BulletY <= FlyY + 6 THEN
                 IF BulletX >= FlyX - 4 THEN
                     IF BulletX <= FlyX + 16 THEN
                         ' HIT the saucer!
-                        BulletActive = 0
+                        #GameFlags = #GameFlags AND $FFFE
                         ChainCount = 0  ' Saucer is not an alien — break chain
                         GOSUB DeactivateSaucer
                         ' Saucer crash SFX (deep rumble + descending pitch)
@@ -5394,6 +5430,46 @@ ExplosionGfx3:
     BITMAP "........"
 
 ' (Figure-8 path data moved to Segment 2 — see Flight Patterns section)
+
+' Placeholder HUD graphics - 4 cards for powerup indicators
+' User can replace with actual designs later
+HudPlaceholderGfx:
+    ' Card 1 - empty placeholder
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    ' Card 2 - empty placeholder
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    ' Card 3 - empty placeholder
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    ' Card 4 - empty placeholder
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
 
 ' ============================================
 ' Music Data - "Intruder Drive" theme

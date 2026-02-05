@@ -1297,6 +1297,171 @@ END
 
 **Rule of thumb:** Extract if 3+ copies exist and the block is 3+ lines. Don't extract single-use code — the GOSUB overhead isn't worth it.
 
+### Bit-packing boolean flags into a single 16-bit variable
+
+When running low on 8-bit variable slots (max 187), pack multiple boolean flags into one 16-bit variable using bitwise operations. This trades slightly more complex code for significant variable savings:
+
+```basic
+' Define flag constants (powers of 2)
+CONST FLAG_BULLET    = 1        ' Bit 0
+CONST FLAG_ABULLET   = 2        ' Bit 1
+CONST FLAG_CAPTURE   = 4        ' Bit 2
+CONST FLAG_PLAYERHIT = 16       ' Bit 4
+CONST FLAG_DEBUG     = 128      ' Bit 7
+CONST FLAG_REVEAL    = 256      ' Bit 8 (needs 16-bit var)
+
+' Declare the packed variable
+#GameFlags = 0
+
+' Set a flag (turn bit ON):
+#GameFlags = #GameFlags OR FLAG_BULLET
+
+' Clear a flag (turn bit OFF):
+#GameFlags = #GameFlags AND ($FFFF XOR FLAG_BULLET)
+' Or pre-compute the clear mask: CONST CLR_BULLET = $FFFE
+
+' Test a flag:
+IF #GameFlags AND FLAG_BULLET THEN ...      ' True if bit is set
+IF (#GameFlags AND FLAG_REVEAL) = 0 THEN ... ' True if bit is clear
+```
+
+**Impact (measured in Space Intruders):**
+- 10 boolean variables → 1 16-bit variable
+- Freed 10 of 187 8-bit slots (177 used after)
+- Cost: 1 of 25 16-bit slots
+
+**When to use:** When 8-bit variables are scarce and you have multiple true/false flags. Group related flags together. Keep frequently-tested flags in the low byte for slightly faster access.
+
+### GRAM card reuse between game states
+
+GRAM cards defined for one game state (e.g., title screen custom font) can be redefined when entering another state (e.g., gameplay). This effectively doubles your GRAM budget for state-specific graphics:
+
+```basic
+' Title screen uses GRAM cards 25-36 for custom "SPACE INTRUDERS" font
+CONST GRAM_FONT_S = 25
+CONST GRAM_FONT_P = 26
+' ... etc
+
+TitleScreen:
+    DEFINE GRAM_FONT_S, 12, TitleFontGfx  ' Load 12 custom letters
+    ' ... display title ...
+
+' At gameplay start, redefine those same cards for HUD use
+StartGame:
+    DEFINE GRAM_FONT_S, 4, PowerupIconGfx  ' Cards 25-28 now hold powerup icons
+    WAIT
+    DEFINE 29, 4, HudIndicatorGfx          ' Cards 29-32 for HUD indicators
+    ' ...
+
+' Display a gameplay HUD element using the redefined card:
+PRINT AT 234, (GRAM_FONT_S * 8) + color + $0800
+```
+
+**Constraints:**
+- DEFINE loads ~2-4 cards per WAIT without flicker
+- Spread large redefines across multiple WAITs
+- Cards revert to garbage if you return to title without re-defining
+
+**When to use:** Any graphics that are exclusive to one game state (title-only fonts, gameplay-only HUD icons, cutscene-only art).
+
+### Dirty flag pattern for expensive drawing operations
+
+When a drawing procedure is expensive (loops over grid, multiple PRINT ATs), track whether anything changed and skip the call when nothing needs redrawing:
+
+```basic
+' BAD — DrawAliens called every frame even when nothing changed:
+GameLoop:
+    WAIT
+    GOSUB DrawAliens    ' 50+ PRINT AT calls, always runs
+    GOTO GameLoop
+
+' GOOD — only draw when dirty:
+AliensDirty = 0
+
+GameLoop:
+    WAIT
+
+    ' Animation tick sets dirty flag
+    ShimmerCount = ShimmerCount + 1
+    IF ShimmerCount >= 16 THEN
+        ShimmerCount = 0
+        AnimFrame = AnimFrame XOR 1
+        AliensDirty = 1
+    END IF
+
+    ' Alien killed sets dirty flag (in collision code)
+    ' March occurred sets dirty flag (in march code)
+
+    ' Single conditional draw
+    IF AliensDirty THEN
+        GOSUB DrawAliens
+        AliensDirty = 0
+    END IF
+
+    GOTO GameLoop
+```
+
+**Impact:** Reduces DrawAliens from 60 calls/sec to ~4-10 calls/sec (only on animation frames, kills, or marches).
+
+**When to use:** Any procedure that:
+- Takes significant CPU time (large loops, many BACKTAB writes)
+- Produces identical output when called repeatedly with unchanged state
+- Has discrete "change events" that can set a dirty flag
+
+### Inline GOSUB calls in hot paths when lookup is simple
+
+When a small lookup procedure is called frequently in performance-critical code, inline the logic to eliminate GOSUB/RETURN overhead (~25 cycles per call):
+
+```basic
+' BAD — FindBoss called 50+ times per frame in collision loops:
+FOR Col = 0 TO 9
+    AlienGridCol = Col
+    GOSUB FindBoss      ' ~25 cycle overhead × 50 calls = 1250 cycles
+    IF FoundBoss < 255 THEN ...
+NEXT Col
+
+FindBoss: PROCEDURE
+    FoundBoss = 255
+    FOR BossIdx = 0 TO BossCount - 1
+        IF BossHP(BossIdx) > 0 THEN
+            IF AlienGridRow = BossRow(BossIdx) THEN
+                IF AlienGridCol = BossCol(BossIdx) THEN FoundBoss = BossIdx
+            END IF
+        END IF
+    NEXT BossIdx
+    RETURN
+END
+
+' GOOD — inline the lookup:
+FOR Col = 0 TO 9
+    FoundBoss = 255
+    IF BossCount > 0 THEN
+        FOR BossIdx = 0 TO BossCount - 1
+            IF BossHP(BossIdx) > 0 THEN
+                IF AlienGridRow = BossRow(BossIdx) THEN
+                    IF Col = BossCol(BossIdx) OR Col = BossCol(BossIdx) + 1 THEN
+                        FoundBoss = BossIdx
+                    END IF
+                END IF
+            END IF
+        NEXT BossIdx
+    END IF
+    IF FoundBoss < 255 THEN ...
+NEXT Col
+```
+
+**Trade-off:** Increases ROM size (duplicated code) but eliminates call overhead in tight loops. Profile with BORDER color band to verify the CPU savings justify the ROM cost.
+
+**When to inline:**
+- Procedure is called 10+ times per frame in nested loops
+- Procedure body is small (<10 lines)
+- Call sites can use loop variables directly (avoiding parameter setup)
+
+**When to keep GOSUB:**
+- Procedure is called 1-3 times per frame
+- Procedure body is large (>20 lines)
+- Code clarity matters more than microseconds
+
 ## CP1610 Processor Reference
 
 The Intellivision uses a General Instrument CP1610 microprocessor (circa 1975). Understanding the CPU is essential for performance optimization and hand-tuned assembly routines.
