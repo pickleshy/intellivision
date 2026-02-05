@@ -1102,10 +1102,14 @@ END
 StartGame:
     CLS
 
-    ' Restore skull boss GRAM cards (title screen animation corrupts them)
+    ' Restore skull boss GRAM cards (all 4 animation frames)
     DEFINE GRAM_BAND1, 1, Band1Gfx
     WAIT
     DEFINE GRAM_BAND2, 1, Band2Gfx
+    WAIT
+    DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx
+    WAIT
+    DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx
 
     ' Redefine title font GRAM cards (25-32) for powerup HUD indicators
     ' 8 tiles: BEAM(BE,AM), RAPID(RP,ID), QUAD(QU,AD), MEGA(ME,GA)
