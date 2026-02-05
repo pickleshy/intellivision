@@ -65,8 +65,8 @@ CONST GRAM_PWR_QU = 29          ' QUAD tile 1: "QU"
 CONST GRAM_PWR_AD = 30          ' QUAD tile 2: "AD"
 CONST GRAM_PWR_ME = 31          ' MEGA tile 1: "ME"
 CONST GRAM_PWR_GA = 32          ' MEGA tile 2: "GA"
-' Remaining HUD slots (title font cards 33-36)
-CONST GRAM_HUD_9  = 33          ' Available for future HUD graphics
+' Shield and remaining HUD slots (title font cards 33-36)
+CONST GRAM_SHIELD = 33          ' Shield arc above player ship
 CONST GRAM_HUD_10 = 34          ' Available for future HUD graphics
 CONST GRAM_HUD_11 = 35          ' Available for future HUD graphics
 CONST GRAM_HUD_12 = 36          ' Available for future HUD graphics
@@ -130,6 +130,7 @@ CONST COL_BLACK     = 0
 CONST COL_RED       = 2
 CONST COL_TAN       = 3
 CONST COL_CYAN      = 9
+CONST COL_ORANGE    = 10
 CONST COL_PINK      = 12
 CONST COL_LTBLUE    = 13
 CONST COL_PURPLE    = 15
@@ -302,6 +303,7 @@ WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
 MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
+ShieldHits    = 0               ' Shield charges (0=none, 1=damaged, 2=full)
 ' AutoFire packed into #GameFlags (FLAG_AUTOFIRE)
 Key1Held    = 0                 ' Debounce flag for keypad 1
 ' DebugMode packed into #GameFlags (FLAG_DEBUG)
@@ -1110,6 +1112,9 @@ StartGame:
     DEFINE GRAM_PWR_BE, 4, PowerupBEGfx  ' Cards 25-28: BE, AM, RP, ID
     WAIT
     DEFINE GRAM_PWR_QU, 4, PowerupQUGfx  ' Cards 29-32: QU, AD, ME, GA
+    WAIT
+    DEFINE GRAM_SHIELD, 1, ShieldArcGfx  ' Card 33: Shield arc
+    WAIT
 
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
@@ -1158,6 +1163,7 @@ StartGame:
     DualTimer = 0  ' No dual laser
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
+    ShieldHits = 0  ' No shield
     TitleFrame = 0  ' No power-up drop
     ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=quad(2), 3=mega(1) out of 8
     TitleColor = PowerUpWeights(RANDOM(8))
@@ -1374,7 +1380,7 @@ GameLoop:
                     GOSUB UpdateLivesHUD
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
-                    DualTimer = 0 : #MegaTimer = 0
+                    DualTimer = 0 : #MegaTimer = 0 : ShieldHits = 0
                     #GameFlags = #GameFlags AND $FFFD : #GameFlags = #GameFlags AND $FFFE
                     RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
@@ -1617,7 +1623,7 @@ ChainDone:
                 GOSUB UpdateLivesHUD
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                DualTimer = 0 : #MegaTimer = 0
+                DualTimer = 0 : #MegaTimer = 0 : ShieldHits = 0
                 #GameFlags = #GameFlags AND $FFFD
                 ' Cancel active rogue alien and wingman
                 GOSUB ClearEnemyState
@@ -2425,17 +2431,52 @@ DrawPlayer: PROCEDURE
     ELSEIF Invincible > 0 THEN
         ' Flash during invincibility (show every other frame)
         IF Invincible AND 4 THEN
-            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_WHITE + $0800
-            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + $1800
+            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
+            ' Accent sprite: shield dome if active, engine glow if not
+            IF ShieldHits > 0 THEN
+                IF ShieldHits >= 2 THEN
+                    ' Full shield: fast blue/white flash (every 2 frames)
+                    IF ShimmerCount AND 2 THEN
+                        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_BLUE + $0800
+                    ELSE
+                        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_WHITE + $0800
+                    END IF
+                ELSE
+                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_YELLOW + $0800
+                END IF
+            ELSE
+                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP_ACCENT * 8 + $1800
+            END IF
         ELSE
             SPRITE SPR_PLAYER, 0, 0, 0
             SPRITE SPR_SHIP_ACCENT, 0, 0, 0
         END IF
     ELSE
-        ' Normal display - body + accent stacked at same position
-        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_SHIP * 8 + COL_WHITE + $0800
-        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y, GRAM_SHIP_ACCENT * 8 + $1800
+        ' Normal display - body + accent sprite (DOUBLEY for 16px tall)
+        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
+        ' Accent sprite: shield dome if active, engine glow if not
+        IF ShieldHits > 0 THEN
+            IF ShieldHits >= 2 THEN
+                ' Full shield: fast blue/white flash (every 2 frames)
+                IF ShimmerCount AND 2 THEN
+                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_BLUE + $0800
+                ELSE
+                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_WHITE + $0800
+                END IF
+            ELSE
+                ' Damaged shield - flash yellow/orange
+                IF MarchCount AND 4 THEN
+                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_YELLOW + $0800
+                ELSE
+                    ' Orange (10) is pastel: use (10 AND 7)=2 + $1800
+                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + 2 + $1800
+                END IF
+            END IF
+        ELSE
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP_ACCENT * 8 + $1800
+        END IF
     END IF
+
     RETURN
 END
 
@@ -2562,13 +2603,25 @@ MoveAlienBullet: PROCEDURE
                 IF ABulletY <= PLAYER_Y + 8 THEN
                     IF ABulletX >= PlayerX - 2 THEN
                         IF ABulletX <= PlayerX + 10 THEN
-                            #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                            ' Bullet hit - check shield first
+                            IF ShieldHits > 0 THEN
+                                ShieldHits = ShieldHits - 1
+                                ' Shield absorb SFX (high-pitched ping)
+                                SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
+                                SOUND 2, 800, 12
+                                IF ShieldHits = 0 THEN
+                                    IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
+                                END IF
+                            ELSE
+                                #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                                SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                                SOUND 2, 0, 15
+                                POKE $1F7, 14
+                                POKE $1F8, PEEK($1F8) AND $DF
+                            END IF
+                            ' Either way, destroy the bullet
                             #GameFlags = #GameFlags AND $FFFD
                             SPRITE SPR_ABULLET, 0, 0, 0
-                            SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
-                            SOUND 2, 0, 15
-                            POKE $1F7, 14
-                            POKE $1F8, PEEK($1F8) AND $DF
                         END IF
                     END IF
                 END IF
@@ -2856,6 +2909,15 @@ UpdateSfx: PROCEDURE
                 SfxVolume = 0
             END IF
         END IF
+    ELSEIF SfxType = 9 THEN
+        ' Shield absorb: high-pitched ping with fast decay
+        #SfxPitch = #SfxPitch + 50
+        IF #SfxPitch > 1200 THEN #SfxPitch = 1200
+        IF SfxVolume > 2 THEN
+            SfxVolume = SfxVolume - 2
+        ELSE
+            SfxVolume = 0
+        END IF
     ELSE
         ' Alien: fast decay (2 per frame)
         IF SfxVolume > 2 THEN
@@ -3027,9 +3089,12 @@ UpdatePowerUp: PROCEDURE
     ELSEIF TitleColor = 2 THEN
         TitleGridCol = COL_WHITE     ' Dual: white/tan
         TitleMarchCount = COL_TAN
-    ELSE
+    ELSEIF TitleColor = 3 THEN
         TitleGridCol = COL_RED       ' Mega: red/tan
         TitleMarchCount = COL_TAN
+    ELSE
+        TitleGridCol = COL_CYAN      ' Shield: cyan/blue
+        TitleMarchCount = COL_BLUE
     END IF
 
     IF TitleFrame = 1 THEN
@@ -3073,10 +3138,14 @@ UpdatePowerUp: PROCEDURE
                     DualTimer = 1
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
-                ELSE
+                ELSEIF TitleColor = 3 THEN
                     #MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : DualTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
+                ELSE
+                    ' Shield - coexists with weapons, just set hits
+                    ShieldHits = 2
+                    IF VOICE.AVAILABLE THEN VOICE PLAY shield_phrase
                 END IF
                 TitleFrame = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
@@ -3720,6 +3789,12 @@ quad_phrase:
 mega_phrase:
     VOICE MM, EH, GG2, AX, PA1, BB1, IY, MM, PA1, 0
 
+shield_phrase:
+    VOICE SH, IY, LL, DD1, PA1, AO, NN1, PA1, 0
+
+shields_down_phrase:
+    VOICE SH, IY, LL, DD1, ZZ, PA2, DD1, AW, NN1, PA1, 0
+
 game_over_phrase:
     VOICE GG1, EY, MM, PA2, OW, VV, ER1, PA2, 0
 
@@ -3730,16 +3805,16 @@ auto_off_phrase:
     VOICE AO, TT2, OW, PA2, AO, FF, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
-' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega)
+' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega, 4=shield)
 SaucerColor1:
-    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_RED
+    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_RED, COL_CYAN
 SaucerColor2:
-    DATA COL_WHITE, COL_GREEN, COL_TAN, COL_TAN
+    DATA COL_WHITE, COL_GREEN, COL_TAN, COL_TAN, COL_BLUE
 
 ' Power-up weighted distribution (8 slots)
-' beam=2/8(25%), rapid=3/8(37.5%), quad=2/8(25%), mega=1/8(12.5%)
+' beam=2, rapid=2, quad=2, mega=1, shield=1
 PowerUpWeights:
-    DATA 0, 0, 1, 1, 1, 2, 2, 3
+    DATA 0, 0, 1, 1, 2, 2, 3, 4
 
 ' --------------------------------------------
 ' UpdateCapture - Orbit captured wingman around player ship
@@ -4157,12 +4232,23 @@ RogueDiveRender:
                     IF RogueY <= PLAYER_Y + 6 THEN
                         IF RogueX >= PlayerX - 6 THEN
                             IF RogueX <= PlayerX + 8 THEN
-                                #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                                ' Rogue body hit - check shield first
+                                IF ShieldHits > 0 THEN
+                                    ShieldHits = ShieldHits - 1
+                                    SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
+                                    SOUND 2, 800, 12
+                                    IF ShieldHits = 0 THEN
+                                        IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
+                                    END IF
+                                ELSE
+                                    #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                                    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
+                                    SOUND 2, 100, 15
+                                END IF
+                                ' Either way, destroy rogue
                                 RogueState = ROGUE_IDLE
                                 RogueTimer = 0 : RogueDivePhase = 0
                                 SPRITE SPR_FLYER, 0, 0, 0
-                                SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
-                                SOUND 2, 100, 15
                             END IF
                         END IF
                     END IF
@@ -4283,7 +4369,17 @@ UpdateSaucer: PROCEDURE
             IF Invincible = 0 THEN
             IF FlyX >= PlayerX - 8 THEN
                 IF FlyX <= PlayerX + 16 THEN
-                    #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                    ' Saucer body hit - check shield first
+                    IF ShieldHits > 0 THEN
+                        ShieldHits = ShieldHits - 1
+                        SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
+                        SOUND 2, 800, 12
+                        IF ShieldHits = 0 THEN
+                            IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
+                        END IF
+                    ELSE
+                        #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                    END IF
                 END IF
             END IF
             END IF
@@ -4387,8 +4483,14 @@ SaucerAnimate: PROCEDURE
     END IF
 
     ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
-    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, SaucerCard * 8 + FlyColor + $0800
-    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, SaucerCard * 8 + FlyColor + $0800
+    ' Handle pastel colors (8+) to avoid bit overflow into card number
+    IF FlyColor >= 8 THEN
+        #Card = SaucerCard * 8 + (FlyColor AND 7) + $1800
+    ELSE
+        #Card = SaucerCard * 8 + FlyColor + $0800
+    END IF
+    SPRITE SPR_SAUCER, FlyX + $0200, FlyY, #Card
+    SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, #Card
 
     ' Check collision with player bullet (Y range follows saucer position)
     IF #GameFlags AND FLAG_BULLET THEN
@@ -4791,24 +4893,24 @@ ZodRender: PROCEDURE
 ' --------------------------------------------
 ShipGfx:
     ' Player ship body - Frame 0 (blocky tank-style cannon)
+    BITMAP "........"
     BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
+    BITMAP "X.X..X.X"
     BITMAP "XXXXXXXX"
     BITMAP "XX....XX"
-    BITMAP "XX....XX"
+    BITMAP "........"
 
     ' Frame 1 (engine glow variation)
+    BITMAP "........"
     BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "..XXXX.."
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
+    BITMAP "X.X..X.X"
     BITMAP "XXXXXXXX"
     BITMAP "X......X"
-    BITMAP "X......X"
+    BITMAP "........"
 
 ' Compact ship icon for HUD (vertically centered to match GROM text)
 ShipHudGfx:
@@ -4829,9 +4931,9 @@ ShipAccentGfx:
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
     BITMAP "........"
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
 
     ' Frame 1 - brighter engine glow
     BITMAP "........"
@@ -4839,9 +4941,9 @@ ShipAccentGfx:
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
     BITMAP "........"
-    BITMAP ".XXXXXX."
-    BITMAP ".XXXXXX."
 
 ' Alien Type 1 - Top row (small squid) - 1px gap right & bottom
 Alien1Gfx:
@@ -5561,6 +5663,17 @@ PowerupGAGfx:
     BITMAP "#.#.#.#."
     BITMAP ".##.#.#."
     BITMAP "........"
+    BITMAP "........"
+
+' === SHIELD dome graphic (solid bar above ship) ===
+ShieldArcGfx:
+    BITMAP "..####.."
+    BITMAP ".##..##."
+    BITMAP ".##..##."
+    BITMAP "##....##"
+    BITMAP "##....##"
+    BITMAP "#......#"
+    BITMAP "#......#"
     BITMAP "........"
 
 ' ============================================
