@@ -3973,8 +3973,11 @@ RogueUpdate: PROCEDURE
         END IF
 
         IF RogueTimer = 0 THEN
-            ' Remove from grid
-            #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR ColMaskData(RogueCol)
+            ' Remove from grid (guard against double-XOR if bullet killed during shake)
+            #Mask = ColMaskData(RogueCol)
+            IF #AlienRow(RogueRow) AND #Mask THEN
+                #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR #Mask
+            END IF
 
             ' Clear BACKTAB tile
             IF #ScreenPos < 220 THEN

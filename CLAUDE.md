@@ -1134,6 +1134,30 @@ CurrentMarchSpeed = BaseMarchSpeed  ' Reset to wave's base speed
 - `SfxVolume = 0 : SfxType = 0` (sound effects)
 - Any power-up timers, bullet states, animation counters
 
+### Double-XOR resurrection bug in multi-system grid operations
+
+When multiple systems (bullets, special enemies, power-ups) can remove the same grid element, using blind `XOR` for removal causes resurrection if both systems act on the same element:
+
+```basic
+' Scenario: Rogue alien selected from grid, enters shake animation
+' Player bullet kills that same grid cell during shake
+' 30 frames later, rogue transition code runs...
+
+' BAD — XOR on already-cleared bit resurrects the alien:
+#AlienRow(RogueRow) = #AlienRow(RogueRow) XOR ColMaskData(RogueCol)
+' If bit was 1 and bullet cleared it to 0: 0 XOR 1 = 1 (resurrected!)
+
+' GOOD — guard with AND before XOR:
+#Mask = ColMaskData(RogueCol)
+IF #AlienRow(RogueRow) AND #Mask THEN
+    #AlienRow(RogueRow) = #AlienRow(RogueRow) XOR #Mask
+END IF
+```
+
+**Symptom:** Enemies killed during a multi-frame animation (shake, telegraph, etc.) respawn in the exact same position after the animation completes. Particularly visible when few enemies remain, since the same one keeps getting selected.
+
+**Rule:** Any delayed grid removal (animations, transitions) must guard XOR with an AND check. Immediate removals (bullet hits) can use blind XOR since nothing else has had a chance to act.
+
 ## Performance Optimization Patterns
 
 ### ROM-based lookup tables vs FOR loop shifts
