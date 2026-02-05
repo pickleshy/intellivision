@@ -1,716 +1,336 @@
-# Space Intruders - Feature Roadmap
+# Space Intruders - Development Roadmap
 
-## Current Priority: Polish Phase
+## Development Priority: Polish First
+
+---
+
+## 1. Bugs (Known Issues)
+
+_None currently tracked. Add issues here as discovered._
+
+---
+
+## 2. Polish (Visual/Feel)
+
+### Completed
 - [x] HUD cleanup and layout optimization
   - [x] Compact SCORE tiles (3 GRAM)
   - [x] Compact CHAIN tiles (3 GRAM)
   - [x] Chain current/best display (N/N format)
   - [x] Tutorial text repositioned (row 9 centered, faster flash)
-  - [ ] Lives display styling (see below)
-  - [ ] Active powerup indicator (see below)
-- [x] Rogue Alien / Wingman revamp (see 0c below)
+  - [x] Lives display styling (ship+X tile, spaced count)
+- [x] Rogue Alien / Wingman revamp
   - [x] Mooninite-style sprite design
   - [x] Persistent across wave/pattern transitions
   - [x] Bullet sponge behavior (absorbs enemy fire)
-  - [ ] Better firing as partner (optional tuning)
+
+### In Progress
 - [ ] Color tuning and visual consistency
 - [ ] Physics/collision refinement
-- [ ] Performance optimization (saucer CPU spikes)
+
+### Backlog
+- [ ] Active powerup indicator (see detailed spec below)
+- [ ] Better wingman firing as partner (optional tuning)
+- [ ] Impact pause / "dopamine moments" (see spec #7)
+- [ ] Saucer animation refactor (see spec #11)
 
 ---
 
-## Future Features
+## 3. Balance (Difficulty Tuning)
 
-### 0. Lives Display Styling (HUD Polish)
-**Current:** Ship icon (GRAM_SHIP_HUD) + "X3" (GROM text)
+**Current state:** Spiky/inconsistent — difficulty jumps around unpredictably.
 
-**Options to consider:**
-| Style | GRAM Cost | Look |
-|-------|-----------|------|
-| Ship + styled X | +1 card | Custom X tile matches font |
-| Combined ship+X tile | +0 cards | Single compact tile |
-| Ship + number only | +0 cards | Drop X, just "3" |
-| Hearts for lives | +1-2 cards | ♥♥♥ (repeat tile) |
-| Lives bar | +2 cards | Filled/empty segments |
+### Tuning Levers
 
-**Decision:** TBD - thinking about it
+| Category | Variables | Current | Notes |
+|----------|-----------|---------|-------|
+| **March Speed** | `BaseMarchSpeed`, `CurrentMarchSpeed` | Per-wave base | Accelerates on descent |
+| **Alien Bullets** | Fire rate, speed, count | ? | May need wave scaling |
+| **Player Power** | Powerup duration, drop rate | Fixed? | Wingman is powerful |
+| **Forgiveness** | Lives, invincibility frames | 3 lives | Post-respawn i-frames |
+| **Alien Count** | Grid density per wave | Varies | Sparse = easier? |
+
+### Balance Tasks
+- [ ] Profile difficulty curve across waves 1-5
+- [ ] Document current speed/fire-rate values per wave
+- [ ] Identify specific "spike" moments (which wave? which event?)
+- [ ] Tune march speed progression
+- [ ] Tune alien fire rate progression
+- [ ] Consider alien count → speed relationship (fewer aliens = faster)
+- [ ] Playtest and iterate
+
+### Design Questions
+- Should remaining alien count affect march speed? (Classic SI behavior)
+- Should powerups scale with difficulty or stay constant?
+- Is wingman too powerful as bullet sponge?
 
 ---
 
-### 0b. Active Powerup Indicator (HUD Polish)
-**Current:** No visual indicator of active powerup in HUD — player must remember what they picked up.
+## 4. Level Design (Waves & Patterns)
 
-**Concept:** Display compact icon or text showing active weapon (BEAM, RAPID, QUAD, MEGA) in HUD.
+**Current scope:** Undecided — need more playtesting.
 
-**Technical approach:**
-- Reuse title-screen-only GRAM cards (25-36) during gameplay
-- DEFINE 4 powerup icons into cards 25-28 at StartGame
-- Display active powerup icon in HUD (position 234-235 gap, or near lives)
-- Clear/hide when no powerup active
+### Options
+
+| Scope | Waves | Session Length | Notes |
+|-------|-------|----------------|-------|
+| Arcade | 5-8 | ~10 min | Quick sessions, high replayability |
+| Medium | 10-15 | ~20 min | More progression, boss every 5 waves? |
+| Endless | Loop | Until death | Waves repeat with scaling difficulty |
+
+### Wave Content Tasks
+- [ ] Define wave count target
+- [ ] Design pattern variety (formations per wave)
+- [ ] Place bosses (every N waves?)
+- [ ] Plan wave entrance animations (see spec #9)
+- [ ] Extended first wave / tutorial escalation (see spec #10)
+
+### Current Patterns
+_Document existing patterns here as reference._
+
+---
+
+## 5. Audio/Music
+
+### Current State
+- Background music: DNB track via PLAY SIMPLE
+- SFX: Player shoot, alien death, explosions, powerup pickup, shield ping
+- Intellivoice: Not currently used in gameplay
+
+### Tasks
+- [ ] Audit SFX variety (enough feedback for all events?)
+- [ ] Consider wave-specific music variation
+- [ ] Tune SFX volumes relative to music
+- [ ] Intellivoice callouts? ("WAVE 3", "EXTRA LIFE", etc.)
+
+### Ideas
+- Victory fanfare on wave clear
+- Tension music when few aliens remain
+- Boss fight music
+
+---
+
+## 6. Performance
+
+### Known Issues
+- [ ] Saucer animation may cause frame drops
+- [ ] Need to profile with debug border colors
+
+### Optimization Targets
+| Routine | Priority | Notes |
+|---------|----------|-------|
+| SaucerAnimate | High | Suspected CPU spike |
+| Alien grid rendering | Medium | Especially with bosses |
+| Collision detection loops | Medium | Multiple nested loops |
+| DrawAliens shimmer | Low | Already uses dirty flag |
+
+### Tools
+- Debug mode (type "36"): BORDER color band shows CPU usage
+- Assembly listing: Check compiled output for hot paths
+
+### Future: CP1610 Assembly Optimization
+See detailed spec #14 below — only pursue after feature-complete.
+
+---
+
+## 7. Features (Backlog)
+
+### Near-Term
+- [ ] Destructible barriers/shields (spec #2)
+- [ ] Wave announcement transition (spec #6)
+
+### Medium-Term
+- [ ] Boss fight (spec #3)
+- [ ] Large sprite alien variants (spec #8)
+- [ ] Wave entrance animations (spec #9)
+
+### Stretch Goals
+- [ ] Title screen: 3D rotating letters (spec #1)
+- [ ] Player 2 controls Zod on title/game over (spec #4)
+- [ ] Zod shoots away letters on game over (spec #5)
+- [ ] Saucer explosion: escaping aliens (spec #12)
+
+---
+
+## Detailed Feature Specs
+
+### Spec #0b: Active Powerup Indicator (HUD Polish)
+**Current:** No visual indicator of active powerup in HUD.
 
 **Options:**
-
 | Style | GRAM Cost | Look |
 |-------|-----------|------|
 | 4 compact icons (B/R/Q/M) | 4 cards (reuse) | Matches CHAIN/SCORE style |
-| Single "active" slot + icon | 1-4 cards | Icon changes with powerup |
-| GROM text labels | 0 cards | "BEAM"/"RAPID"/etc (simpler) |
+| GROM text labels | 0 cards | "BEAM"/"RAPID"/etc |
 | Colored pip/dot | 1 card | Color-coded indicator |
 
-**HUD placement options:**
-- Position 234-235 (gap between SCORE and lives)
-- Above/below existing HUD row
-- Replace part of lives display area
+**HUD placement:** Position 234-235 (gap between SCORE and lives)
 
-**GRAM cost:** 0-4 cards (reuse title font slots 25-28)
 **Variables:** 0 (use existing BeamTimer/RapidTimer/DualTimer/MegaTimer checks)
 
-**Decision:** TBD - nice-to-have polish
-
 ---
 
-### 0c. Rogue Alien / Wingman Revamp (Gameplay Polish)
-
-**Current issues:**
-- Captured alien disappears too quickly (feels fragile)
-- Always uses "Zod" sprite regardless of which alien was captured
-- Resets on wave/pattern transitions
-- Doesn't feel like a true ally/partner
-
-**Goals:**
-1. **Persistent wingman** — captured alien stays with player until death (survives pattern transitions, wave clears)
-2. **Bullet sponge** — wingman absorbs enemy fire, making it feel invincible and protective
-3. **Active partner** — fires more aggressively alongside player
-4. **New sprite design** — Mooninite-inspired 8x8 pixel alien (blocky, angular, attitude)
-
-**Sprite concept (Mooninite homage):**
-```
-Frame 1:        Frame 2:
-........        ........
-.XXXXXX.        .XXXXXX.
-.X.XX.X.        .X.XX.X.
-.XXXXXX.        .XXXXXX.
-.X....X.        ..X..X..
-.X.XX.X.        .X.XX.X.
-..XXXX..        .X....X.
-........        ........
-```
-Blocky rectangular body, simple face, slight animation. Color: green or cyan to distinguish from enemies.
-
-**Technical approach:**
-
-| Change | Implementation |
-|--------|----------------|
-| Persistence | Don't reset `WingmanActive` in `LoadPatternB` or `StartNewWave` |
-| Bullet absorption | Check wingman hitbox in `MoveAlienBullet`, destroy bullet but not wingman |
-| Correct sprite | Use captured alien's type to select GRAM card, or use dedicated wingman card |
-| Firing | Increase fire rate, maybe sync with player shots |
-| Position | Float near player (offset X), mirror player movement |
-
-**State machine:**
-- `WINGMAN_IDLE` (0) — no wingman active
-- `WINGMAN_ACTIVE` (1) — wingman following player, firing, absorbing shots
-- `WINGMAN_LOST` (2) — brief "goodbye" animation when player dies (optional)
-
-**Variables needed:**
-- Reuse existing `RogueState`, `RogueX`, `RogueY` for wingman
-- Or add `WingmanActive`, `WingmanX`, `WingmanY` (cleaner separation)
-
-**GRAM cost:** 1-2 cards for wingman sprite (can reuse rogue slots during wingman phase)
-**Variables:** 0-3 depending on approach (reuse vs. dedicated)
-
-**Subtasks:**
-- [ ] Design Mooninite-style sprite bitmap (2 frames)
-- [ ] Add GRAM constant and bitmap data
-- [ ] Implement persistent wingman state (survives transitions)
-- [ ] Add bullet absorption collision
-- [ ] Fix sprite selection (use correct/dedicated graphic)
-- [ ] Tune firing behavior (rate, sync with player)
-- [ ] Test across wave transitions and player death
-
-**Priority:** High — this is core gameplay feel
-
----
-
-### 1. Title Screen: 3D Rotating Letters
+### Spec #1: Title Screen 3D Rotating Letters
 **Concept:** Animate "SPACE INTRUDERS" with pseudo-3D rotation effect using GRAM reloading.
 
-**Technical approach:**
 - Use existing 12 font GRAM slots (25-36)
 - Precompute 6-8 rotation frames per letter in ROM
 - DEFINE new frames each tick during title sequence
 - Can reload 2-4 GRAM cards per WAIT without flicker
 
-**Variations:**
-- All letters rotate together (same angle) - simplest
-- Wave rotation (letters offset in phase) - most visually striking
-- One letter at a time - sequential spotlight effect
-
-**ROM cost:** ~14 letters × 8 frames × 8 bytes = ~900 bytes
+**ROM cost:** ~14 letters x 8 frames x 8 bytes = ~900 bytes
 **GRAM cost:** 0 additional (reuses existing font slots)
 
 ---
 
-### 2. Destructible Barriers/Shields
-**Concept:** Classic Space Invaders style barriers that erode when hit by bullets.
+### Spec #2: Destructible Barriers/Shields
+**Concept:** Classic Space Invaders style barriers that erode when hit.
 
-**Technical approach:**
 - Use 2-4 GRAM cards for barrier tile patterns
 - Place barrier segments on BACKTAB between player and aliens
 - On bullet hit: modify GRAM bitmap data directly at $3800+
 - Punch "holes" in the bitmap where projectiles impact
-- No GRAM slot cycling needed - just data modification
 
 **GRAM cost:** 2-4 cards (can use free slots 13, 41, 53)
-**Collision:** Check bullet Y/X against barrier BACKTAB positions
-
-**Design considerations:**
-- Barrier placement (3-4 barriers across screen?)
-- How much protection before fully destroyed?
-- Do alien bullets also destroy barriers?
-- Visual style (brick pattern? solid? organic?)
 
 ---
 
-### 3. Boss Fight
-**Concept:** Large boss enemy taking up ~1/3 of screen, climactic battle.
+### Spec #3: Boss Fight
+**Concept:** Large boss enemy taking up ~1/3 of screen.
 
-**Technical approach - Option A: Multi-sprite boss**
-- Use multiple MOBs (sprites) positioned together
-- 8 MOBs available, could dedicate 4-6 to boss
-- Each MOB is 8x8 or 8x16, so 4 MOBs = 32x16 pixels
-- Requires disabling other sprites during boss phase
-- Can animate by updating sprite GRAM cards
-
-**Technical approach - Option B: BACKTAB boss**
-- Draw boss using BACKTAB tiles (like aliens)
-- Much larger possible size (8x8 cards, many on screen)
-- Less smooth movement (card-aligned)
-- Could be 6x4 cards = 48x32 pixels easily
-- Animate with GRAM reloading
-
-**Technical approach - Option C: Hybrid**
-- Body on BACKTAB (large, detailed)
-- Eyes/weapons/weak points as sprites (smooth movement, collision)
-- Best of both worlds
+**Options:**
+- Multi-sprite boss (4-6 MOBs)
+- BACKTAB boss (larger, card-aligned)
+- Hybrid (body on BACKTAB, weak points as sprites)
 
 **Boss fight phases:**
-1. Boss entrance (descends from top?)
+1. Entrance (descends from top)
 2. Attack patterns (projectiles, movement)
-3. Weak point mechanics (hit specific area?)
+3. Weak point mechanics
 4. Health bar display
-5. Death sequence (explosion cascade?)
+5. Death sequence (explosion cascade)
 
-**GRAM cost:** 4-8 cards for boss tiles (reload during boss phase)
-**Design:** Need to define boss appearance, attack patterns, health system
+---
+
+### Spec #4: Player 2 Controls Zod (Title/Game Over)
+- Read CONT1 (controller 2) disc input
+- Switch from auto-pilot to manual control on input
+- Revert to auto-pilot after ~3 seconds of no input
+
+---
+
+### Spec #5: Zod Shoots Away Letters (Game Over)
+- Zod fires small projectile
+- Check collision against BACKTAB text positions
+- On hit: clear that BACKTAB position (letter disappears)
+- Optional: show small explosion at hit position
+
+---
+
+### Spec #6: Wave Announcement Transition
+**Concept:** Brief (~1 second) "WAVE X" with visual flair.
+
+**Options:**
+| Style | Complexity |
+|-------|------------|
+| DOS Tab Bounce | Medium |
+| Wavy Text | Medium |
+| Starfield Warp | High |
+| Color Cascade | Low |
+
+---
+
+### Spec #7: Impact Pause / "Dopamine Moments"
+**Concept:** Brief freeze-frame on significant events.
+
+**Triggers:** Bomb alien final hit, skull boss death, saucer hit, extra life, wave clear, player death.
+
+**Effects:**
+- Color flash (alien cycles white/red)
+- Screen shake (SCROLL offset oscillates ±1)
+- Time freeze (all movement stops, only target animates)
+
+**Cost:** 1 variable (`ImpactPause`), 5-15 frames per event
+
+---
+
+### Spec #8: Large Sprite Alien Variants
+- Use MOB sprites instead of BACKTAB for select "big" aliens
+- 16x16 pixels using DOUBLEX/DOUBLEY
+- Takes 2-3 hits to destroy
+- Drops better powerups
+
+---
+
+### Spec #9: Wave Entrance Animations
+
+| Type | Description |
+|------|-------------|
+| "Too Quiet" Pincer | Aliens crawl UP from bottom corners |
+| Cascade Drop | Rows drop from top, settle |
+| Spiral In | Aliens spiral from edges to grid positions |
+| Teleport | Aliens "beam in" one by one |
+
+---
+
+### Spec #10: Extended First Wave (Tutorial Escalation)
+- Wave 1 starts with standard grid
+- At ~half killed: "REINFORCEMENTS!" + additional row drops
+- At ~75% killed: "THEY KEEP COMING!" + another row
+- Teaches escalation, prevents wave 1 from being "too easy"
+
+---
+
+### Spec #11: Saucer Animation Refactor
+**Current:** Simple color blinking.
+
+**Goal:** Animated "center light grid" that rotates/pulses.
+
+**Options:**
+| Style | GRAM Cost |
+|-------|-----------|
+| Rotating lights | 4-6 frames |
+| Pulsing core | 3-4 frames |
+| Scanning beam | 4 frames |
+
+---
+
+### Spec #12: Saucer Explosion Escaping Aliens
+**Speculative — may exceed complexity budget.**
+
+- When saucer destroyed, 1-3 mini-alien sprites "escape"
+- Mini-aliens scatter outward with velocity vectors
+- Brief effect (10-15 frames) then cleanup
+
+---
+
+### Spec #13: HUD "ALIEN CAPTURED" Indicator
+Depends on defining capture mechanic. Currently speculative.
+
+---
+
+### Spec #14: CP1610 Assembly Optimization
+**When:** After gameplay is feature-complete.
+
+**Targets:**
+| Routine | Opportunity |
+|---------|-------------|
+| Collision loops | Unroll, register caching |
+| Alien grid iteration | Precompute row addresses |
+| BACKTAB writes | Batch writes |
+| Sprite updates | Combine MOB register writes |
+
+**Risk:** Maintenance burden, harder to debug. Only for proven bottlenecks.
 
 ---
 
 ## GRAM Budget Summary
 
-**Currently allocated:** 61 of 64 cards
+**Currently allocated:** ~61 of 64 cards
 **Free slots:** 3 (cards 13, 41, 53)
 **Reclaimable during gameplay:** 12 (title font, cards 25-36)
 
 **Available for new features during gameplay:** 15 cards
-
-| Feature | GRAM Cost | Notes |
-|---------|-----------|-------|
-| Barriers | 2-4 cards | Use free slots |
-| Boss tiles | 4-8 cards | Reload into font slots during boss phase |
-| 3D title | 0 cards | Reuses font slots during title only |
-| HUD compacts | 0-3 cards | Already done (CHAIN, SCORE) |
-
----
-
-## Performance Notes
-
-**Current issues:**
-- Saucer animation may be causing frame drops
-- Need to profile with debug border colors
-
-**Optimization targets:**
-- SaucerAnimate procedure
-- Alien grid rendering (especially with bosses)
-- Collision detection loops
-
----
-
-### 14. CP1610 Assembly Optimization (Future)
-**Context:** IntyBASIC generates reasonable CP1610 assembly, but at 894.886 KHz (NTSC) we're always fighting for cycles. Hand-optimized assembly for hot paths could reclaim significant headroom.
-
-**Why this matters:**
-- ~14,915 cycles per frame (60Hz NTSC)
-- Every instruction counts in the main loop
-- IntyBASIC can't know our specific access patterns
-- Some patterns compile to suboptimal sequences
-
-**Candidate routines for hand-optimization:**
-
-| Routine | Current Cost | Opportunity |
-|---------|--------------|-------------|
-| Collision detection loops | High | Unroll loops, use register caching |
-| Alien grid iteration | High | Precompute row addresses |
-| BACKTAB writes (PRINT AT) | Medium | Batch writes, avoid redundant color setup |
-| Sprite position updates | Medium | Combine MOB register writes |
-| Random number generation | Low | Inline LFSR if needed frequently |
-
-**Optimization techniques:**
-```
-; IntyBASIC pattern (conceptual):
-    MVI  var, R0       ; Load variable
-    ADDI #1, R0        ; Increment
-    MVO  R0, var       ; Store back
-
-; Hand-optimized:
-    INCR @var          ; Single instruction (if supported)
-    ; Or keep hot variables in registers across loop iterations
-```
-
-**Register allocation opportunities:**
-- R0-R3 are general purpose
-- Keep loop counters in registers instead of RAM
-- Cache frequently-read values (AlienOffsetX, etc.)
-
-**When to do this:**
-- After gameplay is feature-complete
-- Profile first — identify actual bottlenecks with border color timing
-- Start with hottest routines (collision, grid rendering)
-- Preserve IntyBASIC source as reference
-
-**Risk:**
-- Maintenance burden (two codebases to sync)
-- Harder to debug
-- Only worth it for proven bottlenecks
-
-**Documentation needed:**
-- Add CP1610 instruction timing reference to CLAUDE.md
-- Document which routines have been hand-optimized
-- Keep IntyBASIC version as comments
-
----
-
-## Interactive Features
-
-### 4. Player 2 Controls Zod (Title/Game Over)
-**Concept:** Second player can grab controller 2 and fly Zod around on title screen and game over screen.
-
-**Technical approach:**
-- Read CONT1 (controller 2) disc input during title/game over states
-- If CONT1 input detected, switch from auto-pilot to manual control
-- Map disc directions to Zod X/Y velocity
-- Revert to auto-pilot after ~3 seconds of no input
-
-**Controls:**
-- Disc: 8-direction movement
-- Fire button: Shoot (game over only, see below)
-
-**States affected:**
-- Title screen (GameState = 0)
-- Game over screen (GameOver = 5, 6)
-
-**Cost:** Minimal - just input reading and position updates
-
----
-
-### 5. Zod Shoots Away Letters (Game Over)
-**Concept:** On game over, Player 2 (or auto-Zod) can shoot the letters, making them disappear or explode.
-
-**Technical approach:**
-- Zod fires small projectile (reuse alien bullet sprite or BACKTAB?)
-- Check projectile collision against BACKTAB text positions
-- On hit: clear that BACKTAB position (letter disappears)
-- Optional: show small explosion at hit position
-- Could track "letters destroyed" as mini-game score
-
-**Target letters:**
-- "GAME OVER" (row 2, positions 45-53)
-- "SCORE XXXX" (row 5)
-- "NEW HIGH!" or "HIGH SCORE" (row 6)
-- "BEST CHAIN X" (row 7)
-- "PRESS FIRE" (row 10)
-
-**Gameplay loop:**
-- Auto-Zod or P2 flies around shooting
-- Each letter hit = satisfying pop
-- Could respawn letters after all destroyed for endless fun
-
-**Cost:**
-- 1 variable for Zod bullet active/position
-- Collision check against BACKTAB rows
-- Reuse existing explosion SFX
-
----
-
-### 6. Wave Announcement Transition (Low Priority)
-**Concept:** Brief (~1 second) flashy "WAVE X" announcement between waves with visual flair.
-
-**Visual options:**
-
-| Style | Description | Complexity |
-|-------|-------------|------------|
-| DOS Tab Bounce | Letters slide in from sides, bounce to center | Medium |
-| Wavy Text | Letters oscillate vertically in sine wave | Medium |
-| Starfield Warp | Background stars streak during transition | High |
-| Color Cascade | Letters cycle through colors rapidly | Low |
-| Zoom Effect | "WAVE" small→large using GRAM reload | High |
-
-**Starfield warp idea:**
-- During wave transition, modify star update to streak vertically
-- Stars move 4-8x faster, leaving "trail" effect
-- Creates hyperspace/warp feel for ~1 second
-- Return to normal star drift when wave starts
-
-**Implementation approach:**
-1. After wave clear, enter transition state (~60 frames)
-2. Display "WAVE X" centered (row 5 or 6)
-3. Apply chosen visual effect to text and/or stars
-4. Brief audio sting (fanfare or whoosh)
-5. Clear text, resume gameplay
-
-**Letter animation (DOS-style bounce):**
-```
-Frame 0:  W         E      (letters at edges)
-Frame 10: .W.     .E.      (moving inward)
-Frame 20: ..WA  VE..       (converging)
-Frame 30:   WAVE           (settled at center)
-```
-
-**Wavy text (sine oscillation):**
-- Each letter Y offset = sin(frame + letter_index * 30) * 2
-- Creates ripple effect across "WAVE X"
-- Use BACKTAB row shifting or sprite overlay
-
-**Cost:**
-- 60 frames of transition time
-- Minimal GRAM (text is GROM)
-- Star warp: modify existing star update logic temporarily
-
----
-
-### 7. Impact Pause / "Dopamine Moments" (Polish)
-**Concept:** Brief freeze-frame moments on significant events to make kills feel impactful.
-
-**Trigger events:**
-- Bomb alien final hit (before chain explosion)
-- Skull boss destruction
-- Saucer hit
-- Extra life awarded
-- Wave clear (last alien)
-- Player death
-
-**Animation sequence (example: Bomb Alien):**
-```
-Frame 0:    Bullet connects
-Frame 1-5:  FREEZE - game pauses, bomb alien flashes
-Frame 6-10: Shake effect (screen jitter or sprite wobble)
-Frame 11:   BOOM - explosion cascade begins
-Frame 12+:  Resume normal gameplay
-```
-
-**Visual effects during pause:**
-| Effect | Description | Cost |
-|--------|-------------|------|
-| Color flash | Alien cycles white/red rapidly | Low |
-| Screen shake | SCROLL offset oscillates ±1 | Low |
-| Sprite wobble | X/Y position jitters | Low |
-| Time freeze | All movement stops, only target animates | Medium |
-| Zoom pulse | Brief GRAM swap for "bulge" frame | High |
-
-**Implementation approach:**
-1. Add `ImpactPause` variable (countdown timer)
-2. When triggered, set `ImpactPause = 10` (or appropriate frames)
-3. In game loop, if `ImpactPause > 0`:
-   - Skip normal movement/updates
-   - Run impact animation (flash/shake)
-   - Decrement timer
-4. When timer hits 0, trigger the actual explosion/effect
-
-**Screen shake technique:**
-```basic
-IF ImpactPause > 0 THEN
-    IF ImpactPause AND 1 THEN
-        SCROLL 1, 0
-    ELSE
-        SCROLL -1, 0
-    END IF
-    ImpactPause = ImpactPause - 1
-    IF ImpactPause = 0 THEN SCROLL 0, 0
-END IF
-```
-
-**Dopamine design principles:**
-- Anticipation (brief pause before explosion)
-- Visual contrast (flash/shake draws attention)
-- Audio sync (charge-up sound → boom)
-- Scale with importance (bigger pause for bigger events)
-
-**Cost:**
-- 1 variable (`ImpactPause`)
-- Few cycles per frame for shake/flash
-- 5-15 frames of "frozen" time per event
-
----
-
----
-
-### 8. Large Sprite Alien Intruders (Surprise Variants)
-**Concept:** Occasionally replace standard grid aliens with larger sprite-based enemies for variety.
-
-**Technical approach:**
-- Use MOB sprites instead of BACKTAB for select "big" aliens
-- Could be 2x2 tile equivalent (16x16 pixels using DOUBLEX/DOUBLEY)
-- Mix into pattern maps as surprise elements
-- Different collision hitbox (larger)
-
-**Placement options:**
-- Replace center alien with large variant
-- Spawn as mini-boss mid-wave
-- Entire row of large aliens (fewer columns)
-
-**Behavior variations:**
-- Takes 2-3 hits to destroy
-- Drops better powerups
-- Different movement pattern (slower but menacing)
-- Unique explosion (bigger, more frames)
-
-**GRAM cost:** 2-4 cards for large alien frames
-**Sprite cost:** 1-2 MOBs per large alien on screen
-
-**Optional: Death Particle Effect**
-When a large intruder is destroyed, particle debris could fall from the explosion to signify defeating a "big boy":
-
-```
-Frame 0:   Large alien explodes (flash + expand)
-Frame 1-3: 2-4 particle sprites spawn at explosion center
-Frame 4-8: Particles fall with slight horizontal drift
-           Each particle: small GRAM card (2x2 or 4x4 pixels)
-Frame 9+:  Particles fade or fall off-screen
-```
-
-| Approach | Sprites | Look |
-|----------|---------|------|
-| Reuse alien bullet sprites | 0 extra | Falling debris using existing MOBs |
-| Dedicated particle sprites | 2-4 MOBs | Distinct debris shapes |
-| BACKTAB particles | 0 MOBs | Card-aligned, chunkier feel |
-
-**Implementation notes:**
-- Could reuse explosion sprite slots after main explosion finishes
-- Particles inherit color from exploded alien
-- Gravity acceleration: Y velocity increases each frame
-- Brief effect (10-15 frames max) to avoid disrupting gameplay
-- Mark as optional/polish — game works fine without it
-
----
-
-### 9. Wave Entrance Animations (Variety)
-**Concept:** Different dramatic entrances for alien waves to keep gameplay fresh.
-
-**Entrance Type A: "Too Quiet" Pincer**
-```
-1. Wave starts with EMPTY grid
-2. Text flashes: "IT'S TOO QUIET..."
-3. 1-second pause (tension builds)
-4. Aliens crawl UP from bottom-left and bottom-right
-5. Two pillars rise, meet in center
-6. Grid snaps into formation
-7. Gameplay begins
-```
-
-**Entrance Type B: Cascade Drop**
-```
-1. First row drops from top, settles
-2. Second row drops, settles above first
-3. Continue until full grid formed
-4. Creates "curtain falling" effect
-5. Each row slightly delayed for wave effect
-```
-
-**Entrance Type C: Spiral In**
-```
-1. Aliens spiral inward from screen edges
-2. Each follows curved path to grid position
-3. Creates swirling vortex effect
-4. More complex but visually striking
-```
-
-**Entrance Type D: Teleport/Materialize**
-```
-1. Grid positions flash empty outlines
-2. Aliens "beam in" one by one (random order)
-3. Flash effect on each materialization
-4. Sci-fi transporter feel
-```
-
-**Implementation:**
-- Add `EntranceType` variable (0-3)
-- `EntrancePhase` tracks animation progress
-- Each type has own state machine
-- Standard grid rendering after entrance complete
-
-**Wave assignment:**
-- Wave 1: Normal (immediate)
-- Wave 3: Cascade Drop
-- Wave 5: "Too Quiet" Pincer
-- Wave 7+: Random selection
-
----
-
-### 10. Extended First Wave (Tutorial Escalation)
-**Concept:** Wave 1 starts easy, then MORE aliens drop in as player gains confidence.
-
-**Sequence:**
-```
-Phase 1 (0-30 sec):
-- Standard 5x9 grid, slow speed
-- Player learns controls
-
-Phase 2 (when ~half killed):
-- "REINFORCEMENTS!" text flashes
-- Additional row drops from top
-- Grid now 6x9
-
-Phase 3 (when ~75% killed):
-- "THEY KEEP COMING!"
-- Another row drops
-- Grid now 7x9
-- Speed increases slightly
-```
-
-**Technical approach:**
-- Track `AliensKilled` count
-- At thresholds, trigger reinforcement drop
-- Use existing alien row rendering, just add to #AlienRow array
-- Extend ALIEN_ROWS temporarily for wave 1
-
-**Design goals:**
-- Teaches player that waves escalate
-- Prevents wave 1 from being "too easy"
-- Creates narrative tension
-- Rewards aggressive play (kill fast before reinforcements)
-
-**Alternative: Continuous Trickle**
-- Instead of row drops, aliens spawn 1-2 at a time from top
-- Endless feel until player clears a threshold
-- More arcade-style pressure
-
----
-
-### 11. Saucer Animation Refactor (Polish)
-**Current:** Simple color blinking — looks like cheap LED lights.
-
-**Goal:** Animated "center light grid" that appears to rotate/pulse around the saucer's center while maintaining powerup color coding.
-
-**Concept approaches:**
-
-| Style | Description | GRAM Cost |
-|-------|-------------|-----------|
-| Rotating lights | 3-4 "light dots" orbit center in sequence | 4-6 frames |
-| Pulsing core | Center expands/contracts with color glow | 3-4 frames |
-| Scanning beam | Horizontal or diagonal line sweeps across | 4 frames |
-| Shimmer pattern | Alternating pixels create movement illusion | 2-3 frames |
-
-**Frame sequence example (rotating lights):**
-```
-Frame 0:  ○·····     (light at 12 o'clock)
-Frame 1:  ·○····     (light at 2 o'clock)
-Frame 2:  ··○···     (light at 4 o'clock)
-Frame 3:  ···○··     (light at 6 o'clock)
-...etc, cycling through positions
-```
-
-**Powerup color integration:**
-- Base saucer shape stays consistent across frames
-- Light/core element changes color to indicate powerup type
-- Color still visible at a glance, but now with motion
-
-**Technical approach:**
-- Define 4-6 GRAM frames for saucer animation
-- Cycle through frames every 4-8 ticks
-- Reload GRAM cards during WAIT (2-3 per frame is safe)
-- Or use multiple GRAM slots and swap card index
-
-**GRAM cost:** 4-6 cards (could reuse title font slots during gameplay)
-
----
-
-### 12. Saucer Explosion: Escaping Aliens (Speculative)
-**Concept:** When a saucer is destroyed, 1-3 small alien sprites "escape" from the explosion and scatter.
-
-**POSSIBILITY — may exceed complexity budget. Document for future consideration.**
-
-**Visual sequence:**
-```
-Frame 0:    Saucer hit — flash white
-Frame 1-5:  Explosion expands
-Frame 3:    2-3 mini-alien sprites spawn at explosion center
-Frame 4-10: Mini-aliens scatter outward (different velocities)
-Frame 11+:  Mini-aliens fall off screen or fade
-```
-
-**Sprite approach:**
-- Reuse explosion sprite slots after initial burst
-- Mini-aliens: small GRAM card (could be 1x1 tile, 8x8 pixels)
-- Each has velocity vector (dx, dy) set at spawn
-- Simple physics: move by velocity each frame, maybe add gravity
-
-**Behavior options:**
-| Variant | Complexity | Feel |
-|---------|------------|------|
-| Scatter and vanish | Low | Quick visual reward |
-| Fall and bounce once | Medium | Cartoonish |
-| Become collectible powerups | High | Gameplay integration |
-| Attack player briefly | High | Risk/reward tension |
-
-**Why this might be cut:**
-- Requires spare MOB sprites (may conflict with bullets, player, explosions)
-- Adds state tracking for each escaping alien
-- CPU cost during already-busy explosion sequence
-
-**Why it could work:**
-- Saucer explosions are rare events (not every frame)
-- Could limit to 2 mini-aliens max
-- Brief effect (10-15 frames) then cleanup
-
----
-
-### 13. HUD: "ALIEN CAPTURED" Indicator
-**Concept:** Visual feedback when player captures an alien (if capture mechanic exists) or when saucer-related collection occurs.
-
-**Display options:**
-
-| Style | Location | Duration |
-|-------|----------|----------|
-| Flash text "CAPTURED!" | Center screen (row 5-6) | 30-60 frames |
-| HUD icon lights up | Bottom row near score | Persistent while active |
-| Captured alien portrait | Corner of screen | Until released/used |
-| Counter "+1 ALIEN" | Near chain display | Brief flash |
-
-**If tied to saucer mechanic:**
-- Player shoots saucer → alien escapes → player "catches" it?
-- Captured alien becomes temporary wingman?
-- Or: saucer was carrying captured ally, freeing them = bonus
-
-**HUD integration approaches:**
-```
-Style A (flash text):
-    PRINT AT 109 COLOR 6, "CAPTURED!"
-    CaptureFlash = 45  ' frames to display
-
-Style B (icon):
-    ' Reserve 1 GRAM card for "captured alien" icon
-    ' Light up in HUD row when CapturedCount > 0
-    PRINT AT 218, GRAM_CAPTURED * 8 + COL_GREEN + $0800
-
-Style C (counter):
-    PRINT AT 215 COLOR 5, "+"
-    PRINT AT 216, <>CapturedCount
-```
-
-**GRAM cost:** 0-1 cards (text is GROM, icon would need 1 GRAM)
-**Variables:** 1-2 (CapturedCount, CaptureFlash timer)
-
-**Note:** This feature depends on defining what "capture" means in gameplay. Currently speculative — add to parking lot if no capture mechanic planned.
 
 ---
 
@@ -720,3 +340,4 @@ Style C (counter):
 - High score persistence (requires SRAM/JLP)
 - Easter eggs / cheat codes
 - Attract mode demo playback
+- Wingman "goodbye" animation when player dies

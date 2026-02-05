@@ -125,7 +125,7 @@ CONST MARCH_SPEED_MIN = 24      ' Fastest march speed (minimum frames) - balance
 CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
 CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed (pixels per frame) - doubled for challenge
-CONST ALIEN_SHOOT_RATE = 30     ' Frames between alien shots
+CONST ALIEN_SHOOT_RATE = 40     ' Frames between alien shots (~1.5/sec)
 CONST RAPID_SPEED    = 3        ' Rapid fire bullet speed (3px/frame)
 CONST RAPID_COOLDOWN = 8        ' Frames between rapid fire shots
 
@@ -4974,30 +4974,7 @@ ShipGfx:
     BITMAP "........"
 
 ' Compact "X" multiplier for HUD lives display
-' ShipHudGfx:
-'     BITMAP "........"
-'     BITMAP "........"
-'     BITMAP ".##..#.#"
-'     BITMAP ".##...#."
-'     BITMAP "#..#.#.#"
-'     BITMAP "#..#...."
-'     BITMAP "........"
-'     BITMAP "........"
-
-' Compact "X" multiplier for HUD lives display
-' ShipHudGfx:
-'     BITMAP "........"
-'     BITMAP "........"
-'     BITMAP "....##.."
-'     BITMAP "..###..#"
-'     BITMAP "#####..."
-'     BITMAP "..##...#"
-'     BITMAP "...#...."
-'     BITMAP "........"
-
 ShipHudGfx:
-
-
     BITMAP "...#...."
     BITMAP "#.#.#.#."
     BITMAP "#######."
