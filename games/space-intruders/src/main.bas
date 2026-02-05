@@ -1178,9 +1178,9 @@ StartGame:
     PRINT AT 232, 0                              ' Clear second digit slot
     ' Powerup indicator at 233-234 (clear initially)
     PRINT AT 233, 0 : PRINT AT 234, 0
-    ' Lives ship icon at 236, X at 237, count at 238
+    ' Lives: X tile at 236, count at 238 (with gap)
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
-    PRINT AT 237 COLOR COL_WHITE, "X3"
+    PRINT AT 238 COLOR COL_WHITE, "2"
 
     ' Initialize saucer (inactive, random spawn delay 1-4 seconds)
     FlyState = 0
@@ -2843,12 +2843,11 @@ GearPanic:
 END
 
 ' --------------------------------------------
-' UpdateLivesHUD - Show lives remaining at HUD position 237
+' UpdateLivesHUD - Show lives remaining (X tile at 236, number at 237)
 ' Replaces 4 identical IF/ELSEIF chains (invasion, death, extra life, wave start)
 ' --------------------------------------------
 UpdateLivesHUD: PROCEDURE
     IF Lives > 0 THEN
-        PRINT AT 237 COLOR COL_WHITE, "X"
         PRINT AT 238 COLOR COL_WHITE, <> (Lives - 1)
     END IF
     RETURN
@@ -4974,16 +4973,39 @@ ShipGfx:
     BITMAP "X......X"
     BITMAP "........"
 
-' Compact ship icon for HUD (vertically centered to match GROM text)
+' Compact "X" multiplier for HUD lives display
+' ShipHudGfx:
+'     BITMAP "........"
+'     BITMAP "........"
+'     BITMAP ".##..#.#"
+'     BITMAP ".##...#."
+'     BITMAP "#..#.#.#"
+'     BITMAP "#..#...."
+'     BITMAP "........"
+'     BITMAP "........"
+
+' Compact "X" multiplier for HUD lives display
+' ShipHudGfx:
+'     BITMAP "........"
+'     BITMAP "........"
+'     BITMAP "....##.."
+'     BITMAP "..###..#"
+'     BITMAP "#####..."
+'     BITMAP "..##...#"
+'     BITMAP "...#...."
+'     BITMAP "........"
+
 ShipHudGfx:
+
+
+    BITMAP "...#...."
+    BITMAP "#.#.#.#."
+    BITMAP "#######."
+    BITMAP "##...##."
     BITMAP "........"
-    BITMAP "...XX..."
-    BITMAP "..XXXX.."
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XX....XX"
-    BITMAP "........"
-    BITMAP "........"
+    BITMAP "....X.X."
+    BITMAP ".....X.."
+    BITMAP "....X.X."
 
 ' Ship accent overlay (fills gaps in body for 2-color effect)
 ShipAccentGfx:
