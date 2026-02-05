@@ -54,6 +54,10 @@ CONST GRAM_FONT_R = 33          ' Reused as GRAM_HUD_9 during gameplay
 CONST GRAM_FONT_U = 34          ' Reused as GRAM_HUD_10 during gameplay
 CONST GRAM_FONT_D = 35          ' Reused as GRAM_HUD_11 during gameplay
 CONST GRAM_FONT_F = 36          ' Reused as GRAM_HUD_12 during gameplay
+CONST GRAM_FONT_G = 37          ' Game over screen only
+CONST GRAM_FONT_M = 38          ' Game over screen only
+CONST GRAM_FONT_O = 40          ' Game over screen only (skip 39=saucer)
+CONST GRAM_FONT_V = 41          ' Game over screen only
 
 ' Gameplay HUD slots (reuse title font cards 25-36 after title screen)
 ' Powerup HUD indicator GRAM slots (reuse title font cards 25-32)
@@ -1699,11 +1703,31 @@ ChainDone:
                 GOSUB HideAllSprites
                 ' Update high score
                 IF #Score > #HighScore THEN #HighScore = #Score
-                ' "GAME OVER" in tan at row 2 col 5, centered
-                PRINT AT 45 COLOR COL_TAN, "GAME OVER"
-                ' Score at row 5, centered
-                PRINT AT 104 COLOR COL_WHITE, "SCORE  "
-                PRINT AT 111, <>#Score
+                ' Reload title font for game over screen (powerup HUD overwrote it)
+                DEFINE GRAM_FONT_S, 4, FontSGfx  ' Cards 25-28: S, P, A, C
+                WAIT
+                DEFINE GRAM_FONT_E, 4, FontEGfx  ' Cards 29-32: E, I, N, T
+                WAIT
+                DEFINE GRAM_FONT_R, 4, FontRGfx  ' Cards 33-36: R, U, D, F
+                WAIT
+                DEFINE GRAM_FONT_G, 2, FontGGfx  ' Cards 37-38: G, M
+                WAIT
+                DEFINE GRAM_FONT_O, 2, FontOGfx  ' Cards 40-41: O, V
+                WAIT
+                ' "GAME OVER" in custom font at row 2 col 5, centered
+                PRINT AT 45, GRAM_FONT_G * 8 + COL_TAN + $0800
+                PRINT AT 46, GRAM_FONT_A * 8 + COL_TAN + $0800
+                PRINT AT 47, GRAM_FONT_M * 8 + COL_TAN + $0800
+                PRINT AT 48, GRAM_FONT_E * 8 + COL_TAN + $0800
+                PRINT AT 50, GRAM_FONT_O * 8 + COL_TAN + $0800
+                PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
+                PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
+                PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
+                ' Score at row 5, centered using compact GRAM tiles
+                PRINT AT 106, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+                PRINT AT 107, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+                PRINT AT 108, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+                PRINT AT 110 COLOR COL_WHITE, <>#Score
                 ' High score at row 6 (centered under score)
                 IF #Score >= #HighScore THEN
                     PRINT AT 125 COLOR COL_YELLOW, "NEW HIGH!"
@@ -1716,8 +1740,16 @@ ChainDone:
                     PRINT AT 143 COLOR COL_BLUE, "BEST CHAIN "
                     PRINT AT 154, <>ChainMax
                 END IF
-                ' "PRESS FIRE" at row 10, centered
-                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
+                ' "PRESS FIRE" at row 10, centered using custom font
+                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
+                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
+                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
+                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
+                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
                 ' Voice announcement
                 IF VOICE.AVAILABLE THEN
                     VOICE PLAY game_over_phrase
@@ -5220,6 +5252,47 @@ FontFGfx:
     BITMAP "XX......"
     BITMAP "XX......"
     BITMAP "XX......"
+
+FontGGfx:
+    BITMAP ".XXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX..XXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+
+FontMGfx:
+    BITMAP "XX...XX."
+    BITMAP "XXX.XXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XX.X.XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+FontOGfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+FontVGfx:
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XX.XX.."
+    BITMAP "..XXX..."
+    BITMAP "...X...."
 
 ' --- Star dots (single pixel at different positions for variety) ---
 Star1Gfx:
