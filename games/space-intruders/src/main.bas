@@ -693,6 +693,10 @@ TitleLoop:
                 FlyX = 0 : FlyY = 0
                 LoopVar = PAT_FIGURE8
                 GOSUB FlightStart
+                ' Reset title animation for another reveal cascade
+                TitleAnimState = 0
+                RevealCol = 0
+                GOSUB DrawTitleAnimated
             END IF
         END IF
     END IF
@@ -722,8 +726,8 @@ TitleLoop:
     ' --- Y-Axis Letter Animation ---
     ' Simple: Zod's X position directly determines which letters are revealed
     IF TitleAnimState = 0 THEN
-        ' RevealCol = FlyX / 6, capped at 14
-        Col = FlyX / 6
+        ' RevealCol = FlyX / 5, capped at 14
+        Col = FlyX / 5
         IF Col > 14 THEN Col = 14
         IF Col <> RevealCol THEN
             RevealCol = Col
@@ -736,11 +740,30 @@ TitleLoop:
         END IF
     END IF
 
-    ' Vanish cascade: VanishCol increments, letters vanish left to right
+    ' Vanish cascade: VanishCol 0-15 = letters (fast), 16+ = screen wipe (2 cols/frame)
     IF TitleAnimState = 2 THEN
-        VanishCol = VanishCol + 1
-        GOSUB DrawTitleAnimated
-        IF VanishCol >= 15 THEN TitleAnimState = 3
+        IF VanishCol < 16 THEN
+            ' Phase 1: Letter vanish animation (2x speed)
+            VanishCol = VanishCol + 2
+            GOSUB DrawTitleAnimated
+        ELSE
+            ' Phase 2: Screen wipe - clear 1 column per frame (smooth sweep)
+            WipeCol = VanishCol - 16
+            IF WipeCol < 20 THEN
+                FOR Row = 0 TO 11
+                    PRINT AT Row * 20 + WipeCol, 0
+                NEXT Row
+            END IF
+            VanishCol = VanishCol + 1
+            GOSUB HideAllSprites
+        END IF
+        IF VanishCol >= 36 THEN
+            ' Wipe complete - transition to gameplay
+            SOUND 0, , 0 : SOUND 1, , 0 : SOUND 2, , 0
+            POKE $1F8, $3F
+            PLAY SIMPLE : PLAY VOLUME 12 : PLAY si_bg_slow
+            GOTO StartGame
+        END IF
     END IF
 
     ' March animation - move grid 1 card every 32 frames
@@ -991,27 +1014,11 @@ SkipPressfire:
         Key1Held = 0
     END IF
     IF Key1Held >= 4 THEN
-        ' Handle fire button based on animation state
+        ' Start vanish cascade (only if not already vanishing)
         IF TitleAnimState = 0 OR TitleAnimState = 1 THEN
-            ' Start vanish cascade
             TitleAnimState = 2
             VanishCol = 0
-            Key1Held = 0  ' Reset to prevent instant transition
-        ELSEIF TitleAnimState = 3 THEN
-            ' Vanish complete, proceed to gameplay
-            ' Silence any lingering PSG state before gameplay
-            SOUND 0, , 0
-            SOUND 1, , 0
-            SOUND 2, , 0
-            POKE $1F8, $3F  ' Disable all tone + noise channels
-            ' Start gameplay music (slow for wave 1)
-            PLAY SIMPLE
-            PLAY VOLUME 12
-            PLAY si_bg_slow
-            SPRITE SPR_FLYER, 0, 0, 0  ' Hide flyer before gameplay
-            GOTO StartGame
         END IF
-        ' TitleAnimState=2 (vanish in progress) - do nothing, wait for completion
     END IF
 
     GOTO TitleLoop
@@ -1043,36 +1050,6 @@ END
 ClearRogueOnly: PROCEDURE
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     SPRITE SPR_FLYER, 0, 0, 0
-    RETURN
-END
-
-' --- ClearEnemyState: Reset rogue alien AND wingman state (used on player death) ---
-ClearEnemyState: PROCEDURE
-    RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
-    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
-    SPRITE SPR_FLYER, 0, 0, 0
-    SPRITE SPR_POWERUP, 0, 0, 0
-    RETURN
-END
-
-' --- Draw title text "SPACE INTRUDERS" using custom GRAM font ---
-DrawTitleText: PROCEDURE
-    ' Title text using custom GRAM font (tan = color 3)
-    PRINT AT 22, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
-    PRINT AT 23, GRAM_FONT_P * 8 + COL_TAN + $0800  ' P
-    PRINT AT 24, GRAM_FONT_A * 8 + COL_TAN + $0800  ' A
-    PRINT AT 25, GRAM_FONT_C * 8 + COL_TAN + $0800  ' C
-    PRINT AT 26, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
-    '   position 27 = space (leave black)
-    PRINT AT 28, GRAM_FONT_I * 8 + COL_TAN + $0800  ' I
-    PRINT AT 29, GRAM_FONT_N * 8 + COL_TAN + $0800  ' N
-    PRINT AT 30, GRAM_FONT_T * 8 + COL_TAN + $0800  ' T
-    PRINT AT 31, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
-    PRINT AT 32, GRAM_FONT_U * 8 + COL_TAN + $0800  ' U
-    PRINT AT 33, GRAM_FONT_D * 8 + COL_TAN + $0800  ' D
-    PRINT AT 34, GRAM_FONT_E * 8 + COL_TAN + $0800  ' E
-    PRINT AT 35, GRAM_FONT_R * 8 + COL_TAN + $0800  ' R
-    PRINT AT 36, GRAM_FONT_S * 8 + COL_TAN + $0800  ' S
     RETURN
 END
 
@@ -2424,24 +2401,6 @@ CheckRowForHit: PROCEDURE
             END IF
         END IF
     END IF
-    RETURN
-END
-
-' --------------------------------------------
-' FindBoss - Check if (AlienGridRow, AlienGridCol) belongs to a boss
-' Sets FoundBoss = slot index (0-2) or 255 if not a boss
-' --------------------------------------------
-FindBoss: PROCEDURE
-    FoundBoss = 255
-    FOR BossIdx = 0 TO BossCount - 1
-        IF BossHP(BossIdx) > 0 THEN
-            IF AlienGridRow = BossRow(BossIdx) THEN
-                IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
-                    FoundBoss = BossIdx
-                END IF
-            END IF
-        END IF
-    NEXT BossIdx
     RETURN
 END
 
@@ -4099,12 +4058,12 @@ UpdateCapture: PROCEDURE
     IF RogueX > 160 THEN RogueX = 160
 
     ' Render wingman (skip if power-up capsule is using the sprite)
-    ' Uses Mooninite-style graphics (GRAM_WINGMAN_F1/F2) in green to show friendly
+    ' Uses Mooninite-style graphics (GRAM_WINGMAN_F1/F2) in captured alien's color
     IF TitleFrame = 0 THEN
         IF AnimFrame = 0 THEN
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + COL_GREEN + $0800
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
         ELSE
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + COL_GREEN + $0800
+            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
         END IF
     END IF
 
@@ -4762,36 +4721,64 @@ SaucerAnimate: PROCEDURE
             IF BulletY <= FlyY + 6 THEN
                 IF BulletX >= FlyX - 4 THEN
                     IF BulletX <= FlyX + 16 THEN
-                        ' HIT the saucer!
-                        #GameFlags = #GameFlags AND $FFFE
-                        ChainCount = 0  ' Saucer is not an alien — break chain
-                        GOSUB DeactivateSaucer
-                        ' Saucer crash SFX (deep rumble + descending pitch)
-                        SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-                        SOUND 2, 150, 15  ' Immediate tone hit on channel 3
-                        ' Bonus points
-                        #Score = #Score + 100
-                        ' Drop power-up from saucer position
-                        TitleFrame = 1       ' Falling
-                        TitleMarchDir = FlyX        ' Drop from saucer X
-                        PowerUpY = FlyY      ' Start falling from saucer Y
-                        SlidePos = 0
-                        ' First powerup tutorial hint (flashing)
-                        IF TutorialTimer = 255 THEN TutorialTimer = 180
-                        ' Clear previous explosion tile if still active
-                        IF ExplosionTimer > 0 THEN
-                            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                        END IF
-                        ' Show explosion at saucer position using BACKTAB
-                        #ExplosionPos = FlyX / 8
-                        ExplosionTimer = 15
-                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                        GOSUB SaucerHit
                     END IF
                 END IF
             END IF
         END IF
     END IF
 
+    ' Check collision with wingman bullet (convert BACKTAB row/col to pixels)
+    IF #GameFlags AND FLAG_CAPBULLET THEN
+        ' Convert wingman bullet to pixel coords: col*8+8, row*8+8
+        CapPixelX = CapBulletCol * 8 + 8
+        CapPixelY = CapBulletRow * 8 + 8
+        IF CapPixelY + 6 >= FlyY THEN
+            IF CapPixelY <= FlyY + 6 THEN
+                IF CapPixelX >= FlyX - 4 THEN
+                    IF CapPixelX <= FlyX + 16 THEN
+                        ' Clear the wingman bullet from BACKTAB
+                        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+                        #GameFlags = #GameFlags AND $FFF7  ' Deactivate wingman bullet
+                        GOSUB SaucerHit
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    RETURN
+END
+
+' --------------------------------------------
+' SaucerHit - Handle saucer destruction (shared by player and wingman bullets)
+' --------------------------------------------
+SaucerHit: PROCEDURE
+    ' Deactivate player bullet if it was the one that hit
+    #GameFlags = #GameFlags AND $FFFE
+    ChainCount = 0  ' Saucer is not an alien — break chain
+    GOSUB DeactivateSaucer
+    ' Saucer crash SFX (deep rumble + descending pitch)
+    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
+    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
+    ' Bonus points
+    #Score = #Score + 100
+    ' Drop power-up from saucer position
+    TitleFrame = 1       ' Falling
+    TitleMarchDir = FlyX        ' Drop from saucer X
+    PowerUpY = FlyY      ' Start falling from saucer Y
+    SlidePos = 0
+    ' First powerup tutorial hint (flashing)
+    IF TutorialTimer = 255 THEN TutorialTimer = 180
+    ' Clear previous explosion tile if still active
+    IF ExplosionTimer > 0 THEN
+        IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+    END IF
+    ' Show explosion at saucer position using BACKTAB
+    #ExplosionPos = FlyX / 8
+    ExplosionTimer = 15
+    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
     RETURN
 END
 
