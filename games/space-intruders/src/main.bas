@@ -71,9 +71,9 @@ CONST GRAM_PWR_ME = 31          ' MEGA tile 1: "ME"
 CONST GRAM_PWR_GA = 32          ' MEGA tile 2: "GA"
 ' Shield and remaining HUD slots (title font cards 33-36)
 CONST GRAM_SHIELD = 33          ' Shield arc above player ship
-CONST GRAM_HUD_10 = 34          ' Available for future HUD graphics
-CONST GRAM_HUD_11 = 35          ' Available for future HUD graphics
-CONST GRAM_HUD_12 = 36          ' Available for future HUD graphics
+CONST GRAM_WARP1  = 34          ' Warp-in frame 1: single pixel (arriving)
+CONST GRAM_WARP2  = 35          ' Warp-in frame 2: forming cluster
+CONST GRAM_WARP3  = 36          ' Warp-in frame 3: coalescing shape
 CONST GRAM_STAR1  = 37        ' Star dot (upper-left pixel)
 CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
 CONST GRAM_SAUCER = 39         ' Flying saucer (bonus target)
@@ -1349,6 +1349,8 @@ StartGame:
     WAIT
     DEFINE GRAM_SHIELD, 1, ShieldArcGfx  ' Card 33: Shield arc
     WAIT
+    DEFINE GRAM_WARP1, 3, WarpInGfx1    ' Cards 34-36: Warp-in animation
+    WAIT
     ' Cards 39-55: Saucer, beams, capsules, bombs, zigzag
     DEFINE GRAM_SAUCER, 1, SaucerGfx      ' Card 39
     WAIT
@@ -1614,18 +1616,26 @@ GameLoop:
             END IF
         END IF
     ELSEIF #GameFlags AND FLAG_TOPDOWN THEN
-        ' Top-to-bottom row reveal (every 8 frames for dramatic effect)
-        IF (ShimmerCount AND 7) = 0 THEN
-            IF WaveRevealRow < ALIEN_ROWS - 1 THEN
+        ' Top-to-bottom row reveal with warp-in animation
+        IF WaveRevealRow < ALIEN_ROWS - 1 THEN
+            MarchCount = MarchCount + 1
+            IF MarchCount >= 3 THEN
+                ' Warp complete for this row, advance to next
+                MarchCount = 0
                 WaveRevealRow = WaveRevealRow + 1
-                HitCol = 1  ' Reveal advanced
             END IF
+            HitCol = 1  ' Warp animation needs redraw every frame
         END IF
     ELSEIF (#GameFlags AND FLAG_REVEAL) = 0 THEN
-        ' Standard left-to-right reveal (Pattern A) or fully revealed
+        ' Standard left-to-right reveal with warp-in animation
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
-            WaveRevealCol = WaveRevealCol + 1
-            HitCol = 1  ' Reveal advanced
+            MarchCount = MarchCount + 1
+            IF MarchCount >= 3 THEN
+                ' Warp complete for this column, advance to next
+                MarchCount = 0
+                WaveRevealCol = WaveRevealCol + 1
+            END IF
+            HitCol = 1  ' Warp animation needs redraw every frame
         END IF
     ELSE
         ' Dual-slide mode (Pattern B) - halves fly in from screen edges
@@ -3829,7 +3839,14 @@ DrawAliens: PROCEDURE
                             ' Restore normal alien card for subsequent columns
                             #Card = AlienCard * 8 + AlienColor + $0800
                         ELSE
-                            PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                            ' Warp-in: show materialize frames for currently revealing elements
+                            IF (#GameFlags AND FLAG_TOPDOWN) AND Row = WaveRevealRow AND WaveRevealRow < ALIEN_ROWS - 1 THEN
+                                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, (GRAM_WARP1 + MarchCount) * 8 + AlienColor + $0800
+                            ELSEIF Col = WaveRevealCol AND WaveRevealCol < ALIEN_COLS - 1 THEN
+                                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, (GRAM_WARP1 + MarchCount) * 8 + AlienColor + $0800
+                            ELSE
+                                PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
+                            END IF
                         END IF
                     ELSE
                         PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
@@ -5045,7 +5062,7 @@ WavePalette2:
 ' Pattern B always uses pincer (both sides meet in middle)
 WaveEntranceData:
     ' 0=Left sweep, 1=Top-down reveal (rows in place), 2=Fly-down from above
-    DATA 2, 0, 1, 0, 1, 0, 0, 1  ' Waves 1-8: F, L, T, L, T, L, L, T
+    DATA 1, 0, 1, 0, 1, 0, 0, 1  ' Waves 1-8: T, L, T, L, T, L, L, T
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
@@ -5468,6 +5485,40 @@ Alien3Gfx:
     BITMAP "X.XX.X.."
     BITMAP "X....X.."
     BITMAP "X....X.."
+    BITMAP "........"
+
+' Warp-in animation frames (universal for all alien types)
+WarpInGfx1:
+    ' Frame 1: single pixel - just arriving from hyperspace
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "...X...."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+WarpInGfx2:
+    ' Frame 2: forming cluster - coalescing from warp
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "...X...."
+    BITMAP "..XXX..."
+    BITMAP "..X.X..."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+WarpInGfx3:
+    ' Frame 3: nearly solid - about to lock in as alien
+    BITMAP "........"
+    BITMAP "...X...."
+    BITMAP "..XXX..."
+    BITMAP "..X.X..."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "........"
     BITMAP "........"
 
 ' Bullet graphic
