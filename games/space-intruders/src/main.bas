@@ -220,8 +220,11 @@ CONST FLAG_PLAYERHIT = 16       ' Bit 4: PlayerHit
 CONST FLAG_SHOTLAND  = 32       ' Bit 5: ShotLanded
 CONST FLAG_AUTOFIRE  = 64       ' Bit 6: AutoFire
 CONST FLAG_DEBUG     = 128      ' Bit 7: DebugMode
-CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode
+CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode (pincer)
 CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
+CONST FLAG_TOPDOWN   = 1024     ' Bit 10: TopDown reveal mode (rows appear in place)
+CONST FLAG_FLYDOWN   = 2048     ' Bit 11: FlyDown mode (aliens descend from above)
+CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Key0 debounce (wingman toggle)
 
 ' --------------------------------------------
 ' Variables
@@ -341,11 +344,11 @@ ShieldHits    = 0               ' Shield charges (0=none, 1=damaged, 2=full)
 ' AutoFire packed into #GameFlags (FLAG_AUTOFIRE)
 Key1Held    = 0                 ' Debounce flag for keypad 1
 ' DebugMode packed into #GameFlags (FLAG_DEBUG)
-CheatState  = 0                 ' Cheat code entry: 0=idle, 1=got '3'
-CheatHeld   = 0                 ' Debounce for cheat code keys
+CheatCode   = 0                 ' Packed cheat entry: bits 0-2=held timer, bit 3=got '3'
 SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
-' RevealMode packed into #GameFlags (FLAG_REVEAL)
+' RevealMode packed into #GameFlags (FLAG_REVEAL for pincer, FLAG_TOPDOWN for top-down)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
+WaveRevealRow = ALIEN_ROWS - 1  ' Row reveal: top-down=rows revealed, fly-down=rows hidden above
 #HighScore  = 0                 ' Session high score (persists until ROM reset)
 ChainCount  = 0                 ' Consecutive successful shots (chain combo)
 ChainMax    = 0                 ' Best chain this game
@@ -368,7 +371,7 @@ RogueCenterY   = 0                 ' Circle center Y during dive
 CaptureColor   = 0                 ' Color of captured alien type
 CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
-Key0Held       = 0                 ' Debounce: 1 = keypad 0 was held last frame
+' Key0Held packed into #GameFlags (FLAG_KEY0HELD)
 ' CapBulletActive packed into #GameFlags (FLAG_CAPBULLET)
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
@@ -383,6 +386,7 @@ BossIdx        = 0                 ' Temp: loop index for boss iteration
 FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
 RowBoss1       = 255               ' Cached: 1st boss index on current row (255=none)
 RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=none)
+RowHasBoss     = 0                 ' Cached: 1=current row has boss, 0=no boss
 DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
 ' Column bitmask lookup table is in ROM (see ColMaskData near end of file)
 ' Chain explosion state (bomb alien)
@@ -570,7 +574,7 @@ ResetToTitle:
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0
-    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7 : Key0Held = 0
+    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7 : #GameFlags = #GameFlags AND $EFFF
     DualTimer = 0
     #MegaTimer = 0
     MegaBeamTimer = 0
@@ -977,17 +981,17 @@ SkipPressfire:
     END IF
 
     ' Cheat code: type "36" on keypad to toggle debug mode
+    ' CheatCode packed: bits 0-2 = held timer, bit 3 = got '3'
     IF CONT.KEY = 3 THEN
-        IF CheatHeld = 0 THEN
-            CheatHeld = 5
-            CheatState = 1
+        IF (CheatCode AND 7) = 0 THEN
+            CheatCode = 8 + 5  ' Set state=1 (bit 3), held=5
         END IF
     ELSEIF CONT.KEY = 6 THEN
-        IF CheatHeld = 0 THEN
-            CheatHeld = 5
-            IF CheatState = 1 THEN
+        IF (CheatCode AND 7) = 0 THEN
+            CheatCode = (CheatCode AND 8) + 5  ' Keep state, set held=5
+            IF CheatCode >= 8 THEN
                 #GameFlags = #GameFlags XOR FLAG_DEBUG
-                CheatState = 0
+                CheatCode = 5  ' Clear state, keep held=5
                 ' Flash border to confirm
                 IF #GameFlags AND FLAG_DEBUG THEN
                     BORDER COL_RED
@@ -1003,11 +1007,11 @@ SkipPressfire:
             END IF
         END IF
     ELSE
-        IF CheatHeld > 0 THEN CheatHeld = CheatHeld - 1
+        IF CheatCode AND 7 THEN CheatCode = CheatCode - 1
         ' Reset cheat state if a non-3/6 key is pressed
         IF CONT.KEY < 12 THEN
             IF CONT.KEY <> 3 THEN
-                IF CONT.KEY <> 6 THEN CheatState = 0
+                IF CONT.KEY <> 6 THEN CheatCode = CheatCode AND 7  ' Clear bit 3
             END IF
         END IF
     END IF
@@ -1379,9 +1383,11 @@ StartGame:
     BaseMarchSpeed = MARCH_SPEED_START
     CurrentMarchSpeed = MARCH_SPEED_START
     MusicGear = 0
-    WaveRevealCol = 0             ' Start column sweep from left
+    WaveRevealRow = 0
     SubWave = 0
     #GameFlags = #GameFlags AND $FEFF
+    LoopVar = 0  ' Wave 1 = index 0
+    GOSUB SetEntrancePattern
     RightRevealCol = ALIEN_COLS - 1
 
     ' Draw HUD: SCORE (left) | CHAIN | POWERUP | LIVES (right)
@@ -1589,7 +1595,31 @@ GameLoop:
     END IF
 
     ' Advance wave reveal
-    IF (#GameFlags AND FLAG_REVEAL) = 0 THEN
+    IF #GameFlags AND FLAG_FLYDOWN THEN
+        ' Fly-down: entire grid descends from above screen
+        ' WaveRevealRow = rows still hidden above (counts DOWN to 0)
+        IF WaveRevealRow > 0 THEN
+            WaveRevealRow = WaveRevealRow - 1
+            HitCol = 1  ' Descent continues, redraw needed
+            IF WaveRevealRow = 0 THEN
+                ' Descent complete, clear flag and wipe ghost trails
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_FLYDOWN)
+                ' Clear rows 0 through ALIEN_ROWS-1 to remove any fly-down ghosts
+                FOR ClearRow = 0 TO ALIEN_ROWS - 1
+                    #ScreenPos = ClearRow * 20
+                    FOR Col = 0 TO ALIEN_COLS + 1
+                        PRINT AT #ScreenPos + Col, 0
+                    NEXT Col
+                NEXT ClearRow
+            END IF
+        END IF
+    ELSEIF #GameFlags AND FLAG_TOPDOWN THEN
+        ' Top-to-bottom row reveal
+        IF WaveRevealRow < ALIEN_ROWS - 1 THEN
+            WaveRevealRow = WaveRevealRow + 1
+            HitCol = 1  ' Reveal advanced
+        END IF
+    ELSEIF (#GameFlags AND FLAG_REVEAL) = 0 THEN
         ' Standard left-to-right reveal (Pattern A) or fully revealed
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             WaveRevealCol = WaveRevealCol + 1
@@ -1597,33 +1627,22 @@ GameLoop:
         END IF
     ELSE
         ' Dual-slide mode (Pattern B) - halves fly in from screen edges
-        ' WaveRevealCol = left group X offset (0→5)
-        ' RightRevealCol = right group X offset (10→5)
-        MarchCount = MarchCount + 1
-        IF MarchCount >= 4 THEN
-            MarchCount = 0
-            IF WaveRevealCol < 5 THEN WaveRevealCol = WaveRevealCol + 1
-            IF RightRevealCol > 5 THEN RightRevealCol = RightRevealCol - 1
-            IF WaveRevealCol >= 5 THEN
-                IF RightRevealCol <= 5 THEN
-                    ' Slide complete - switch to normal march mode
-                    #GameFlags = #GameFlags AND $FEFF
-                    WaveRevealCol = ALIEN_COLS - 1
-                    MarchCount = 0
-                    ' Clear alien area: reveal drew at WaveRevealCol+Col but
-                    ' standard mode draws at AlienOffsetX+Col. After grid
-                    ' normalization shifts AlienOffsetX, there's a gap that
-                    ' leaves ghost tiles from the last reveal frame.
-                    FOR ClearRow = 0 TO ALIEN_ROWS - 1
-                        IF ALIEN_START_Y + AlienOffsetY + ClearRow < 11 THEN
-                            #ScreenPos = (ALIEN_START_Y + AlienOffsetY + ClearRow) * 20
-                            FOR Col = 0 TO 19
-                                PRINT AT #ScreenPos + Col, 0
-                            NEXT Col
-                        END IF
-                    NEXT ClearRow
+        ' Advance every frame (no timer) to match fly-down speed
+        IF WaveRevealCol < 5 THEN WaveRevealCol = WaveRevealCol + 1
+        IF RightRevealCol > 5 THEN RightRevealCol = RightRevealCol - 1
+        IF WaveRevealCol >= 5 AND RightRevealCol <= 5 THEN
+            ' Slide complete - switch to normal march mode
+            #GameFlags = #GameFlags AND $FEFF
+            WaveRevealCol = ALIEN_COLS - 1
+            ' Clear alien area to remove ghost tiles
+            FOR ClearRow = 0 TO ALIEN_ROWS - 1
+                IF ALIEN_START_Y + AlienOffsetY + ClearRow < 11 THEN
+                    #ScreenPos = (ALIEN_START_Y + AlienOffsetY + ClearRow) * 20
+                    FOR Col = 0 TO 19
+                        PRINT AT #ScreenPos + Col, 0
+                    NEXT Col
                 END IF
-            END IF
+            NEXT ClearRow
         END IF
         HitCol = 1  ' Pattern B always redraws during slide-in
     END IF
@@ -1631,9 +1650,11 @@ GameLoop:
     ' Single DrawAliens call per frame (if needed)
     IF HitCol THEN GOSUB DrawAliens
 
-    ' Check if reveal is complete
+    ' Check if reveal is complete (all entrance animations done)
     HitCol = 0
-    IF WaveRevealCol >= ALIEN_COLS - 1 THEN HitCol = 1
+    IF WaveRevealCol >= ALIEN_COLS - 1 THEN
+        IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN HitCol = 1
+    END IF
 
     ' Update alien march (only after reveal is complete, and not during death)
     IF HitCol THEN
@@ -2273,8 +2294,8 @@ MovePlayer: PROCEDURE
 
     ' Keypad 0: capture rogue alien during dogfight (with debounce)
     IF CONT.KEY = 0 THEN
-        IF Key0Held = 0 THEN
-            Key0Held = 1
+        IF (#GameFlags AND FLAG_KEY0HELD) = 0 THEN
+            #GameFlags = #GameFlags OR FLAG_KEY0HELD
             IF RogueDivePhase = 254 THEN
                 IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN
                     ' Capture the rogue alien as wingman
@@ -2293,7 +2314,7 @@ MovePlayer: PROCEDURE
             END IF
         END IF
     ELSE
-        Key0Held = 0
+        #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD
     END IF
 
     ' Fire: side buttons (not keypad) or auto-fire
@@ -2891,6 +2912,8 @@ FindShooter: PROCEDURE
     RETURN
 END
 
+    SEGMENT 2   ' Move large procedures to Segment 2 for headroom
+
 ' --------------------------------------------
 ' MoveAlienBullet - Move alien bullet down + check player collision
 ' --------------------------------------------
@@ -2974,7 +2997,29 @@ DrawAlienBullet: PROCEDURE
     RETURN
 END
 
-    SEGMENT 2   ' Move large procedures to Segment 2 for headroom
+' --- SetEntrancePattern: Set entrance mode from DATA table ---
+' Input: LoopVar = wave index (0-7)
+' WaveEntranceData values: 0=left sweep, 1=top-down reveal, 2=fly-down from above
+SetEntrancePattern: PROCEDURE
+    ' Clear both entrance flags
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_TOPDOWN)
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_FLYDOWN)
+    WaveRevealCol = 0
+    WaveRevealRow = 0
+    HitRow = WaveEntranceData(LoopVar)
+    IF HitRow = 1 THEN
+        ' Top-down reveal: rows appear in place one at a time
+        #GameFlags = #GameFlags OR FLAG_TOPDOWN
+        WaveRevealCol = ALIEN_COLS - 1
+        ' WaveRevealRow counts UP (0 to ALIEN_ROWS-1) for rows revealed
+    ELSEIF HitRow = 2 THEN
+        ' Fly-down: entire grid descends from above screen
+        #GameFlags = #GameFlags OR FLAG_FLYDOWN
+        WaveRevealCol = ALIEN_COLS - 1
+        WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
+    END IF
+    RETURN
+END
 
 ' --- ShipReveal: Animate ship rising from behind HUD ---
 ShipReveal: PROCEDURE
@@ -3576,9 +3621,22 @@ DrawAliens: PROCEDURE
 
     ' Draw aliens and clear trail in ONE pass (no flicker)
     FOR Row = 0 TO ALIEN_ROWS - 1
+        ' Calculate effective screen row
+        ClearRow = ALIEN_START_Y + AlienOffsetY + Row
+        HitCol = 1  ' Default: draw this row (reuse HitCol as skip flag)
+        ' Fly-down mode: subtract offset (aliens start above screen)
+        ' WaveRevealRow = rows hidden above screen (counts down to 0)
+        IF #GameFlags AND FLAG_FLYDOWN THEN
+            IF ClearRow < WaveRevealRow THEN
+                ' Row is above screen, skip entirely
+                HitCol = 0
+            ELSE
+                ClearRow = ClearRow - WaveRevealRow
+            END IF
+        END IF
         ' Skip if this row would land on the HUD (row 11 = positions 220+)
-        IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
-        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+        IF HitCol AND ClearRow < 11 THEN
+        #ScreenPos = ClearRow * 20
 
         ' Determine which alien type and wave color for this row
         IF Row = 0 THEN
@@ -3699,10 +3757,14 @@ DrawAliens: PROCEDURE
                 #Mask = #Mask + #Mask
             NEXT Col
         ELSE
-            ' Standard mode: draw with column reveal gating
+            ' Standard mode: draw with column/row reveal gating
+            ' Top-down mode gates by row, left sweep gates by column
+            IF (#GameFlags AND FLAG_TOPDOWN) AND Row > WaveRevealRow THEN
+                ' Row not yet revealed in top-down mode - skip drawing
+            ELSE
             #Mask = 1
             FOR Col = 0 TO ALIEN_COLS - 1
-                IF Col <= WaveRevealCol THEN
+                IF (#GameFlags AND FLAG_TOPDOWN) OR Col <= WaveRevealCol THEN
                     IF #AlienRow(Row) AND #Mask THEN
                         ' Check if this cell is a boss (inline, no GOSUB)
                         FoundBoss = 255
@@ -3780,6 +3842,7 @@ DrawAliens: PROCEDURE
             IF AlienOffsetX < ALIEN_MAX_X THEN
                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
             END IF
+            END IF  ' top-down row gating
         END IF
         END IF  ' row < 11 (protect HUD)
     NEXT Row
@@ -3870,6 +3933,7 @@ LoadPatternB: PROCEDURE
 
     ' Set dual-slide mode: halves fly in from screen edges
     #GameFlags = #GameFlags OR FLAG_REVEAL
+    #GameFlags = #GameFlags AND $FBFF  ' Clear top-down flag for pincer
     WaveRevealCol = 0              ' Left group starts at far left
     RightRevealCol = 10            ' Right group starts at far right
 
@@ -4052,9 +4116,12 @@ StartNewWave: PROCEDURE
     #FlyPhase = 0
     TitleFrame = 0
     TitleJitter = 0
-    WaveRevealCol = 0             ' Start column sweep from left
+    WaveRevealRow = 0
     SubWave = 0
     #GameFlags = #GameFlags AND $FEFF
+    LoopVar = Level - 1
+    IF LoopVar > 7 THEN LoopVar = LoopVar AND 7
+    GOSUB SetEntrancePattern
     RightRevealCol = ALIEN_COLS - 1
 
     ' Clear screen (aliens will paint in via game loop)
@@ -4648,10 +4715,12 @@ UpdateSaucer: PROCEDURE
 
     ' Swirl state: circular pattern before entering chase
     IF FlyState = SAUCER_SWIRL THEN
-        ' If player died, escape
+        ' If player death animation nearly done, escape (stay visible during explosion)
         IF DeathTimer > 0 THEN
-            FlyState = SAUCER_ESCAPE
-            FlySpeed = 0
+            IF DeathTimer < 40 THEN
+                FlyState = SAUCER_ESCAPE
+                FlySpeed = 0
+            END IF
             GOSUB SaucerAnimate : RETURN
         END IF
 
@@ -4684,10 +4753,12 @@ UpdateSaucer: PROCEDURE
 
     ' Chase state: fight to the death — pursue until one is destroyed
     IF FlyState = SAUCER_CHASE THEN
-        ' If player just died, saucer escapes victorious
+        ' If player death animation nearly done, saucer escapes (stay visible during explosion)
         IF DeathTimer > 0 THEN
-            FlyState = SAUCER_ESCAPE
-            FlySpeed = 0
+            IF DeathTimer < 40 THEN
+                FlyState = SAUCER_ESCAPE
+                FlySpeed = 0
+            END IF
             GOSUB SaucerAnimate : RETURN
         END IF
         ' Track player X aggressively
@@ -4965,6 +5036,14 @@ WavePalette1:
     DATA 1, 2, 3, 7, 5, 6  ' Crab colors:   Blu, Red, Tan, Wht, Grn, Yel
 WavePalette2:
     DATA 5, 6, 1, 3, 2, 7  ' Octopus colors: Grn, Yel, Blu, Tan, Red, Wht
+
+' Wave entrance patterns (8 entries, indexed by (Level-1) MOD 8)
+' 0 = left sweep (columns appear left-to-right)
+' 1 = top-down (rows appear top-to-bottom)
+' Pattern B always uses pincer (both sides meet in middle)
+WaveEntranceData:
+    ' 0=Left sweep, 1=Top-down reveal (rows in place), 2=Fly-down from above
+    DATA 2, 0, 1, 0, 1, 0, 0, 1  ' Waves 1-8: F, L, T, L, T, L, L, T
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
