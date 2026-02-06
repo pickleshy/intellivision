@@ -6,7 +6,7 @@
 
 ## 1. Bugs (Known Issues)
 
-_None currently tracked. Add issues here as discovered._
+- [ ] **Captured alien dive bomb behavior** — Captured alien slams directly into the player ship instead of engaging in a dogfight. Should behave as an adversarial encounter (strafing, evasion) rather than a kamikaze run.
 
 ---
 
@@ -138,6 +138,7 @@ See detailed spec #14 below — only pursue after feature-complete.
 ### Near-Term
 - [ ] Destructible barriers/shields (spec #2)
 - [ ] Wave announcement transition (spec #6)
+- [ ] Captured alien escape after 2 waves (spec #15)
 
 ### Medium-Term
 - [ ] Boss fight (spec #3)
@@ -321,6 +322,28 @@ Depends on defining capture mechanic. Currently speculative.
 | Sprite updates | Combine MOB register writes |
 
 **Risk:** Maintenance burden, harder to debug. Only for proven bottlenecks.
+
+---
+
+### Spec #15: Captured Alien Escape After 2 Waves
+**Concept:** Captured alien has a limited "loyalty" window. After surviving 2 waves as the player's wingman, it flies away during the next wave announcement — a charming nod to the alien escaping back to its kind.
+
+**Behavior:**
+- Track waves survived with captured alien (counter increments at wave clear)
+- At wave 2 threshold, during the wave announcement transition:
+  - Captured alien sprite breaks formation from the player
+  - Flies upward/offscreen with a brief animation
+  - Optional: small visual flourish (color flash, trail)
+- Next wave starts without captured alien (wingman slot empty)
+- Player must capture a new one
+
+**Variables:** 1 (wave counter for captured alien tenure)
+**GRAM cost:** 0 (reuse existing wingman sprites)
+
+**Design questions:**
+- Should there be a visual/audio cue warning the player ("alien is restless")?
+- Should the escape be preventable (e.g., feed it powerups)?
+- Does the alien rejoin the enemy grid or just disappear?
 
 ---
 
