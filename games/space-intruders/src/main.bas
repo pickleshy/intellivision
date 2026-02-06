@@ -127,6 +127,10 @@ CONST TGRAM_M = 3               ' Cards 3-5 (reuse TGRAM_P slot)
 CONST TGRAM_O = 51              ' Cards 51-53 (reuse TGRAM_U slot)
 CONST TGRAM_V = 54              ' Cards 54-56 (reuse TGRAM_D slot)
 
+' Speech bubble GRAM cards (reuse title font slots 25-26 during gameplay)
+CONST GRAM_BYE1     = 25        ' "bye!" left half (b + y)
+CONST GRAM_BYE2     = 26        ' "bye!" right half (e + !)
+
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
 CONST SPR_FLYER     = 5         ' Title screen flying alien
@@ -187,9 +191,9 @@ CONST CHASE_FIRE_RATE = 45        ' Frames between saucer shots (~1.3 per second
 CONST ROGUE_IDLE       = 0
 CONST ROGUE_SHAKE      = 1
 CONST ROGUE_DIVE       = 2
-CONST ROGUE_COOLDOWN   = 180      ' ~3 sec between trigger checks
+CONST ROGUE_COOLDOWN   = 120      ' ~2 sec between trigger checks
 CONST ROGUE_SHAKE_TIME = 30       ' 0.5 sec shake telegraph
-CONST ROGUE_CHANCE     = 12       ' 1-in-12 per check
+CONST ROGUE_CHANCE     = 6        ' 1-in-6 per check
 
 ' Capture wingman constants
 CONST CAPTURE_FIRE_RATE = 90      ' Frames between allied hitscan shots (~1.5 sec)
@@ -225,6 +229,8 @@ CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
 CONST FLAG_TOPDOWN   = 1024     ' Bit 10: TopDown reveal mode (rows appear in place)
 CONST FLAG_FLYDOWN   = 2048     ' Bit 11: FlyDown mode (aliens descend from above)
 CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Key0 debounce (wingman toggle)
+CONST FLAG_DUAL      = 8192     ' Bit 13: Quad laser active
+CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
 
 ' --------------------------------------------
 ' Variables
@@ -334,7 +340,7 @@ SfxVolume   = 0                 ' Current decay volume (0 = silent)
 SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=quad
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 ' Quad laser variables
-DualTimer  = 0                 ' Quad laser active (1 = active, 0 = normal)
+' DualTimer packed into #GameFlags (FLAG_DUAL)
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 #NextLife   = 1000              ' Score threshold for next extra life
 #MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
@@ -345,7 +351,7 @@ ShieldHits    = 0               ' Shield charges (0=none, 1=damaged, 2=full)
 Key1Held    = 0                 ' Debounce flag for keypad 1
 ' DebugMode packed into #GameFlags (FLAG_DEBUG)
 CheatCode   = 0                 ' Packed cheat entry: bits 0-2=held timer, bit 3=got '3'
-SubWave     = 0                 ' 0=Pattern A (full grid), 1=Pattern B (formation)
+' SubWave packed into #GameFlags (FLAG_SUBWAVE)
 ' RevealMode packed into #GameFlags (FLAG_REVEAL for pincer, FLAG_TOPDOWN for top-down)
 RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
 WaveRevealRow = ALIEN_ROWS - 1  ' Row reveal: top-down=rows revealed, fly-down=rows hidden above
@@ -574,13 +580,13 @@ ResetToTitle:
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0
-    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7 : #GameFlags = #GameFlags AND $EFFF
-    DualTimer = 0
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPTURE) : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPBULLET) : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_KEY0HELD)
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
     #MegaTimer = 0
     MegaBeamTimer = 0
     #GameFlags = #GameFlags AND $FFBF
     Key1Held = 0
-    SubWave = 0
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
     #GameFlags = #GameFlags AND $FEFF
     RightRevealCol = ALIEN_COLS - 1
     DeathTimer = 0
@@ -1386,7 +1392,7 @@ StartGame:
     CurrentMarchSpeed = MARCH_SPEED_START
     MusicGear = 0
     WaveRevealRow = 0
-    SubWave = 0
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
     #GameFlags = #GameFlags AND $FEFF
     LoopVar = 0  ' Wave 1 = index 0
     GOSUB SetEntrancePattern
@@ -1420,7 +1426,7 @@ StartGame:
     #FlyLoopCount = RANDOM(360) + 180  ' Random spawn threshold
     BeamTimer = 0  ' No beam power-up
     RapidTimer = 0 ' No rapid fire
-    DualTimer = 0  ' No dual laser
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)  ' No dual laser
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     ShieldHits = 0  ' No shield
@@ -1694,7 +1700,7 @@ GameLoop:
                     GOSUB UpdateLivesHUD
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
-                    DualTimer = 0 : #MegaTimer = 0 : ShieldHits = 0
+                    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
                     #GameFlags = #GameFlags AND $FFFD : #GameFlags = #GameFlags AND $FFFE
                     RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                     #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
@@ -1937,7 +1943,7 @@ ChainDone:
                 GOSUB UpdateLivesHUD
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                DualTimer = 0 : #MegaTimer = 0 : ShieldHits = 0
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
                 #GameFlags = #GameFlags AND $FFFD
                 ' Clear active player bullet (prevents ghost kills during death animation)
                 #GameFlags = #GameFlags AND $FFFE
@@ -2151,7 +2157,7 @@ ChainDone:
     ELSEIF RapidTimer > 0 THEN
         PRINT AT 233, GRAM_PWR_RP * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR_ID * 8 + COL_YELLOW + $0800
-    ELSEIF DualTimer > 0 THEN
+    ELSEIF #GameFlags AND FLAG_DUAL THEN
         PRINT AT 233, GRAM_PWR_QU * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR_AD * 8 + COL_YELLOW + $0800
     ELSEIF #MegaTimer > 0 THEN
@@ -2315,6 +2321,7 @@ MovePlayer: PROCEDURE
                     CaptureColor = RogueColor
                     CaptureStep = 0
                     CaptureTimer = CAPTURE_FIRE_RATE
+                    CaptureWaves = 0
                     ' Cancel rogue — it's now captured
                     RogueState = ROGUE_IDLE
                     RogueTimer = 0
@@ -2350,7 +2357,7 @@ MovePlayer: PROCEDURE
                 POKE $1F7, 8
                 POKE $1F8, PEEK($1F8) AND $DF
             END IF
-        ELSEIF DualTimer > 0 THEN
+        ELSEIF #GameFlags AND FLAG_DUAL THEN
             ' Quad laser: single center bullet with wide hitbox
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
@@ -2419,7 +2426,7 @@ MoveBullet: PROCEDURE
                 #GameFlags = #GameFlags AND $FFFE
                 IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
-        ELSEIF DualTimer > 0 OR BeamTimer > 0 THEN
+        ELSEIF (#GameFlags AND FLAG_DUAL) OR BeamTimer > 0 THEN
             ' Quad laser / beam: flat 2px/frame
             IF BulletY > BULLET_TOP + 2 THEN
                 BulletY = BulletY - 2
@@ -2494,7 +2501,7 @@ CheckRowForHit: PROCEDURE
                     HitCol = (BulletX - 4) / 8
                     GOSUB CheckOneColumn
                 END IF
-            ELSEIF DualTimer > 0 THEN
+            ELSEIF #GameFlags AND FLAG_DUAL THEN
                 ' Quad laser: 4 columns centered on sprite (32px kill zone)
                 IF BulletX >= 12 THEN
                     HitCol = (BulletX - 12) / 8
@@ -2868,7 +2875,7 @@ DrawBullet: PROCEDURE
             ELSE
                 SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
             END IF
-        ELSEIF DualTimer > 0 THEN
+        ELSEIF #GameFlags AND FLAG_DUAL THEN
             ' Quad laser mode: 4-line pattern sprite
             SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + LaserColor + $0800
         ELSE
@@ -3538,19 +3545,19 @@ UpdatePowerUp: PROCEDURE
                 ' Picked up! Activate power-up based on type
                 IF TitleColor = 0 THEN
                     BeamTimer = 1
-                    RapidTimer = 0 : DualTimer = 0 : #MegaTimer = 0
+                    RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF TitleColor = 1 THEN
                     RapidTimer = 1
-                    BeamTimer = 0 : DualTimer = 0 : #MegaTimer = 0
+                    BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF TitleColor = 2 THEN
-                    DualTimer = 1
+                    #GameFlags = #GameFlags OR FLAG_DUAL
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
                 ELSEIF TitleColor = 3 THEN
                     #MegaTimer = 120
-                    BeamTimer = 0 : RapidTimer = 0 : DualTimer = 0
+                    BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 ELSE
                     ' Shield - coexists with weapons, just set hits
@@ -3875,7 +3882,7 @@ END
 ' LoadPatternB - Transition to Pattern B formation
 ' --------------------------------------------
 LoadPatternB: PROCEDURE
-    SubWave = 1
+    #GameFlags = #GameFlags OR FLAG_SUBWAVE
 
     ' Silence any lingering SFX
     SOUND 2, , 0
@@ -4025,7 +4032,7 @@ CheckWaveWin: PROCEDURE
     ' If no aliens left, wait for explosion then advance
     IF #AliensAlive = 0 THEN
         IF ExplosionTimer = 0 THEN
-            IF SubWave = 0 THEN
+            IF (#GameFlags AND FLAG_SUBWAVE) = 0 THEN
                 GOSUB LoadPatternB
             ELSE
                 GOSUB StartNewWave
@@ -4136,7 +4143,7 @@ StartNewWave: PROCEDURE
     TitleFrame = 0
     TitleJitter = 0
     WaveRevealRow = 0
-    SubWave = 0
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
     #GameFlags = #GameFlags AND $FEFF
     LoopVar = Level - 1
     IF LoopVar > 7 THEN LoopVar = LoopVar AND 7
@@ -4174,6 +4181,99 @@ StartNewWave: PROCEDURE
     ' Silence any lingering SFX before transition WAITs
     GOSUB SilenceSfx
     POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
+
+    ' === Captured alien escape animation (after 2 waves) ===
+    IF #GameFlags AND FLAG_CAPTURE THEN
+        CaptureWaves = CaptureWaves + 1
+        IF CaptureWaves < 2 THEN GOTO SkipEscape
+        ' Load "bye!" GRAM cards into reclaimable title font slots
+        DEFINE GRAM_BYE1, 2, Bye1Gfx
+        WAIT
+
+        ' Show player ship + wingman on blank screen
+        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
+
+        ' Phase 1: One farewell orbit (16 steps x 2 frames = 32 frames)
+        FOR LoopVar = 0 TO 15
+            CaptureStep = LoopVar
+            RogueX = PlayerX - 4 + CaptureOrbitDX(CaptureStep) - CAPTURE_ORBIT_R
+            RogueY = PLAYER_Y - 12 + CaptureOrbitDY(CaptureStep) - CAPTURE_ORBIT_R
+            IF RogueX > 200 THEN RogueX = 0
+            IF RogueX > 160 THEN RogueX = 160
+            IF AnimFrame = 0 THEN
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
+            ELSE
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
+            END IF
+            WAIT
+            WAIT
+        NEXT LoopVar
+
+        ' Phase 2: Ship says "bye!" — 2 GRAM cards centered on screen (row 5, cols 9-10)
+        PRINT AT 109, GRAM_BYE1 * 8 + COL_WHITE + $0800
+        PRINT AT 110, GRAM_BYE2 * 8 + COL_WHITE + $0800
+        FOR LoopVar = 0 TO 45
+            WAIT
+        NEXT LoopVar
+
+        ' Flash off the ship text rapidly (4 blinks)
+        FOR LoopVar = 0 TO 7
+            IF (LoopVar AND 1) = 0 THEN
+                PRINT AT 109, 0
+                PRINT AT 110, 0
+            ELSE
+                PRINT AT 109, GRAM_BYE1 * 8 + COL_WHITE + $0800
+                PRINT AT 110, GRAM_BYE2 * 8 + COL_WHITE + $0800
+            END IF
+            WAIT
+            WAIT
+        NEXT LoopVar
+        PRINT AT 109, 0
+        PRINT AT 110, 0
+
+        ' Phase 3: Alien says "bye!" in its color next to wingman
+        Row = (RogueY - 8) / 8
+        IF Row > 10 THEN Row = 10
+        HitCol = (RogueX - 8) / 8 + 2
+        IF HitCol > 18 THEN HitCol = 18  ' Need 2 cards side by side
+        #ScreenPos = Row * 20 + HitCol
+        PRINT AT #ScreenPos, GRAM_BYE1 * 8 + CaptureColor + $0800
+        PRINT AT #ScreenPos + 1, GRAM_BYE2 * 8 + CaptureColor + $0800
+        FOR LoopVar = 0 TO 30
+            WAIT
+        NEXT LoopVar
+
+        ' Phase 4: Alien flies straight up off screen (3px/frame)
+        PRINT AT #ScreenPos, 0      ' Clear alien "bye!"
+        PRINT AT #ScreenPos + 1, 0
+        WHILE RogueY > 0
+            IF RogueY >= 3 THEN
+                RogueY = RogueY - 3
+            ELSE
+                RogueY = 0
+            END IF
+            IF AnimFrame = 0 THEN
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
+            ELSE
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
+            END IF
+            WAIT
+        WEND
+
+        ' Clear capture state
+        SPRITE SPR_POWERUP, 0, 0, 0
+        SPRITE SPR_PLAYER, 0, 0, 0
+        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPTURE)
+        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPBULLET)
+        CaptureStep = 0
+        CaptureTimer = 0
+
+        ' Brief pause after fly-off
+        FOR LoopVar = 0 TO 10
+            WAIT
+        NEXT LoopVar
+    SkipEscape:
+    END IF
 
     ' Phase A: Breather pause (blank screen + HUD only)
     FOR LoopVar = 0 TO 30
@@ -4570,7 +4670,7 @@ RogueUpdate: PROCEDURE
             GOTO RogueDiveRender
         END IF
 
-        ' Dogfight chase: track player aggressively
+        ' Dogfight strafing: sweeping attack passes
         IF RogueDivePhase = 254 THEN
             ' If player died, escape off-screen
             IF DeathTimer > 0 THEN
@@ -4578,35 +4678,55 @@ RogueUpdate: PROCEDURE
                 GOTO RogueDiveRender
             END IF
             RogueTimer = RogueTimer + 1
-            ' Track player X aggressively (2px per frame)
-            IF RogueX + 4 < PlayerX THEN
+            ' Horizontal strafe: sweep in current direction at 2px/frame
+            IF RogueCenterX THEN
+                ' Moving right
                 RogueX = RogueX + 2
-                IF RogueX > 160 THEN RogueX = 160
-            ELSEIF RogueX > PlayerX + 4 THEN
+                IF RogueX >= 156 THEN
+                    RogueCenterX = 0 : RogueCenterY = RogueCenterY + 1
+                ELSEIF RogueX > PlayerX + 20 THEN
+                    IF RogueX > 20 THEN
+                        RogueCenterX = 0 : RogueCenterY = RogueCenterY + 1
+                    END IF
+                END IF
+            ELSE
+                ' Moving left
                 IF RogueX >= 2 THEN
                     RogueX = RogueX - 2
                 ELSE
                     RogueX = 0
                 END IF
-            END IF
-            ' Slow descent: 1px every 4 frames
-            RogueCol = RogueCol + 1
-            IF RogueCol >= 4 THEN
-                RogueCol = 0
-                RogueY = RogueY + 1
-            END IF
-            ' Fire periodically (~1 per second)
-            IF RogueTimer >= 60 THEN
-                RogueTimer = 0
-                IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
-                    IF FlyState <> SAUCER_CHASE THEN
-                        ABulletX = RogueX + 3
-                        ABulletY = RogueY + 8
-                        #GameFlags = #GameFlags OR FLAG_ABULLET
+                IF RogueX <= 8 THEN
+                    RogueCenterX = 1 : RogueCenterY = RogueCenterY + 1
+                ELSEIF PlayerX > 20 THEN
+                    IF RogueX + 20 < PlayerX THEN
+                        RogueCenterX = 1 : RogueCenterY = RogueCenterY + 1
                     END IF
                 END IF
             END IF
-            ' Past the player zone: switch to exit
+            ' Gradual descent: 1px every 3 frames
+            RogueCol = RogueCol + 1
+            IF RogueCol >= 3 THEN
+                RogueCol = 0
+                RogueY = RogueY + 1
+            END IF
+            ' Fire when crossing player X (within 8px), rate-limited
+            IF RogueTimer >= 30 THEN
+                IF RogueX + 8 >= PlayerX THEN
+                    IF RogueX <= PlayerX + 8 THEN
+                        RogueTimer = 0
+                        IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
+                            IF FlyState <> SAUCER_CHASE THEN
+                                ABulletX = RogueX + 3
+                                ABulletY = RogueY + 8
+                                #GameFlags = #GameFlags OR FLAG_ABULLET
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+            ' Exit after 4 passes or past player
+            IF RogueCenterY >= 4 THEN RogueDivePhase = 255
             IF RogueY >= PLAYER_Y + 10 THEN RogueDivePhase = 255
             GOTO RogueDiveRender
         END IF
@@ -4634,16 +4754,20 @@ RogueUpdate: PROCEDURE
         IF RogueCol >= 32 THEN
             IF RogueCenterY >= 68 THEN
                 RogueDivePhase = 254
-                RogueTimer = 0
-                RogueCol = 0  ' Reuse as drift counter in chase
+                IF RogueX < PlayerX THEN RogueCenterX = 1 ELSE RogueCenterX = 0
+                RogueCenterY = 0  ' Pass counter
+                RogueCol = 0     ' Descent frame counter
+                RogueTimer = 0   ' Fire rate timer
             END IF
         END IF
         ' Safety: if sprite too low, go straight to chase
         IF RogueY >= 100 THEN
             IF RogueDivePhase < 32 THEN
                 RogueDivePhase = 254
-                RogueTimer = 0
+                IF RogueX < PlayerX THEN RogueCenterX = 1 ELSE RogueCenterX = 0
+                RogueCenterY = 0
                 RogueCol = 0
+                RogueTimer = 0
             END IF
         END IF
 
@@ -4763,6 +4887,8 @@ UpdateSaucer: PROCEDURE
         ' After 2 full loops (64 steps), transition to chase
         IF #FlyLoopCount >= 64 THEN
             FlyState = SAUCER_CHASE
+            IF FlyX < PlayerX THEN FlyCenterX = 1 ELSE FlyCenterX = 0
+            FlyCenterY = 0  ' Pass counter
             #FlyLoopCount = 0
             FlySpeed = 0
         END IF
@@ -4770,7 +4896,7 @@ UpdateSaucer: PROCEDURE
         GOSUB SaucerAnimate : RETURN
     END IF
 
-    ' Chase state: fight to the death — pursue until one is destroyed
+    ' Chase state: strafing attack passes (identical pattern to rogue dogfight)
     IF FlyState = SAUCER_CHASE THEN
         ' If player death animation nearly done, saucer escapes (stay visible during explosion)
         IF DeathTimer > 0 THEN
@@ -4780,34 +4906,53 @@ UpdateSaucer: PROCEDURE
             END IF
             GOSUB SaucerAnimate : RETURN
         END IF
-        ' Track player X aggressively
-        IF FlyX + 4 < PlayerX THEN
-            FlyX = FlyX + CHASE_SPEED_X
-            IF FlyX > 167 THEN FlyX = 167
-        ELSEIF FlyX > PlayerX + 4 THEN
-            IF FlyX >= CHASE_SPEED_X THEN
-                FlyX = FlyX - CHASE_SPEED_X
+        FlySpeed = FlySpeed + 1
+        ' Horizontal strafe: sweep in current direction at 2px/frame
+        IF FlyCenterX THEN
+            ' Moving right
+            FlyX = FlyX + 2
+            IF FlyX >= 156 THEN
+                FlyCenterX = 0 : FlyCenterY = FlyCenterY + 1
+            ELSEIF FlyX > PlayerX + 20 THEN
+                IF FlyX > 20 THEN
+                    FlyCenterX = 0 : FlyCenterY = FlyCenterY + 1
+                END IF
+            END IF
+        ELSE
+            ' Moving left
+            IF FlyX >= 2 THEN
+                FlyX = FlyX - 2
             ELSE
                 FlyX = 0
             END IF
+            IF FlyX <= 8 THEN
+                FlyCenterX = 1 : FlyCenterY = FlyCenterY + 1
+            ELSEIF PlayerX > 20 THEN
+                IF FlyX + 20 < PlayerX THEN
+                    FlyCenterX = 1 : FlyCenterY = FlyCenterY + 1
+                END IF
+            END IF
         END IF
-        ' Slow descent: 1px every CHASE_DRIFT_Y frames
+        ' Gradual descent: 1px every 3 frames
         #FlyLoopCount = #FlyLoopCount + 1
-        IF #FlyLoopCount >= CHASE_DRIFT_Y THEN
+        IF #FlyLoopCount >= 3 THEN
             #FlyLoopCount = 0
             FlyY = FlyY + 1
         END IF
-        ' Fire at player
-        FlySpeed = FlySpeed + 1
-        IF FlySpeed >= CHASE_FIRE_RATE THEN
-            FlySpeed = 0
-            IF #GameFlags = #GameFlags AND $FFFD THEN
-                ABulletX = FlyX + 4
-                ABulletY = FlyY + 8
-                #GameFlags = #GameFlags OR FLAG_ABULLET
+        ' Fire when crossing player X (within 8px), rate-limited
+        IF FlySpeed >= 30 THEN
+            IF FlyX + 8 >= PlayerX THEN
+                IF FlyX <= PlayerX + 8 THEN
+                    FlySpeed = 0
+                    IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
+                        ABulletX = FlyX + 4
+                        ABulletY = FlyY + 8
+                        #GameFlags = #GameFlags OR FLAG_ABULLET
+                    END IF
+                END IF
             END IF
         END IF
-        ' Body collision: saucer reached player altitude
+        ' Body collision: saucer overlaps player
         IF FlyY >= PLAYER_Y - 8 THEN
             IF Invincible = 0 THEN
             IF FlyX >= PlayerX - 8 THEN
@@ -4826,7 +4971,13 @@ UpdateSaucer: PROCEDURE
                 END IF
             END IF
             END IF
-            ' Saucer escapes after reaching bottom (won or missed)
+        END IF
+        ' Exit after 4 passes or past player
+        IF FlyCenterY >= 4 THEN
+            FlyState = SAUCER_ESCAPE
+            FlySpeed = 0
+        END IF
+        IF FlyY >= PLAYER_Y + 10 THEN
             FlyState = SAUCER_ESCAPE
             FlySpeed = 0
         END IF
@@ -5625,6 +5776,28 @@ WingmanF2Gfx:
     BITMAP "..X..X.."
     BITMAP ".X....X."
     BITMAP ".X....X."
+    BITMAP "........"
+
+' Speech bubble graphics (escape animation)
+' Two cards side by side spell "bye!" in lowercase
+Bye1Gfx:
+    BITMAP "X......."
+    BITMAP "X......."
+    BITMAP "XX..X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "XX...X.."
+    BITMAP "....XX.."
+    BITMAP "........"
+
+Bye2Gfx:
+    BITMAP "....X..."
+    BITMAP "....X..."
+    BITMAP ".XX.X..."
+    BITMAP "XXX.X..."
+    BITMAP "X......."
+    BITMAP ".XX.X..."
+    BITMAP "........"
     BITMAP "........"
 
 ' ============================================
