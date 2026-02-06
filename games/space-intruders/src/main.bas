@@ -121,6 +121,11 @@ CONST TGRAM_T = 45              ' Cards 45-47
 CONST TGRAM_R = 48              ' Cards 48-50
 CONST TGRAM_U = 51              ' Cards 51-53
 CONST TGRAM_D = 54              ' Cards 54-56
+' Game Over animated letters (reuse title slots during game over)
+CONST TGRAM_G = 0               ' Cards 0-2 (reuse TGRAM_S slot)
+CONST TGRAM_M = 3               ' Cards 3-5 (reuse TGRAM_P slot)
+CONST TGRAM_O = 51              ' Cards 51-53 (reuse TGRAM_U slot)
+CONST TGRAM_V = 54              ' Cards 54-56 (reuse TGRAM_D slot)
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -397,6 +402,10 @@ TutorialTimer  = 0                 ' 255=ready, 1-180=showing, 0=done
 FlyStepRate = 0                 ' Frames between waypoint advances
 FlyMaxLoops = 0                 ' 0=infinite, N=stop after N loops
 FlyTransSpd = 0                 ' Pixels per frame during transition
+
+' Game Over letter animation (Zod fly-by triggers rotation)
+GOAnimIdx    = 255               ' Currently animating letter (255=none, 0-7=letter)
+GOAnimFrame  = 0                 ' Animation frame (0=full, 1=60°, 2=edge, 3=done)
 
 ' --------------------------------------------
 ' Main Program
@@ -1152,6 +1161,41 @@ TitleGramF1:
 TitleGramF2:
     DATA 2, 5, 8, 15, 18, 0, 41, 44, 47, 50, 53, 56, 18, 50, 2
 
+' --- DrawGOLetter: Draw animating game over letter ---
+' Uses GOAnimIdx (0-7) and GOAnimFrame (0-19)
+' Animation: 0-4=full, 5-9=60°, 10-14=edge, 15-19=full (half rotation)
+' Letters: 0=G, 1=A, 2=M, 3=E, 4=O, 5=V, 6=E, 7=R
+DrawGOLetter: PROCEDURE
+    ' Get BACKTAB position for this letter
+    LoopVar = GOLetterPos(GOAnimIdx)
+
+    ' Determine animation frame: 0-2=full(0), 3-5=60°(1), 6-8=edge(2), 9=full(0)
+    Col = GOAnimFrame / 3
+    IF Col > 2 THEN Col = 0  ' Wrap back to full at end
+
+    ' Get base GRAM card for this letter's animation
+    Row = GOLetterGram(GOAnimIdx) + Col
+
+    ' Draw the letter
+    #Card = Row * 8 + COL_TAN + $0800
+    PRINT AT LoopVar, #Card
+    RETURN
+END
+
+' Game Over letter BACKTAB positions
+GOLetterPos:
+    DATA 45, 46, 47, 48, 50, 51, 52, 53
+
+' Game Over animated GRAM base cards (frame 0 = full)
+' 0=G(0), 1=A(6), 2=M(3), 3=E(16), 4=O(51), 5=V(54), 6=E(16), 7=R(48)
+GOLetterGram:
+    DATA 0, 6, 3, 16, 51, 54, 16, 48
+
+' Game Over STATIC GRAM cards (original fonts)
+' G=37, A=27, M=38, E=29, O=40, V=41, E=29, R=33
+GOLetterStaticGram:
+    DATA 37, 27, 38, 29, 40, 41, 29, 33
+
     SEGMENT 1   ' Back to Segment 1 for remaining procedures
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
@@ -1410,7 +1454,10 @@ StartGame:
     NEXT LoopVar
     PRINT AT 107, "       "
 
-    ' Initialize player sprite
+    ' Ship reveal animation (procedure in Segment 2)
+    GOSUB ShipReveal
+
+    ' Initialize player sprite (removes BEHIND flag)
     GOSUB DrawPlayer
 
 ' --------------------------------------------
@@ -1486,6 +1533,32 @@ GameLoop:
         ' --- Zod diamond orbit via flight engine ---
         GOSUB FlightTick
         GOSUB ZodRender
+
+        ' --- Game Over letter wave animation ---
+        MarchCount = MarchCount + 1
+        IF MarchCount >= 120 THEN
+            MarchCount = 0
+            IF GOAnimIdx >= 8 THEN GOAnimIdx = 0 : GOAnimFrame = 0
+        END IF
+
+        ' Zod bump: at letter row, trigger that letter
+        IF FlyY >= 16 AND FlyY <= 32 THEN
+            Col = (FlyX - 8) / 8
+            IF Col >= 5 AND Col <= 13 THEN
+                IF Col < 9 THEN GOAnimIdx = Col - 5 ELSE GOAnimIdx = Col - 6
+            END IF
+        END IF
+
+        ' Animate current letter, then next
+        IF GOAnimIdx < 8 THEN
+            GOSUB DrawGOLetter
+            GOAnimFrame = GOAnimFrame + 1
+            IF GOAnimFrame > 9 THEN
+                GOSUB DrawGOLetterStatic
+                GOAnimIdx = GOAnimIdx + 1
+                GOAnimFrame = 0
+            END IF
+        END IF
 
         ' Button debounce: GameOver=5 waits for release, GameOver=6 accepts press
         IF GameOver = 5 THEN
@@ -1923,6 +1996,37 @@ ChainDone:
                 WAIT
                 DEFINE GRAM_FONT_O, 2, FontOGfx  ' Cards 40-41: O, V
                 WAIT
+                ' Load animated frames for A, E, R (reuse title animation GRAM slots)
+                ' A frames: full, 60°, edge (cards 6-8)
+                DEFINE TGRAM_A, 1, FontAY1Gfx : WAIT
+                DEFINE TGRAM_A + 1, 1, FontAY3Gfx : WAIT
+                DEFINE TGRAM_A + 2, 1, FontAY4Gfx : WAIT
+                ' E frames: full, 60°, edge (cards 16-18)
+                DEFINE TGRAM_E, 1, FontEY1Gfx : WAIT
+                DEFINE TGRAM_E + 1, 1, FontEY3Gfx : WAIT
+                DEFINE TGRAM_E + 2, 1, FontEY4Gfx : WAIT
+                ' R frames: full, 60°, edge (cards 48-50)
+                DEFINE TGRAM_R, 1, FontRY1Gfx : WAIT
+                DEFINE TGRAM_R + 1, 1, FontRY3Gfx : WAIT
+                DEFINE TGRAM_R + 2, 1, FontRY4Gfx : WAIT
+                ' G frames: full, 60°, edge (cards 0-2)
+                DEFINE TGRAM_G, 1, FontGY1Gfx : WAIT
+                DEFINE TGRAM_G + 1, 1, FontGY3Gfx : WAIT
+                DEFINE TGRAM_G + 2, 1, FontGY4Gfx : WAIT
+                ' M frames: full, 60°, edge (cards 3-5)
+                DEFINE TGRAM_M, 1, FontMY1Gfx : WAIT
+                DEFINE TGRAM_M + 1, 1, FontMY3Gfx : WAIT
+                DEFINE TGRAM_M + 2, 1, FontMY4Gfx : WAIT
+                ' O frames: full, 60°, edge (cards 51-53)
+                DEFINE TGRAM_O, 1, FontOY1Gfx : WAIT
+                DEFINE TGRAM_O + 1, 1, FontOY3Gfx : WAIT
+                DEFINE TGRAM_O + 2, 1, FontOY4Gfx : WAIT
+                ' V frames: full, 60°, edge (cards 54-56)
+                DEFINE TGRAM_V, 1, FontVY1Gfx : WAIT
+                DEFINE TGRAM_V + 1, 1, FontVY3Gfx : WAIT
+                DEFINE TGRAM_V + 2, 1, FontVY4Gfx : WAIT
+                ' Initialize game over letter animation
+                GOAnimIdx = 8 : GOAnimFrame = 0 : MarchCount = 0
                 ' "GAME OVER" in custom font at row 2 col 5, centered
                 PRINT AT 45, GRAM_FONT_G * 8 + COL_TAN + $0800
                 PRINT AT 46, GRAM_FONT_A * 8 + COL_TAN + $0800
@@ -1981,6 +2085,7 @@ ChainDone:
             ELSE
                 ' Normal respawn at center with invincibility
                 PlayerX = 80
+                GOSUB ShipReveal
                 Invincible = 120
             END IF
         END IF
@@ -2870,6 +2975,31 @@ DrawAlienBullet: PROCEDURE
 END
 
     SEGMENT 2   ' Move large procedures to Segment 2 for headroom
+
+' --- ShipReveal: Animate ship rising from behind HUD ---
+ShipReveal: PROCEDURE
+    ' BEHIND ($2000) makes HUD tiles occlude the ship as it rises
+    FOR LoopVar = 100 TO PLAYER_Y STEP -1
+        SPRITE SPR_PLAYER, PlayerX + $2200, LoopVar + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
+        SPRITE SPR_SHIP_ACCENT, PlayerX + $2200, LoopVar + $0100, GRAM_SHIP_ACCENT * 8 + $1800
+        WAIT
+    NEXT LoopVar
+    RETURN
+END
+
+' --- DrawGOLetterStatic: Restore letter to static GRAM font ---
+DrawGOLetterStatic: PROCEDURE
+    ' Get BACKTAB position for this letter
+    LoopVar = GOLetterPos(GOAnimIdx)
+
+    ' Get static GRAM card for this letter
+    Row = GOLetterStaticGram(GOAnimIdx)
+
+    ' Draw the letter with static font
+    #Card = Row * 8 + COL_TAN + $0800
+    PRINT AT LoopVar, #Card
+    RETURN
+END
 
 ' --------------------------------------------
 ' MarchAliens - Move alien grid (dynamic boundaries)
@@ -7637,3 +7767,140 @@ FontDY4Gfx:
     BITMAP "..XX...."
     BITMAP "..XX...."
     BITMAP "..XXX..."
+
+' ============================================
+' GAME OVER LETTERS: G, M, O, V
+' Y-Axis rotation frames
+' ============================================
+
+' Letter G - Frame 1 (0°)
+FontGY1Gfx:
+    BITMAP ".XXXXXX."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX..XXX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter G - Frame 3 (60°)
+FontGY3Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX......"
+    BITMAP "XX......"
+    BITMAP "XX..XX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP ".XXXXX.."
+
+' Letter G - Frame 4 (90°)
+FontGY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter M - Frame 1 (0°)
+FontMY1Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XXX.XXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XX.X.XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+
+' Letter M - Frame 3 (60°)
+FontMY3Gfx:
+    BITMAP "XX...X.."
+    BITMAP "XXX.XX.."
+    BITMAP "XXXXXX.."
+    BITMAP "XX.X.X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+
+' Letter M - Frame 4 (90°)
+FontMY4Gfx:
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
+' Letter O - Frame 1 (0°)
+FontOY1Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XXXXX.."
+
+' Letter O - Frame 3 (60°)
+FontOY3Gfx:
+    BITMAP ".XXXXX.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP ".XXXXX.."
+
+' Letter O - Frame 4 (90°)
+FontOY4Gfx:
+    BITMAP "..XXX..."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XXX..."
+
+' Letter V - Frame 1 (0°)
+FontVY1Gfx:
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP "XX...XX."
+    BITMAP ".XX.XX.."
+    BITMAP "..XXX..."
+    BITMAP "...X...."
+
+' Letter V - Frame 3 (60°)
+FontVY3Gfx:
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP "XX...X.."
+    BITMAP ".XX.XX.."
+    BITMAP "..XXX..."
+    BITMAP "...X...."
+
+' Letter V - Frame 4 (90°)
+FontVY4Gfx:
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..X....."

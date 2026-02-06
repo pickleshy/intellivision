@@ -1,0 +1,49 @@
+ROTATION COMPARISON: X-AXIS vs Y-AXIS
+====================================
+
+LETTER 'S' EXAMPLE:
+
+X-AXIS ROTATION (vertical flip - top/bottom):
+Frame 1 (0°):     Frame 2 (45°):    Frame 3 (90°):
+.XXXXX..          XXXXXXX.          .XXXXX..
+XX...XX.          XXXXXX..          
+XX......          .....XX.          
+.XXXXX..          XXXXXXX.          
+.....XX.                            
+.....XX.                            
+XX...XX.                            
+.XXXXX..                            
+
+Y-AXIS ROTATION (horizontal turn - left/right):
+Frame 1 (0°):     Frame 2 (30°):    Frame 3 (60°):    Frame 4 (90°):
+.XXXXX..          .XXXXX..          .XXXXX..          ..XXX...
+XX...XX.          XX...XX.          XX...X..          ..XX....
+XX......          XX......          XX......          ..XX....
+.XXXXX..          .XXXXX..          .XXXXX..          ..XXX...
+.....XX.          .....XX.          .....X..          ..XX....
+.....XX.          .....XX.          .....X..          ..XX....
+XX...XX.          XX...XX.          XX...X..          ..XX....
+.XXXXX..          .XXXXX..          .XXXXX..          ..XXX...
+
+KEY DIFFERENCES:
+================
+
+X-AXIS ROTATION:
+- Letter flips top-to-bottom
+- Width stays same, height compresses
+- Edge view is horizontal line
+- Best for "flipping" effects
+
+Y-AXIS ROTATION:  
+- Letter turns left-to-right
+- Height stays same, width compresses
+- Edge view is vertical line
+- Best for "spinning" or "turning" effects
+
+VISUAL METAPHOR:
+- X-axis = flipping a coin (heads/tails)
+- Y-axis = spinning a coin (edge view)
+
+FOR TITLE SEQUENCES:
+Y-axis rotation is typically more dramatic and recognizable
+for text effects like letters "spinning in" to form words.

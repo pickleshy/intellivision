@@ -1,0 +1,56 @@
+SPACE INTRUDERS - Y-Axis Letter Rotation Animation Guide
+======================================================
+
+ANIMATION SEQUENCE (4 frames):
+Frame 1 (0°) → Frame 2 (30°) → Frame 3 (60°) → Frame 4 (90°)
+
+ROTATION DIRECTION:
+Y-axis rotation = letters rotate left/right around vertical axis
+Letters become narrower as they turn, eventually showing edge view
+
+ANIMATION STYLES:
+
+1) CONTINUOUS ROTATION (one-way spin):
+   Frame1 → Frame2 → Frame3 → Frame4 → Frame1 → ...
+   
+2) WOBBLE EFFECT (back-and-forth):
+   Frame1 → Frame2 → Frame3 → Frame4 → Frame3 → Frame2 → Frame1 → ...
+   
+3) QUICK FLASH (attention grabber):
+   Frame1 → Frame1 → Frame1 → Frame4 → Frame1 → Frame1 → ...
+
+TIMING SUGGESTIONS:
+- Fast spin: 2-3 frames per step (8-12 total frames per cycle)
+- Medium spin: 4-5 frames per step (16-20 total frames per cycle)
+- Slow spin: 6-8 frames per step (24-32 total frames per cycle)
+
+INTYBASIC IMPLEMENTATION EXAMPLE:
+```intybasic
+' Y-axis rotation animation for letter S
+letter_frame = (letter_frame + 1) MOD 4
+
+IF letter_frame = 0 THEN $200 = #FontSY1Gfx  ' 0°
+IF letter_frame = 1 THEN $200 = #FontSY2Gfx  ' 30°
+IF letter_frame = 2 THEN $200 = #FontSY3Gfx  ' 60°
+IF letter_frame = 3 THEN $200 = #FontSY4Gfx  ' 90°
+```
+
+ADVANCED: FULL 360° ROTATION:
+To complete full rotation, you could generate additional frames:
+- Frame 5 (120°) - mirror of Frame 3
+- Frame 6 (150°) - mirror of Frame 2  
+- Frame 7 (180°) - horizontally flipped Frame 1
+- Frame 8 (210°) - mirror of Frame 6
+- etc.
+
+MEMORY USAGE:
+- 4-frame animation: 16 letters × 4 frames × 8 rows = 512 DECLE
+- GRAM cards needed: 16 letters × 4 frames = 64 cards (exactly the limit!)
+
+VISUAL EFFECT:
+Frame 1: Full letter (readable)
+Frame 2: Slightly compressed (still readable)
+Frame 3: Narrower (harder to read)
+Frame 4: Edge view (thin vertical line)
+
+Perfect for title sequences where letters "spin in" to reveal the game name!

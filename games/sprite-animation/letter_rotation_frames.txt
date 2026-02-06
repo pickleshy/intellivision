@@ -1,0 +1,313 @@
+SPACE INTRUDERS - 3-Frame Letter Rotation Animation
+============================================================
+X-axis rotation: 0° → 45° → 90°
+Animation sequence: Frame1 → Frame2 → Frame3 → Frame2 → Frame1
+============================================================
+
+LETTER 'S':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  .XXXXX..
+  XX...XX.
+  XX......
+  .XXXXX..
+  .....XX.
+  .....XX.
+  XX...XX.
+  .XXXXX..
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XXXXXX..
+  .....XX.
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'P':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXX..
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XXXXXX..
+  XX......
+  XX......
+  XX......
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX...XX.
+  XXXXXX..
+  XX......
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'A':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  .XXXXX..
+  XX...XX.
+  XX...XX.
+  XX..XXX.
+  XXXXXXX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX..XXX.
+  XXXXXXX.
+  XX...XX.
+
+Frame 3 (90° - Edge view):
+  XXXXXXX.
+
+LETTER 'C':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  .XXXXX..
+  XX...XX.
+  XX......
+  XX......
+  XX......
+  XX......
+  XX...XX.
+  .XXXXX..
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX......
+  XX......
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'E':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXXX.
+  XX......
+  XX......
+  XXXXXXX.
+  XX......
+  XX......
+  XX......
+  XXXXXXX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XXXXXXX.
+  XX......
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  XXXXXXX.
+
+LETTER 'I':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXXX.
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  XXXXXXX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  ..XX....
+  ..XX....
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  XXXXXXX.
+
+LETTER 'N':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XX...XX.
+  XXX..XX.
+  XXXX.XX.
+  XX.XXXX.
+  XX..XXX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+
+Frame 2 (45° - Compressed):
+  XXX..XX.
+  XXXXXXX.
+  XX..XXX.
+  XX...XX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'T':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXXX.
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+  ..XX....
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  ..XX....
+  ..XX....
+  ..XX....
+
+Frame 3 (90° - Edge view):
+  XXXXXXX.
+
+LETTER 'R':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXX..
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XXXXXX..
+  XX..XX..
+  XX...XX.
+  XX...XX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX...XX.
+  XXXXXX..
+  XX...XX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'U':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  .XXXXX..
+
+Frame 2 (45° - Compressed):
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'D':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXX..
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XXXXXX..
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX...XX.
+  XX...XX.
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'E':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXXX.
+  XX......
+  XX......
+  XXXXXXX.
+  XX......
+  XX......
+  XX......
+  XXXXXXX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XXXXXXX.
+  XX......
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  XXXXXXX.
+
+LETTER 'R':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  XXXXXX..
+  XX...XX.
+  XX...XX.
+  XX...XX.
+  XXXXXX..
+  XX..XX..
+  XX...XX.
+  XX...XX.
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XX...XX.
+  XXXXXX..
+  XX...XX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..
+
+LETTER 'S':
+────────────────────────────────────────
+
+Frame 1 (0° - Original):
+  .XXXXX..
+  XX...XX.
+  XX......
+  .XXXXX..
+  .....XX.
+  .....XX.
+  XX...XX.
+  .XXXXX..
+
+Frame 2 (45° - Compressed):
+  XXXXXXX.
+  XXXXXX..
+  .....XX.
+  XXXXXXX.
+
+Frame 3 (90° - Edge view):
+  .XXXXX..

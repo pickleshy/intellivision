@@ -1,0 +1,40 @@
+SPACE INTRUDERS - Letter Rotation Animation Guide
+=================================================
+
+ANIMATION SEQUENCE:
+Frame 1 (0°) → Frame 2 (45°) → Frame 3 (90°) → Frame 2 (45°) → Frame 1 (0°)
+
+This creates a smooth "wobble" effect where letters appear to rock back and forth.
+
+TIMING SUGGESTIONS:
+- Fast wobble: 2-3 frames per step (6-9 total frames per cycle)
+- Medium wobble: 4-5 frames per step (12-15 total frames per cycle)  
+- Slow wobble: 8-10 frames per step (24-30 total frames per cycle)
+
+INTYBASIC ANIMATION EXAMPLE:
+```intybasic
+' Animation counter for letter rotation
+letter_frame = (letter_frame + 1) MOD 5
+
+IF letter_frame = 0 THEN $200 = #FontSFrame1Gfx
+IF letter_frame = 1 THEN $200 = #FontSFrame2Gfx  
+IF letter_frame = 2 THEN $200 = #FontSFrame3Gfx
+IF letter_frame = 3 THEN $200 = #FontSFrame2Gfx
+IF letter_frame = 4 THEN $200 = #FontSFrame1Gfx
+```
+
+ALTERNATIVE - CONTINUOUS ROTATION:
+If you want full 360° rotation instead of wobble:
+Frame 1 (0°) → Frame 2 (45°) → Frame 3 (90°) → Frame 4 (135°) → Frame 5 (180°) → ...
+
+For this, you'd need to generate additional frames (upside-down versions, etc.)
+
+MEMORY USAGE:
+- Original font: 16 letters × 8 rows = 128 DECLE
+- 3-frame animation: 16 letters × 3 frames × 8 rows = 384 DECLE
+- Total additional: 256 DECLE for animation frames
+
+GRAM CARD USAGE:
+Each letter frame uses 1 GRAM card (8×8).
+Total GRAM cards needed: 16 letters × 3 frames = 48 cards
+(This fits within the 64 GRAM card limit)

@@ -1486,6 +1486,122 @@ NEXT Col
 - Procedure body is large (>20 lines)
 - Code clarity matters more than microseconds
 
+## Animation Patterns
+
+### Frame divisor technique for multi-state animations
+
+When animating through multiple visual states (e.g., rotation frames), use integer division to map a frame counter to animation states. This provides smooth timing control without complex state machines:
+
+```basic
+' Animation has 3 visual states: full(0), 60°(1), edge(2)
+' Want each state to display for 3 frames = 9 total frames per cycle
+
+AnimFrame = AnimFrame + 1
+IF AnimFrame > 8 THEN AnimFrame = 0
+
+' Map frame counter to visual state via integer division
+VisualState = AnimFrame / 3    ' 0-2→0, 3-5→1, 6-8→2
+
+' Use visual state to select GRAM card
+#Card = (BaseGramCard + VisualState) * 8 + Color + $0800
+PRINT AT Position, #Card
+```
+
+**Tuning animation speed:**
+- More frames per state = slower animation (divide by larger number)
+- Fewer frames per state = faster animation (divide by smaller number)
+- Example: `/5` with limit `>19` = 20 frames total, ~1/3 second at 60fps
+
+**Wrap-around for ping-pong animations:**
+```basic
+VisualState = AnimFrame / 3
+IF VisualState > 2 THEN VisualState = 0  ' Snap back to start
+' Or for smooth ping-pong: IF VisualState > 2 THEN VisualState = 4 - VisualState
+```
+
+### Cascade/wave animation pattern
+
+For sequential animations across multiple elements (letters, tiles, enemies), use a single index tracking which element is currently animating:
+
+```basic
+' Variables
+AnimIdx = 8      ' Currently animating element (8+ = none active)
+AnimFrame = 0    ' Frame counter for current element
+
+' Trigger wave every N frames
+WaveTimer = WaveTimer + 1
+IF WaveTimer >= 120 THEN           ' Every 2 seconds
+    WaveTimer = 0
+    IF AnimIdx >= 8 THEN           ' Only if no wave in progress
+        AnimIdx = 0 : AnimFrame = 0
+    END IF
+END IF
+
+' Animate current element
+IF AnimIdx < 8 THEN
+    GOSUB DrawAnimatedElement
+    AnimFrame = AnimFrame + 1
+    IF AnimFrame > 9 THEN          ' Element done, advance to next
+        GOSUB DrawStaticElement    ' Restore to static state
+        AnimIdx = AnimIdx + 1
+        AnimFrame = 0
+    END IF
+END IF
+```
+
+**Key insight:** Use `AnimIdx >= ElementCount` as "idle" state rather than a magic number like 255. This simplifies comparisons and avoids unsigned overflow issues.
+
+### Dual lookup tables for animated vs static graphics
+
+When animating GRAM-based graphics that must return to a static (often GROM) state, maintain two parallel lookup tables:
+
+```basic
+' Animated GRAM card bases (for Y-axis rotation animation)
+GOLetterGram:
+    DATA 0, 6, 3, 16, 51, 54, 16, 48   ' GRAM cards for G,A,M,E,O,V,E,R
+
+' Static GROM card numbers (for restoration after animation)
+GOLetterStaticGram:
+    DATA 37, 27, 38, 29, 40, 41, 29, 33  ' GROM cards for G,A,M,E,O,V,E,R
+
+' During animation: use GRAM
+Row = GOLetterGram(AnimIdx) + VisualState
+#Card = Row * 8 + Color + $0800
+
+' After animation complete: restore to static GROM
+Row = GOLetterStaticGram(AnimIdx)
+#Card = Row * 8 + Color   ' No $0800 = GROM
+PRINT AT Position, #Card
+```
+
+**Why two tables:** GRAM cards are numbered 0-63 and require the `$0800` flag. GROM cards are numbered 0-255 and must NOT have the flag. The animation uses custom GRAM bitmaps; the static state uses built-in GROM font characters.
+
+### Sprite-to-screen position for animation triggers
+
+When a sprite (like a flying saucer) should trigger animations on screen elements it passes over, convert sprite coordinates to BACKTAB positions:
+
+```basic
+' Sprite position has 8-pixel offset from BACKTAB
+' BACKTAB column 0 = sprite X 8, row 0 = sprite Y 8
+
+' Check if sprite is at the row containing animated elements
+IF SpriteY >= 16 AND SpriteY <= 32 THEN    ' Row 1-2 in BACKTAB terms
+    Col = (SpriteX - 8) / 8                 ' Convert to BACKTAB column
+
+    ' Map column to element index (skip gaps like spaces)
+    IF Col >= 5 AND Col <= 13 THEN
+        IF Col < 9 THEN
+            AnimIdx = Col - 5              ' Columns 5-8 → elements 0-3
+        ELSE
+            AnimIdx = Col - 6              ' Columns 10-13 → elements 4-7 (skip col 9 = space)
+        END IF
+        AnimFrame = 0                       ' Restart animation for this element
+    END IF
+END IF
+```
+
+**No debounce needed:** If the sprite moves continuously, it will re-trigger the same element each frame it overlaps. This actually looks fine for rotation animations since it just restarts the spin. For one-shot animations, add: `IF AnimIdx <> LastTriggered THEN ... LastTriggered = AnimIdx`
+
 ## CP1610 Processor Reference
 
 The Intellivision uses a General Instrument CP1610 microprocessor (circa 1975). Understanding the CPU is essential for performance optimization and hand-tuned assembly routines.
