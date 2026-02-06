@@ -6070,21 +6070,21 @@ PowerupIDGfx:
 ' === QUAD powerup (tiles 5-6) ===
 PowerupQUGfx:
     BITMAP "........"
-    BITMAP ".##.#.#."
-    BITMAP "#..##.#."
-    BITMAP "#..##.#."
-    BITMAP "#.##.#.."
-    BITMAP ".###.#.."
+    BITMAP ".XX..X.X"
+    BITMAP "X..X.X.X"
+    BITMAP "X..X.X.X"
+    BITMAP "X.XX.X.X"
+    BITMAP ".XXX..XX"
     BITMAP "........"
     BITMAP "........"
 
 PowerupADGfx:
     BITMAP "........"
-    BITMAP ".#..##.."
-    BITMAP "#.#.#.#."
-    BITMAP "###.#.#."
-    BITMAP "#.#.#.#."
-    BITMAP "#.#.##.."
+    BITMAP "..#..##."
+    BITMAP ".#.#.#.#"
+    BITMAP ".###.#.#"
+    BITMAP ".#.#.#.#"
+    BITMAP ".#.#.##."
     BITMAP "........"
     BITMAP "........"
 
