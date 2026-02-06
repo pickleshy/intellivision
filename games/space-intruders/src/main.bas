@@ -1614,10 +1614,12 @@ GameLoop:
             END IF
         END IF
     ELSEIF #GameFlags AND FLAG_TOPDOWN THEN
-        ' Top-to-bottom row reveal
-        IF WaveRevealRow < ALIEN_ROWS - 1 THEN
-            WaveRevealRow = WaveRevealRow + 1
-            HitCol = 1  ' Reveal advanced
+        ' Top-to-bottom row reveal (every 8 frames for dramatic effect)
+        IF (ShimmerCount AND 7) = 0 THEN
+            IF WaveRevealRow < ALIEN_ROWS - 1 THEN
+                WaveRevealRow = WaveRevealRow + 1
+                HitCol = 1  ' Reveal advanced
+            END IF
         END IF
     ELSEIF (#GameFlags AND FLAG_REVEAL) = 0 THEN
         ' Standard left-to-right reveal (Pattern A) or fully revealed
