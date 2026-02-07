@@ -663,7 +663,8 @@ ProcessHit: PROCEDURE
         ' Stamp grey dot for missed beat
         PRINT AT #BeatScreenPos, GRAM_BEAT_EMPTY * 8 + COL_TAN + $0800
 
-        ' Break phrase and streaks
+        ' Grey out phrase notes, then break phrase
+        GOSUB GreyOutPhrase
         IF PhraseLen >= 3 THEN GOSUB AwardPhraseBonus
         PhraseLen = 0
         PerfectStreak = 0
@@ -703,7 +704,8 @@ HandleMissedBeat: PROCEDURE
     ' Stamp grey dot for missed beat
     PRINT AT #BeatScreenPos, GRAM_BEAT_EMPTY * 8 + COL_TAN + $0800
 
-    ' Break phrase and streaks
+    ' Grey out phrase notes, then break phrase
+    GOSUB GreyOutPhrase
     IF PhraseLen >= 3 THEN GOSUB AwardPhraseBonus
     PhraseLen = 0
     PerfectStreak = 0
@@ -885,15 +887,10 @@ DrawSyncMeter: PROCEDURE
 
     FOR LoopVar = 0 TO 19
         IF LoopVar < TempVal THEN
-            ' Filled block
-            IF SyncMeter <= 20 THEN
-                PRINT AT 160 + LoopVar, GRAM_SYNC_FULL * 8 + COL_RED + $0800
-            ELSEIF SyncMeter <= 40 THEN
-                PRINT AT 160 + LoopVar, GRAM_SYNC_FULL * 8 + COL_YELLOW + $0800
-            ELSE
-                PRINT AT 160 + LoopVar, GRAM_SYNC_FULL * 8 + COL_GREEN + $0800
-            END IF
+            ' Filled block: white per design doc
+            PRINT AT 160 + LoopVar, GRAM_SYNC_FULL * 8 + COL_WHITE + $0800
         ELSE
+            ' Empty block: dark green (grey stand-in)
             PRINT AT 160 + LoopVar, GRAM_SYNC_EMPTY * 8 + COL_DKGREEN + $0800
         END IF
     NEXT LoopVar
@@ -977,7 +974,7 @@ DrawInstrumentName: PROCEDURE
     IF CurrentInstr = 5 THEN PRINT AT 206 COLOR COL_RED, "VIOLA"
     IF CurrentInstr = 6 THEN PRINT AT 204 COLOR COL_GREEN, "TROMBONE"
     IF CurrentInstr = 7 THEN PRINT AT 205 COLOR COL_DKGREEN, "BASSOON"
-    IF CurrentInstr = 8 THEN PRINT AT 205 COLOR COL_RED, "TIMPANI"
+    IF CurrentInstr = 8 THEN PRINT AT 205 COLOR COL_YELLOW, "TIMPANI"
     IF CurrentInstr = 9 THEN PRINT AT 207 COLOR COL_TAN, "REST"
     RETURN
 END
@@ -991,7 +988,7 @@ DrawLegend: PROCEDURE
     PRINT AT 228 COLOR COL_RED, "5"
     PRINT AT 230 COLOR COL_GREEN, "6"
     PRINT AT 232 COLOR COL_DKGREEN, "7"
-    PRINT AT 234 COLOR COL_RED, "8"
+    PRINT AT 234 COLOR COL_YELLOW, "8"
     PRINT AT 236 COLOR COL_TAN, "9"
     PRINT AT 237 COLOR COL_TAN, "R"
     RETURN
@@ -1082,6 +1079,43 @@ DefineGramCards: PROCEDURE
     RETURN
 END
 
+' --- Grey out phrase notes on miss ---
+' When a phrase breaks, dim all previously hit notes to dark green
+GreyOutPhrase: PROCEDURE
+    IF PhraseLen < 1 THEN RETURN
+    IF TotalBeats < 2 THEN RETURN
+
+    ' Phrase covers beats from (TotalBeats - 1 - PhraseLen) to (TotalBeats - 2)
+    ' TotalBeats - 1 = current beat (missed), so phrase ends at TotalBeats - 2
+    TempVal = TotalBeats - 2   ' Last hit beat in phrase
+    IF TempVal >= PhraseLen THEN
+        LoopVar = TempVal - PhraseLen + 1  ' First hit beat in phrase
+    ELSE
+        LoopVar = 0
+    END IF
+
+    WHILE LoopVar <= TempVal
+        BeatRow = LoopVar / 20
+        BeatCol = LoopVar - (BeatRow * 20)
+
+        ' Odd rows snake right-to-left
+        IF BeatRow AND 1 THEN
+            BeatCol = 19 - BeatCol
+        END IF
+
+        #BeatScreenPos = RowStartData(BeatRow) + BeatCol
+
+        ' Read current BACKTAB card, recolor to dark green
+        #Card = PEEK($200 + #BeatScreenPos)
+        IF #Card > 0 THEN
+            PRINT AT #BeatScreenPos, (#Card AND $EFF8) OR COL_DKGREEN
+        END IF
+
+        LoopVar = LoopVar + 1
+    WEND
+    RETURN
+END
+
 ' ============================================
 ' SEGMENT 2 - Data Tables and GRAM Graphics
 ' ============================================
@@ -1111,7 +1145,7 @@ RowStartData:
 
 ' Instrument colors (indexed 0-8 for instruments 1-9)
 InstrColorData:
-    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_TAN, COL_RED, COL_GREEN, COL_DKGREEN, COL_RED, COL_TAN
+    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_TAN, COL_RED, COL_GREEN, COL_DKGREEN, COL_YELLOW, COL_TAN
 
 ' Instrument PSG periods
 InstrPeriodData:
