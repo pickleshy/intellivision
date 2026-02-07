@@ -274,6 +274,7 @@ ABulletX    = 0                 ' Alien bullet X position
 ABulletY    = 0                 ' Alien bullet Y position
 ' ABulletActive packed into #GameFlags (FLAG_ABULLET)
 ABulFrame   = 0                 ' Animation frame toggle (0 or 1)
+ABulletType = 0                 ' 0=zigzag (normal), 1=beam laser (boss)
 ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 #Score      = 0                 ' Player score
@@ -336,6 +337,7 @@ StarCount   = 0                 ' Number of active stars
 StarTimer   = 0                 ' Frame counter for scroll updates
 StarTick    = 0                 ' Tick counter (for slow layer)
 SilhOffset  = 0                 ' Silhouette scroll position (0 to SILH_MAP_LEN-1)
+BeamHits   = 0                 ' Beam pierce budget (2 = fresh shot, 0 = spent)
 BeamTimer  = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
 ChainTimer = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
 #ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
@@ -2439,6 +2441,7 @@ MovePlayer: PROCEDURE
                     #GameFlags = #GameFlags OR FLAG_BULLET
                     #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
                     IF BeamTimer > 0 THEN
+                        BeamHits = 2  ' Beam pierces 2 consecutive targets then stops
                         ' Chain reaction laser SFX: kill music, dual-tone + noise
                         PLAY OFF
                         ChainTimer = 24
@@ -2733,9 +2736,21 @@ CheckOneColumn: PROCEDURE
                 END IF
                 IF FoundBoss < 255 THEN
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
+                    ' Beam: apply second hit to same boss if budget remains
+                    IF BeamTimer > 0 THEN
+                        BeamHits = BeamHits - 1
+                        IF BeamHits > 0 THEN
+                            IF BossHP(FoundBoss) > 0 THEN
+                                BossHP(FoundBoss) = BossHP(FoundBoss) - 1
+                                BeamHits = BeamHits - 1
+                            END IF
+                        END IF
+                    END IF
                     IF BossHP(FoundBoss) > 0 THEN
-                        ' Damaged but alive — stop bullet, update color
-                        #GameFlags = #GameFlags AND $FFFE
+                        ' Damaged but alive — stop bullet unless beam has hits left
+                        IF BeamTimer = 0 OR BeamHits = 0 THEN
+                            #GameFlags = #GameFlags AND $FFFE
+                        END IF
                         #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Hit landed — chain preserved
                         IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
                         IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
@@ -2746,7 +2761,9 @@ CheckOneColumn: PROCEDURE
                         ' Boss dead! Check type
                         IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
-                            #GameFlags = #GameFlags AND $FFFE
+                            IF BeamTimer = 0 OR BeamHits = 0 THEN
+                                #GameFlags = #GameFlags AND $FFFE
+                            END IF
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1  ' Bomb kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
@@ -2773,7 +2790,9 @@ CheckOneColumn: PROCEDURE
                             IF #ExplosionPos + 21 < 220 THEN PRINT AT #ExplosionPos + 21, 0
                             ' Big score + explosion on all 4 tiles
                             #Score = #Score + BOSS_SCORE + BOSS_SCORE
-                            #GameFlags = #GameFlags AND $FFFE
+                            IF BeamTimer = 0 OR BeamHits = 0 THEN
+                                #GameFlags = #GameFlags AND $FFFE
+                            END IF
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
@@ -2800,7 +2819,9 @@ CheckOneColumn: PROCEDURE
                             IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
                             ' Big score + explosion
                             #Score = #Score + BOSS_SCORE
-                            #GameFlags = #GameFlags AND $FFFE
+                            IF BeamTimer = 0 OR BeamHits = 0 THEN
+                                #GameFlags = #GameFlags AND $FFFE
+                            END IF
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             ChainCount = ChainCount + 1  ' Skull boss kill counts!
                             IF ChainCount > ChainMax THEN ChainMax = ChainCount
@@ -2820,8 +2841,11 @@ CheckOneColumn: PROCEDURE
                 ' Normal alien kill
                 #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
 
-                ' Beam pierces through; normal bullet stops
-                IF BeamTimer = 0 THEN
+                ' Beam: decrement pierce budget; stop when exhausted
+                IF BeamTimer > 0 THEN
+                    BeamHits = BeamHits - 1
+                    IF BeamHits = 0 THEN #GameFlags = #GameFlags AND $FFFE
+                ELSE
                     #GameFlags = #GameFlags AND $FFFE
                 END IF
 
@@ -3026,6 +3050,19 @@ FindShooter: PROCEDURE
         ABulletX = (ALIEN_START_X + AlienOffsetX + ShootCol) * 8 + 11  ' +8 sprite offset, +3 to center
         ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 16   ' +8 sprite offset, +8 to bottom of card
         #GameFlags = #GameFlags OR FLAG_ABULLET
+        ' Check if shooter is a boss — fire beam laser instead of zigzag
+        ABulletType = 0
+        IF BossCount > 0 THEN
+            FOR BossIdx = 0 TO BossCount - 1
+                IF BossHP(BossIdx) > 0 THEN
+                    IF HitRow = BossRow(BossIdx) THEN
+                        IF ShootCol = BossCol(BossIdx) OR ShootCol = BossCol(BossIdx) + 1 THEN
+                            ABulletType = 1
+                        END IF
+                    END IF
+                END IF
+            NEXT BossIdx
+        END IF
     END IF
     RETURN
 END
@@ -3098,10 +3135,20 @@ END
 ' --------------------------------------------
 DrawAlienBullet: PROCEDURE
     IF #GameFlags AND FLAG_ABULLET THEN
-        IF ABulFrame THEN
-            SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_WHITE + $0800
+        IF ABulletType = 1 THEN
+            ' Boss beam laser: green/white flash, DOUBLEY for 16px tall
+            IF ABulFrame THEN
+                SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY + $0100, GRAM_BEAM * 8 + COL_GREEN + $0800
+            ELSE
+                SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY + $0100, GRAM_BEAM * 8 + COL_WHITE + $0800
+            END IF
         ELSE
-            SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_YELLOW + $0800
+            ' Normal zigzag bolt
+            IF ABulFrame THEN
+                SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_WHITE + $0800
+            ELSE
+                SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_YELLOW + $0800
+            END IF
         END IF
     END IF
     RETURN
@@ -3552,6 +3599,27 @@ MegaBeamKill: PROCEDURE
                 #ExplosionPos = FlyX / 8
                 ExplosionTimer = 15
                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+            END IF
+        END IF
+    END IF
+    ' Kill rogue alien in dogfight if beam overlaps it
+    IF RogueState = ROGUE_DIVE THEN
+        #ScreenPos = MegaBeamCol * 8
+        ' Rogue sprite is 8px wide at RogueX; beam is 16px wide at #ScreenPos
+        IF #ScreenPos + 15 >= RogueX THEN
+            IF #ScreenPos <= RogueX + 8 THEN
+                ' Destroy rogue
+                RogueState = ROGUE_IDLE
+                RogueTimer = 0 : RogueDivePhase = 0
+                SPRITE SPR_FLYER, 0, 0, 0
+                #Score = #Score + 50
+                #GameFlags = #GameFlags OR FLAG_SHOTLAND
+                ChainCount = ChainCount + 1
+                IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                IF ChainCount > 50 THEN ChainCount = 50
+                ChainTimeout = 90
+                SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
+                SOUND 2, 180, 14
             END IF
         END IF
     END IF
@@ -4041,6 +4109,8 @@ LoadPatternB: PROCEDURE
     FlyState = 0
     #FlyPhase = 0
     TitleFrame = 0
+    ' Hide capsule sprite if no wingman using it
+    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
 
     ' Reset alien positions (center the grid on screen)
     AlienOffsetX = 5
@@ -4356,6 +4426,8 @@ StartNewWave: PROCEDURE
     FlyState = 0
     #FlyPhase = 0
     TitleFrame = 0
+    ' Hide capsule sprite if no wingman using it
+    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
     TitleJitter = 0
     WaveRevealRow = 0
     #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
@@ -4426,27 +4498,35 @@ StartNewWave: PROCEDURE
             WAIT
         NEXT LoopVar
 
-        ' Phase 2: Ship says "bye!" — 2 GRAM cards centered on screen (row 5, cols 9-10)
-        PRINT AT 109, GRAM_BYE1 * 8 + COL_WHITE + $0800
-        PRINT AT 110, GRAM_BYE2 * 8 + COL_WHITE + $0800
-        FOR LoopVar = 0 TO 45
-            WAIT
-        NEXT LoopVar
-
-        ' Flash off the ship text rapidly (4 blinks)
-        FOR LoopVar = 0 TO 7
-            IF (LoopVar AND 1) = 0 THEN
-                PRINT AT 109, 0
-                PRINT AT 110, 0
+        ' Phase 2: Alien flies to center screen and pauses
+        ' Target: roughly center screen (X=80, Y=44 = row 4.5 area)
+        WHILE RogueX <> 80 OR RogueY <> 44
+            IF RogueX < 80 THEN
+                RogueX = RogueX + 2
+                IF RogueX > 80 THEN RogueX = 80
+            ELSEIF RogueX > 80 THEN
+                IF RogueX >= 2 THEN RogueX = RogueX - 2 ELSE RogueX = 0
+                IF RogueX < 80 THEN RogueX = 80
+            END IF
+            IF RogueY < 44 THEN
+                RogueY = RogueY + 2
+                IF RogueY > 44 THEN RogueY = 44
+            ELSEIF RogueY > 44 THEN
+                IF RogueY >= 2 THEN RogueY = RogueY - 2 ELSE RogueY = 0
+                IF RogueY < 44 THEN RogueY = 44
+            END IF
+            IF AnimFrame = 0 THEN
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
             ELSE
-                PRINT AT 109, GRAM_BYE1 * 8 + COL_WHITE + $0800
-                PRINT AT 110, GRAM_BYE2 * 8 + COL_WHITE + $0800
+                SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
             END IF
             WAIT
+        WEND
+
+        ' Brief pause at center
+        FOR LoopVar = 0 TO 15
             WAIT
         NEXT LoopVar
-        PRINT AT 109, 0
-        PRINT AT 110, 0
 
         ' Phase 3: Alien says "bye!" in its color next to wingman
         Row = (RogueY - 8) / 8
@@ -4456,11 +4536,36 @@ StartNewWave: PROCEDURE
         #ScreenPos = Row * 20 + HitCol
         PRINT AT #ScreenPos, GRAM_BYE1 * 8 + CaptureColor + $0800
         PRINT AT #ScreenPos + 1, GRAM_BYE2 * 8 + CaptureColor + $0800
-        FOR LoopVar = 0 TO 30
+        FOR LoopVar = 0 TO 40
             WAIT
         NEXT LoopVar
 
-        ' Phase 4: Alien flies straight up off screen (3px/frame)
+        ' Phase 4: Ship says "bye!" — 1 row above ship
+        HitCol = (PlayerX - 8) / 8
+        IF HitCol > 18 THEN HitCol = 18
+        Row = 9 * 20 + HitCol  ' Row 9 = one tile above ship (row 10)
+        PRINT AT Row, GRAM_BYE1 * 8 + COL_WHITE + $0800
+        PRINT AT Row + 1, GRAM_BYE2 * 8 + COL_WHITE + $0800
+        FOR LoopVar = 0 TO 45
+            WAIT
+        NEXT LoopVar
+
+        ' Flash off the ship text rapidly (4 blinks)
+        FOR LoopVar = 0 TO 7
+            IF (LoopVar AND 1) = 0 THEN
+                PRINT AT Row, 0
+                PRINT AT Row + 1, 0
+            ELSE
+                PRINT AT Row, GRAM_BYE1 * 8 + COL_WHITE + $0800
+                PRINT AT Row + 1, GRAM_BYE2 * 8 + COL_WHITE + $0800
+            END IF
+            WAIT
+            WAIT
+        NEXT LoopVar
+        PRINT AT Row, 0
+        PRINT AT Row + 1, 0
+
+        ' Phase 5: Alien flies straight up off screen (3px/frame)
         PRINT AT #ScreenPos, 0      ' Clear alien "bye!"
         PRINT AT #ScreenPos + 1, 0
         WHILE RogueY > 0
@@ -6349,16 +6454,16 @@ SaucerF4Gfx:
     BITMAP "...X...."
     BITMAP "........"
 
-' --- Wide Beam (4px centered column) ---
+' --- Beam Laser (2px centered column, shared with boss laser) ---
 BeamGfx:
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
 
 ' --- Power-Up Capsule Frames (Arkanoid-style with scrolling band) ---
 CapsuleF1Gfx:
@@ -6933,7 +7038,7 @@ si_loop:
 ' PLAY SIMPLE: Channel 3 free for SFX via SOUND 2
 ' ============================================================
 
-    SEGMENT 2   ' Gameplay music in Segment 2 (Seg 1 too full)
+    SEGMENT 3   ' Gameplay music in Segment 3 (Seg 2 near capacity)
 
 ' ------------------------------------------------------------
 ' Slow - "invaders far away"
