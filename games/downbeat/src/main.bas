@@ -119,6 +119,7 @@ CursorSprY = 0          ' Cursor sprite Y
 ' Tempo selection
 TempoChoice = 1         ' 0=Adagio, 1=Moderato, 2=Allegro
 DiscPrev = 0            ' Previous disc state for debounce
+FireHeld = 0            ' Consecutive frames fire held (ghost filter)
 
 ' Instrument variety
 DIM InstrUsed(9)        ' 0 or 1 for each instrument used
@@ -166,12 +167,20 @@ TitleDebounce:
     IF CONT.BUTTON THEN GOTO TitleDebounce
     IF CONT.KEY < 12 THEN GOTO TitleDebounce
 
-    ' Wait for new press
+    ' Wait for new press (FireHeld counter filters keypad ghosts)
+    FireHeld = 0
 TitleLoop:
     WAIT
     IF CONT.BUTTON THEN
-        IF CONT.KEY >= 12 THEN GOTO TempoSelect
+        IF CONT.KEY >= 12 THEN
+            IF FireHeld < 4 THEN FireHeld = FireHeld + 1
+        ELSE
+            FireHeld = 0
+        END IF
+    ELSE
+        FireHeld = 0
     END IF
+    IF FireHeld >= 4 THEN GOTO TempoSelect
     GOTO TitleLoop
 
 ' ============================================
@@ -197,6 +206,7 @@ TempoDebounce:
     IF CONT.KEY < 12 THEN GOTO TempoDebounce
 
     DiscPrev = 0
+    FireHeld = 0
 
     ' Selection loop
 TempoLoop:
@@ -235,16 +245,24 @@ TempoLoop:
         DiscPrev = 0
     END IF
 
-    ' Fire button starts game
+    ' Fire button starts game (FireHeld counter filters keypad ghosts)
     IF CONT.BUTTON THEN
         IF CONT.KEY >= 12 THEN
-            ' Load tempo parameters
-            BeatFramesPerBeat = TempoFramesData(TempoChoice)
-            MaxBeats = TempoBeatsData(TempoChoice)
-            PerfectWindow = PerfectWindowData(TempoChoice)
-            GoodWindow = GoodWindowData(TempoChoice)
-            GOTO StartGame
+            IF FireHeld < 4 THEN FireHeld = FireHeld + 1
+        ELSE
+            FireHeld = 0
         END IF
+    ELSE
+        FireHeld = 0
+    END IF
+    IF FireHeld >= 4 THEN
+        ' Load tempo parameters
+        FireHeld = 0
+        BeatFramesPerBeat = TempoFramesData(TempoChoice)
+        MaxBeats = TempoBeatsData(TempoChoice)
+        PerfectWindow = PerfectWindowData(TempoChoice)
+        GoodWindow = GoodWindowData(TempoChoice)
+        GOTO StartGame
     END IF
     GOTO TempoLoop
 
@@ -322,10 +340,10 @@ GameLoop:
     ' --- Beat timing engine ---
     GOSUB UpdateBeat
 
-    ' --- Metronome tick decay ---
+    ' --- Metronome tick decay (channel B) ---
     IF MetroDecay > 0 THEN
         MetroDecay = MetroDecay - 1
-        IF MetroDecay = 0 THEN SOUND 0, 1, 0
+        IF MetroDecay = 0 THEN SOUND 1, 1, 0
     END IF
 
     ' --- Metronome border flash ---
@@ -489,11 +507,23 @@ ResultsDebounce:
     IF CONT.BUTTON THEN GOTO ResultsDebounce
     IF CONT.KEY < 12 THEN GOTO ResultsDebounce
 
-    ' Wait for choice
+    ' Wait for choice (FireHeld counter filters keypad ghosts)
+    FireHeld = 0
 ResultsLoop:
     WAIT
+    ' Fire button replays (FireHeld counter filters keypad ghosts)
     IF CONT.BUTTON THEN
-        IF CONT.KEY >= 12 THEN GOTO StartGame
+        IF CONT.KEY >= 12 THEN
+            IF FireHeld < 4 THEN FireHeld = FireHeld + 1
+        ELSE
+            FireHeld = 0
+        END IF
+    ELSE
+        FireHeld = 0
+    END IF
+    IF FireHeld >= 4 THEN
+        FireHeld = 0
+        GOTO StartGame
     END IF
     IF CONT.KEY = 1 THEN GOTO TempoSelect
     GOTO ResultsLoop
@@ -520,17 +550,7 @@ UpdateBeat: PROCEDURE
     BeatFrameCount = BeatFrameCount + 1
 
     ' Check if beat threshold reached
-    IF BeatFramesPerBeat = 22 THEN
-        ' 160 BPM: alternate 22/23 frames
-        ' BeatHalf 0-2 use 23 frames, 3-7 use 22 frames
-        IF BeatHalf < 3 THEN
-            IF BeatFrameCount >= 23 THEN GOSUB FireBeat
-        ELSE
-            IF BeatFrameCount >= 22 THEN GOSUB FireBeat
-        END IF
-    ELSE
-        IF BeatFrameCount >= BeatFramesPerBeat THEN GOSUB FireBeat
-    END IF
+    IF BeatFrameCount >= BeatFramesPerBeat THEN GOSUB FireBeat
 
     #TurnFrameCount = #TurnFrameCount + 1
     RETURN
@@ -546,8 +566,8 @@ FireBeat: PROCEDURE
     BeatHalf = BeatHalf + 1
     IF BeatHalf >= 8 THEN BeatHalf = 0
 
-    ' Metronome click on channel 0
-    SOUND 0, 60, 12
+    ' Metronome click on channel B (1)
+    SOUND 1, 60, 12
     MetroDecay = 3
 
     ' Border flash
@@ -661,8 +681,8 @@ ProcessHit: PROCEDURE
             IF SyncMeter > 100 THEN SyncMeter = 100
         END IF
 
-        ' Silence metronome — instrument replaces it on hits
-        SOUND 0, 1, 0
+        ' Silence metronome (channel B) — instrument replaces it on hits
+        SOUND 1, 1, 0
         MetroDecay = 0
 
         ' Show instrument name and play sound
@@ -795,37 +815,44 @@ StampInstrument: PROCEDURE
     RETURN
 END
 
-' --- Play instrument sound on channel 1 ---
+' --- Play instrument sound on channel A (0) ---
 PlayInstrSound: PROCEDURE
-    IF CurrentInstr = 9 THEN RETURN  ' REST = silence
+    ' REST: barely audible tick for feedback per audio spec
+    IF CurrentInstr = 9 THEN
+        SOUND 0, 400, 2
+        InstrDecayCount = 2
+        #InstrFreq = 400
+        InstrVol = 2
+        RETURN
+    END IF
 
     TempVal = CurrentInstr - 1
     #InstrFreq = InstrPeriodData(TempVal)
     InstrVol = InstrVolumeData(TempVal)
     InstrDecayCount = InstrDecayData(TempVal)
 
-    SOUND 1, #InstrFreq, InstrVol
+    SOUND 0, #InstrFreq, InstrVol
 
-    ' Timpani: add noise
+    ' Timpani: add noise on channel C
     IF CurrentInstr = 8 THEN
         POKE $1F7, 12
-        TempVal = PEEK($1F8) AND $DB  ' Enable noise on channel B
+        TempVal = PEEK($1F8) AND $DB  ' Enable noise on channel A
         POKE $1F8, TempVal
     END IF
     RETURN
 END
 
-' --- Decay instrument sound each frame ---
+' --- Decay instrument sound each frame (channel A) ---
 UpdateInstrSfx: PROCEDURE
     InstrDecayCount = InstrDecayCount - 1
     IF InstrDecayCount = 0 THEN
-        SOUND 1, 1, 0
+        SOUND 0, 1, 0
         ' Disable noise
         TempVal = PEEK($1F8) OR $24
         POKE $1F8, TempVal
     ELSE
         IF InstrVol > 1 THEN InstrVol = InstrVol - 1
-        SOUND 1, #InstrFreq, InstrVol
+        SOUND 0, #InstrFreq, InstrVol
     END IF
     RETURN
 END
@@ -937,9 +964,9 @@ END
 
 ' --- Draw BPM on row 0 ---
 DrawBPM: PROCEDURE
-    IF TempoChoice = 0 THEN PRINT AT 9 COLOR COL_TAN, " 80"
-    IF TempoChoice = 1 THEN PRINT AT 9 COLOR COL_TAN, "120"
-    IF TempoChoice = 2 THEN PRINT AT 9 COLOR COL_TAN, "160"
+    IF TempoChoice = 0 THEN PRINT AT 9 COLOR COL_TAN, " 90"
+    IF TempoChoice = 1 THEN PRINT AT 9 COLOR COL_TAN, "110"
+    IF TempoChoice = 2 THEN PRINT AT 9 COLOR COL_TAN, "130"
     RETURN
 END
 
@@ -1018,23 +1045,23 @@ END
 DrawTempoChoices: PROCEDURE
     ' Row 3 (pos 60): Adagio
     IF TempoChoice = 0 THEN
-        PRINT AT 62 COLOR COL_GREEN, "1 ADAGIO     80"
+        PRINT AT 62 COLOR COL_GREEN, "1 ADAGIO     90"
     ELSE
-        PRINT AT 62 COLOR COL_TAN, "1 ADAGIO     80"
+        PRINT AT 62 COLOR COL_TAN, "1 ADAGIO     90"
     END IF
 
     ' Row 5 (pos 100): Moderato
     IF TempoChoice = 1 THEN
-        PRINT AT 102 COLOR COL_YELLOW, "2 MODERATO  120"
+        PRINT AT 102 COLOR COL_YELLOW, "2 MODERATO  110"
     ELSE
-        PRINT AT 102 COLOR COL_TAN, "2 MODERATO  120"
+        PRINT AT 102 COLOR COL_TAN, "2 MODERATO  110"
     END IF
 
     ' Row 7 (pos 140): Allegro
     IF TempoChoice = 2 THEN
-        PRINT AT 142 COLOR COL_RED, "3 ALLEGRO   160"
+        PRINT AT 142 COLOR COL_RED, "3 ALLEGRO   130"
     ELSE
-        PRINT AT 142 COLOR COL_TAN, "3 ALLEGRO   160"
+        PRINT AT 142 COLOR COL_TAN, "3 ALLEGRO   130"
     END IF
     RETURN
 END
@@ -1051,38 +1078,38 @@ CountdownSequence: PROCEDURE
 
     ' "4"
     PRINT AT 109 COLOR COL_WHITE, "4"
-    SOUND 0, 120, 10
+    SOUND 1, 120, 10
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
-    SOUND 0, 1, 0
+    SOUND 1, 1, 0
     PRINT AT 109, " "
 
     ' "3"
     PRINT AT 109 COLOR COL_WHITE, "3"
-    SOUND 0, 120, 10
+    SOUND 1, 120, 10
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
-    SOUND 0, 1, 0
+    SOUND 1, 1, 0
     PRINT AT 109, " "
 
     ' "2"
     PRINT AT 109 COLOR COL_YELLOW, "2"
-    SOUND 0, 120, 10
+    SOUND 1, 120, 10
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
-    SOUND 0, 1, 0
+    SOUND 1, 1, 0
     PRINT AT 109, " "
 
     ' "1"
     PRINT AT 109 COLOR COL_GREEN, "1"
-    SOUND 0, 60, 14
+    SOUND 1, 60, 14
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
-    SOUND 0, 1, 0
+    SOUND 1, 1, 0
     PRINT AT 109, " "
     RETURN
 END
@@ -1151,13 +1178,13 @@ END
 
 ' --- ROM Lookup Tables ---
 
-' Tempo: frames per beat
+' Tempo: frames per beat (90/110/130 BPM)
 TempoFramesData:
-    DATA 45, 30, 22
+    DATA 40, 33, 28
 
 ' Tempo: beats per 45-sec turn
 TempoBeatsData:
-    DATA 60, 90, 120
+    DATA 67, 82, 97
 
 ' Perfect hit window (frames from beat) - fixed ±75ms = 5 frames at 60fps
 PerfectWindowData:
@@ -1175,17 +1202,22 @@ RowStartData:
 InstrColorData:
     DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_TAN, COL_RED, COL_GREEN, COL_DKGREEN, COL_YELLOW, COL_TAN
 
-' Instrument PSG periods
+' Instrument PSG periods (from audio spec)
+' Piccolo=35, Trumpet=70, Violin=90, Oboe=140, Viola=190, Trombone=250, Bassoon=350, Timpani=700, REST=0
 InstrPeriodData:
-    DATA 70, 127, 200, 170, 300, 500, 700, 900, 0
+    DATA 35, 70, 90, 140, 190, 250, 350, 700, 0
 
-' Instrument volumes
+' Instrument volumes (from audio spec envelopes)
+' Piccolo=15(bright), Trumpet=15(sharp), Violin=14(sustain),
+' Oboe=14(buzzy), Viola=13(warm), Trombone=14(brassy),
+' Bassoon=12(deep), Timpani=15(percussive), REST=0
 InstrVolumeData:
-    DATA 12, 14, 13, 10, 12, 14, 13, 15, 0
+    DATA 15, 15, 14, 14, 13, 14, 12, 15, 0
 
 ' Instrument decay (frames)
+' Short for percussive, longer for sustained instruments
 InstrDecayData:
-    DATA 3, 6, 10, 6, 10, 8, 10, 4, 0
+    DATA 4, 6, 10, 6, 10, 8, 12, 5, 0
 
 ' --- GRAM Bitmap Data ---
 
