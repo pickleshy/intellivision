@@ -99,7 +99,7 @@ HitStreak = 0           ' Consecutive hits of any quality (Perfect+Good)
 HitStreakBest = 0       ' Best hit streak this turn
 
 ' Sync meter
-SyncMeter = 50          ' 0-100 sync percentage
+SyncMeter = 100         ' 0-100 sync percentage (starts full per spec)
 DazeTimer = 0           ' Frames of daze remaining
 
 ' Instrument sounds
@@ -263,7 +263,7 @@ StartGame:
     BeatFrameCount = 0
     BeatHalf = 0
     #TurnFrameCount = 0
-    SyncMeter = 50
+    SyncMeter = 100   ' Start full per spec
     PhraseLen = 0
     PerfectStreak = 0
     StreakBest = 0
@@ -1039,12 +1039,29 @@ DrawTempoChoices: PROCEDURE
     RETURN
 END
 
-' --- Countdown sequence (3-2-1-GO) ---
+' --- Countdown sequence (4-3-2-1 at tempo speed per spec) ---
 CountdownSequence: PROCEDURE
+    ' Each number displayed for exactly one beat duration
+    ' TempVal = frames to wait per beat (BeatFramesPerBeat - 1 for FOR loop)
+    IF BeatFramesPerBeat >= 1 THEN
+        TempVal = BeatFramesPerBeat - 1
+    ELSE
+        TempVal = 29  ' Fallback to 120 BPM
+    END IF
+
+    ' "4"
+    PRINT AT 109 COLOR COL_WHITE, "4"
+    SOUND 0, 120, 10
+    FOR LoopVar = 0 TO TempVal
+        WAIT
+    NEXT LoopVar
+    SOUND 0, 1, 0
+    PRINT AT 109, " "
+
     ' "3"
     PRINT AT 109 COLOR COL_WHITE, "3"
     SOUND 0, 120, 10
-    FOR LoopVar = 0 TO 44
+    FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
     SOUND 0, 1, 0
@@ -1053,7 +1070,7 @@ CountdownSequence: PROCEDURE
     ' "2"
     PRINT AT 109 COLOR COL_YELLOW, "2"
     SOUND 0, 120, 10
-    FOR LoopVar = 0 TO 44
+    FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
     SOUND 0, 1, 0
@@ -1061,21 +1078,12 @@ CountdownSequence: PROCEDURE
 
     ' "1"
     PRINT AT 109 COLOR COL_GREEN, "1"
-    SOUND 0, 120, 10
-    FOR LoopVar = 0 TO 44
+    SOUND 0, 60, 14
+    FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
     SOUND 0, 1, 0
     PRINT AT 109, " "
-
-    ' "GO!"
-    PRINT AT 108 COLOR COL_WHITE, "GO!"
-    SOUND 0, 60, 14
-    FOR LoopVar = 0 TO 20
-        WAIT
-    NEXT LoopVar
-    SOUND 0, 1, 0
-    PRINT AT 108, "   "
     RETURN
 END
 
@@ -1151,13 +1159,13 @@ TempoFramesData:
 TempoBeatsData:
     DATA 60, 90, 120
 
-' Perfect hit window (frames from beat) - generous symmetric window
+' Perfect hit window (frames from beat) - fixed ±75ms = 5 frames at 60fps
 PerfectWindowData:
-    DATA 7, 5, 4
+    DATA 5, 5, 5
 
-' Good hit window (frames from beat) - wide symmetric window
+' Good hit window (frames from beat) - fixed ±125ms = 8 frames at 60fps
 GoodWindowData:
-    DATA 14, 11, 8
+    DATA 8, 8, 8
 
 ' Row start BACKTAB positions for melody rows 0-5 (screen rows 2-7)
 RowStartData:
