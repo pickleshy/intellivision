@@ -269,12 +269,11 @@ BulletX     = 0                 ' Bullet X position
 BulletY     = 0                 ' Bullet Y position
 ' BulletActive packed into #GameFlags (FLAG_BULLET)
 BulletColor = 0                 ' Bullet color phase (0-2 for color cycling)
-LaserColor  = 0                 ' Current laser color (calculated each frame)
+' AlienColor eliminated — uses AlienColor as temp in DrawBullet/MegaBeam
 ABulletX    = 0                 ' Alien bullet X position
 ABulletY    = 0                 ' Alien bullet Y position
 ' ABulletActive packed into #GameFlags (FLAG_ABULLET)
-ABulFrame   = 0                 ' Animation frame toggle (0 or 1)
-ABulletType = 0                 ' 0=zigzag (normal), 1=beam laser (boss)
+ABulFrame   = 0                 ' Bit 0: anim frame (0/1), Bit 1: type (0=zigzag, 2=beam)
 ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 #Score      = 0                 ' Player score
@@ -408,11 +407,9 @@ DIM BossHP(MAX_BOSSES)             ' HP per boss (0=dead/unused, 1-3=alive)
 DIM BossColor(MAX_BOSSES)          ' Display color per boss
 DIM BossType(MAX_BOSSES)           ' 0=skull (multi-hit), 1=bomb (chain explosion)
 BossCount      = 0                 ' Number of boss slots in use (0-4)
-BossIdx        = 0                 ' Temp: loop index for boss iteration
 FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
 RowBoss1       = 255               ' Cached: 1st boss index on current row (255=none)
 RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=none)
-RowHasBoss     = 0                 ' Cached: 1=current row has boss, 0=no boss
 DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
 ' Column bitmask lookup table is in ROM (see ColMaskData near end of file)
 ' Chain explosion state (bomb alien)
@@ -597,7 +594,7 @@ ResetToTitle:
     MarchCount = 0
     #GameFlags = #GameFlags AND $FFFC : ABulFrame = 0  ' Clear FLAG_BULLET + FLAG_ABULLET
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
-    FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
+    FOR LoopVar = 0 TO MAX_BOSSES - 1 : BossHP(LoopVar) = 0 : NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0
     #GameFlags = #GameFlags AND $EFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET + FLAG_KEY0HELD
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
@@ -1483,7 +1480,7 @@ StartGame:
     ChainCount = 0  ' Reset kill chain
     ChainMax = 0    ' Reset best chain for new game
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
-    FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
+    FOR LoopVar = 0 TO MAX_BOSSES - 1 : BossHP(LoopVar) = 0 : NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
     #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
     TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
@@ -2238,16 +2235,16 @@ ChainDone:
         Col = 9 - Col
         ' Color cycle: white → yellow → red
         IF MegaBeamTimer > 13 THEN
-            LaserColor = COL_WHITE
+            AlienColor = COL_WHITE
         ELSEIF MegaBeamTimer > 6 THEN
-            LaserColor = COL_YELLOW
+            AlienColor = COL_YELLOW
         ELSE
-            LaserColor = COL_RED
+            AlienColor = COL_RED
         END IF
         ' Draw beam from top row (Col) down to row 9 (at ship turret)
         FOR LoopVar = Col TO 9
             #ScreenPos = LoopVar * 20 + MegaBeamCol
-            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + LaserColor + $0800
+            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + AlienColor + $0800
         NEXT LoopVar
         IF MegaBeamTimer = 0 THEN
             GOSUB MegaBeamClear
@@ -2405,9 +2402,9 @@ MovePlayer: PROCEDURE
                 IF MegaBeamCol > 19 THEN MegaBeamCol = 19
                 MegaBeamTimer = 20
                 ' Reset beam damage tracker for each boss
-                FOR BossIdx = 0 TO MAX_BOSSES - 1
-                    BossBeamHit(BossIdx) = 0
-                NEXT BossIdx
+                FOR LoopVar = 0 TO MAX_BOSSES - 1
+                    BossBeamHit(LoopVar) = 0
+                NEXT LoopVar
                 GOSUB MegaBeamKill
                 GOSUB MegaBeamDraw
                 ' SFX: loud crackle blast
@@ -2623,19 +2620,19 @@ BombExplode: PROCEDURE
 
     ' --- OPTIMIZATION: Pre-scan bosses in blast radius (4 checks vs 48) ---
     ' Check each boss once; if in blast radius, kill it now
-    FOR BossIdx = 0 TO BossCount - 1
-        IF BossHP(BossIdx) > 0 THEN
+    FOR LoopVar = 0 TO BossCount - 1
+        IF BossHP(LoopVar) > 0 THEN
             ' Check if boss row is in blast radius (BombExpRow-1 to BombExpRow+1)
-            IF BossRow(BossIdx) >= BombExpRow - 1 THEN
-            IF BossRow(BossIdx) <= BombExpRow + 1 THEN
+            IF BossRow(LoopVar) >= BombExpRow - 1 THEN
+            IF BossRow(LoopVar) <= BombExpRow + 1 THEN
                 ' Check if boss columns overlap blast radius (BombExpCol-1 to BombExpCol+2)
                 ' Boss occupies BossCol and BossCol+1
-                IF BossCol(BossIdx) + 1 >= BombExpCol - 1 THEN
-                IF BossCol(BossIdx) <= BombExpCol + 2 THEN
+                IF BossCol(LoopVar) + 1 >= BombExpCol - 1 THEN
+                IF BossCol(LoopVar) <= BombExpCol + 2 THEN
                     ' Boss is in blast radius - kill it
-                    Row = BossRow(BossIdx)
-                    Col = BossCol(BossIdx)
-                    BossHP(BossIdx) = 0
+                    Row = BossRow(LoopVar)
+                    Col = BossCol(LoopVar)
+                    BossHP(LoopVar) = 0
                     ' XOR out both boss columns from alien grid
                     #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col)
                     #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
@@ -2645,7 +2642,7 @@ BombExplode: PROCEDURE
             END IF
             END IF
         END IF
-    NEXT BossIdx
+    NEXT LoopVar
 
     ' XOR out all regular aliens in blast radius (no FindBoss needed now)
     FOR Row = BombExpRow - 1 TO BombExpRow + 1
@@ -2715,24 +2712,24 @@ CheckOneColumn: PROCEDURE
                 ' Multi-boss intercept (inlined FindBoss for speed)
                 FoundBoss = 255
                 IF BossCount > 0 THEN
-                    FOR BossIdx = 0 TO BossCount - 1
-                        IF BossHP(BossIdx) > 0 THEN
-                            IF AlienGridRow = BossRow(BossIdx) THEN
-                                IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
-                                    FoundBoss = BossIdx
+                    FOR LoopVar = 0 TO BossCount - 1
+                        IF BossHP(LoopVar) > 0 THEN
+                            IF AlienGridRow = BossRow(LoopVar) THEN
+                                IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                                    FoundBoss = LoopVar
                                 END IF
                             ELSEIF #GameFlags AND FLAG_HASLARGE THEN
                                 ' Only check bottom-half match when a large alien exists
-                                IF BossType(BossIdx) = LARGE_TYPE THEN
-                                    IF AlienGridRow = BossRow(BossIdx) + 1 THEN
-                                        IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
-                                            FoundBoss = BossIdx
+                                IF BossType(LoopVar) = LARGE_TYPE THEN
+                                    IF AlienGridRow = BossRow(LoopVar) + 1 THEN
+                                        IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                                            FoundBoss = LoopVar
                                         END IF
                                     END IF
                                 END IF
                             END IF
                         END IF
-                    NEXT BossIdx
+                    NEXT LoopVar
                 END IF
                 IF FoundBoss < 255 THEN
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
@@ -2986,23 +2983,23 @@ DrawBullet: PROCEDURE
 
         ' Solid red for frames 0-3, solid white for frames 4-7
         IF BulletColor < 4 THEN
-            LaserColor = COL_RED
+            AlienColor = COL_RED
         ELSE
-            LaserColor = COL_WHITE
+            AlienColor = COL_WHITE
         END IF
 
         IF BeamTimer > 0 THEN
             ' Wide beam mode: 8px wide x 16px tall, centered on bullet position
             IF BulletX >= 3 THEN
-                SPRITE SPR_PBULLET, (BulletX - 3) + $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
+                SPRITE SPR_PBULLET, (BulletX - 3) + $0200, BulletY + $0100, GRAM_BEAM * 8 + AlienColor + $0800
             ELSE
-                SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + LaserColor + $0800
+                SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + AlienColor + $0800
             END IF
         ELSEIF #GameFlags AND FLAG_DUAL THEN
             ' Quad laser mode: 4-line pattern sprite
-            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + LaserColor + $0800
+            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + AlienColor + $0800
         ELSE
-            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + LaserColor + $0800
+            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + AlienColor + $0800
         END IF
     ELSE
         ' Hide bullet sprite
@@ -3051,17 +3048,17 @@ FindShooter: PROCEDURE
         ABulletY = (ALIEN_START_Y + AlienOffsetY + HitRow) * 8 + 16   ' +8 sprite offset, +8 to bottom of card
         #GameFlags = #GameFlags OR FLAG_ABULLET
         ' Check if shooter is a boss — fire beam laser instead of zigzag
-        ABulletType = 0
+        ABulFrame = ABulFrame AND 1   ' Clear type bit, keep anim frame
         IF BossCount > 0 THEN
-            FOR BossIdx = 0 TO BossCount - 1
-                IF BossHP(BossIdx) > 0 THEN
-                    IF HitRow = BossRow(BossIdx) THEN
-                        IF ShootCol = BossCol(BossIdx) OR ShootCol = BossCol(BossIdx) + 1 THEN
-                            ABulletType = 1
+            FOR LoopVar = 0 TO BossCount - 1
+                IF BossHP(LoopVar) > 0 THEN
+                    IF HitRow = BossRow(LoopVar) THEN
+                        IF ShootCol = BossCol(LoopVar) OR ShootCol = BossCol(LoopVar) + 1 THEN
+                            ABulFrame = ABulFrame OR 2   ' Set beam type bit
                         END IF
                     END IF
                 END IF
-            NEXT BossIdx
+            NEXT LoopVar
         END IF
     END IF
     RETURN
@@ -3072,7 +3069,7 @@ END
 ' --------------------------------------------
 MoveAlienBullet: PROCEDURE
     ABulletY = ABulletY + ALIEN_BULLET_SPEED
-    ABulFrame = 1 - ABulFrame   ' Toggle zigzag animation frame
+    ABulFrame = ABulFrame XOR 1  ' Toggle anim frame (bit 0), preserve type (bit 1)
 
     ' Check if bullet went off screen
     IF ABulletY >= 104 THEN
@@ -3135,16 +3132,16 @@ END
 ' --------------------------------------------
 DrawAlienBullet: PROCEDURE
     IF #GameFlags AND FLAG_ABULLET THEN
-        IF ABulletType = 1 THEN
+        IF ABulFrame AND 2 THEN
             ' Boss beam laser: green/white flash, DOUBLEY for 16px tall
-            IF ABulFrame THEN
+            IF ABulFrame AND 1 THEN
                 SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY + $0100, GRAM_BEAM * 8 + COL_GREEN + $0800
             ELSE
                 SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY + $0100, GRAM_BEAM * 8 + COL_WHITE + $0800
             END IF
         ELSE
             ' Normal zigzag bolt
-            IF ABulFrame THEN
+            IF ABulFrame AND 1 THEN
                 SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_WHITE + $0800
             ELSE
                 SPRITE SPR_ABULLET, ABulletX + $0200, ABulletY, GRAM_ZIGZAG1 * 8 + COL_YELLOW + $0800
@@ -3247,11 +3244,11 @@ MarchAliens: PROCEDURE
         NEXT Row
         AlienOffsetX = AlienOffsetX + HitRow
         ' Adjust boss grid positions
-        FOR BossIdx = 0 TO BossCount - 1
-            IF BossHP(BossIdx) > 0 THEN
-                BossCol(BossIdx) = BossCol(BossIdx) - HitRow
+        FOR LoopVar = 0 TO BossCount - 1
+            IF BossHP(LoopVar) > 0 THEN
+                BossCol(LoopVar) = BossCol(LoopVar) - HitRow
             END IF
-        NEXT BossIdx
+        NEXT LoopVar
         ' Update boundaries after shift
         LoopVar = LoopVar - HitRow
         HitRow = 0
@@ -3515,15 +3512,15 @@ MegaBeamKill: PROCEDURE
                             AlienGridRow = LoopVar
                             FoundBoss = 255
                             IF BossCount > 0 THEN
-                                FOR BossIdx = 0 TO BossCount - 1
-                                    IF BossHP(BossIdx) > 0 THEN
-                                        IF AlienGridRow = BossRow(BossIdx) THEN
-                                            IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
-                                                FoundBoss = BossIdx
+                                FOR Row = 0 TO BossCount - 1
+                                    IF BossHP(Row) > 0 THEN
+                                        IF AlienGridRow = BossRow(Row) THEN
+                                            IF AlienGridCol = BossCol(Row) OR AlienGridCol = BossCol(Row) + 1 THEN
+                                                FoundBoss = Row
                                             END IF
                                         END IF
                                     END IF
-                                NEXT BossIdx
+                                NEXT Row
                             END IF
                             IF FoundBoss < 255 THEN
                                 ' Only deal 1 damage per boss per beam activation
@@ -3832,25 +3829,22 @@ DrawAliens: PROCEDURE
         #Card = AlienCard * 8 + AlienColor + $0800
 
         ' Pre-check: cache boss indices for this row (eliminates FindBoss GOSUB)
-        RowHasBoss = 0
         RowBoss1 = 255 : RowBoss2 = 255
         IF BossCount > 0 THEN
-            FOR BossIdx = 0 TO BossCount - 1
-                IF BossHP(BossIdx) > 0 THEN
-                    IF Row = BossRow(BossIdx) THEN
-                        IF RowBoss1 = 255 THEN RowBoss1 = BossIdx ELSE RowBoss2 = BossIdx
-                        RowHasBoss = 1
+            FOR LoopVar = 0 TO BossCount - 1
+                IF BossHP(LoopVar) > 0 THEN
+                    IF Row = BossRow(LoopVar) THEN
+                        IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
                     ELSEIF #GameFlags AND FLAG_HASLARGE THEN
                         ' Only check bottom-half match when a large alien exists
-                        IF BossType(BossIdx) = LARGE_TYPE THEN
-                            IF Row = BossRow(BossIdx) + 1 THEN
-                                IF RowBoss1 = 255 THEN RowBoss1 = BossIdx ELSE RowBoss2 = BossIdx
-                                RowHasBoss = 1
+                        IF BossType(LoopVar) = LARGE_TYPE THEN
+                            IF Row = BossRow(LoopVar) + 1 THEN
+                                IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
                             END IF
                         END IF
                     END IF
                 END IF
-            NEXT BossIdx
+            NEXT LoopVar
         END IF
 
         IF #GameFlags AND FLAG_REVEAL THEN
@@ -3872,7 +3866,7 @@ DrawAliens: PROCEDURE
                 IF #AlienRow(Row) AND #Mask THEN
                     ' Check for boss in dual-reveal mode (inline, no GOSUB)
                     FoundBoss = 255
-                    IF RowHasBoss THEN
+                    IF RowBoss1 < 255 THEN
                         IF RowBoss1 < 255 THEN
                             IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
                         END IF
@@ -3975,7 +3969,7 @@ DrawAliens: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         ' Check if this cell is a boss (inline, no GOSUB)
                         FoundBoss = 255
-                        IF RowHasBoss THEN
+                        IF RowBoss1 < 255 THEN
                             IF RowBoss1 < 255 THEN
                                 IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
                             END IF
@@ -4100,6 +4094,12 @@ LoadPatternB: PROCEDURE
 
     ' Clear active bullets, rogue (but preserve wingman!)
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
+    ' Clear wingman bullet BACKTAB tile before deactivating
+    IF #GameFlags AND FLAG_CAPBULLET THEN
+        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
+    END IF
     MegaBeamTimer = 0
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -4130,9 +4130,9 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
 
     ' Clear all boss slots
-    FOR BossIdx = 0 TO MAX_BOSSES - 1
-        BossHP(BossIdx) = 0
-    NEXT BossIdx
+    FOR LoopVar = 0 TO MAX_BOSSES - 1
+        BossHP(LoopVar) = 0
+    NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0
 
     ' Pattern B boss placement per wave (wraps every 8)
@@ -4167,9 +4167,9 @@ LoadPatternB: PROCEDURE
 
     ' Load large alien GRAM cards if any LARGE_TYPE boss in this pattern
     FoundBoss = 0
-    FOR BossIdx = 0 TO BossCount - 1
-        IF BossType(BossIdx) = LARGE_TYPE THEN FoundBoss = 1
-    NEXT BossIdx
+    FOR LoopVar = 0 TO BossCount - 1
+        IF BossType(LoopVar) = LARGE_TYPE THEN FoundBoss = 1
+    NEXT LoopVar
     IF FoundBoss THEN
         #GameFlags = #GameFlags OR FLAG_HASLARGE
         DEFINE GRAM_LARGE_TL, 2, LargeAlienTLGfx  ' Cards 19-20 (TL + TR)
@@ -4199,9 +4199,9 @@ LoadPatternB: PROCEDURE
             #AlienRow(Row) = #AlienRow(Row) / ColMaskData(HitRow)
         NEXT Row
         AlienOffsetX = AlienOffsetX + HitRow
-        FOR BossIdx = 0 TO BossCount - 1
-            BossCol(BossIdx) = BossCol(BossIdx) - HitRow
-        NEXT BossIdx
+        FOR LoopVar = 0 TO BossCount - 1
+            BossCol(LoopVar) = BossCol(LoopVar) - HitRow
+        NEXT LoopVar
     END IF
 
     ' Set dual-slide mode: halves fly in from screen edges
@@ -4339,9 +4339,9 @@ StartNewWave: PROCEDURE
     NEXT LoopVar
 
     ' Clear all boss slots
-    FOR BossIdx = 0 TO MAX_BOSSES - 1
-        BossHP(BossIdx) = 0
-    NEXT BossIdx
+    FOR LoopVar = 0 TO MAX_BOSSES - 1
+        BossHP(LoopVar) = 0
+    NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0
 
     ' Boss placement per wave (wraps every 8 waves)
@@ -4416,6 +4416,12 @@ StartNewWave: PROCEDURE
 
     ' Clear any active bullets (power-ups AND wingman persist until death!)
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
+    ' Clear wingman bullet BACKTAB tile before deactivating
+    IF #GameFlags AND FLAG_CAPBULLET THEN
+        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
+    END IF
     #MegaTimer = 0
     MegaBeamTimer = 0
     GOSUB ClearRogueOnly
@@ -4694,21 +4700,44 @@ UpdateCapture: PROCEDURE
         IF CaptureStep >= 16 THEN CaptureStep = 0
     END IF
 
-    ' Compute orbit position centered on player
-    RogueX = PlayerX - 4 + CaptureOrbitDX(CaptureStep) - CAPTURE_ORBIT_R
-    RogueY = PLAYER_Y - 12 + CaptureOrbitDY(CaptureStep) - CAPTURE_ORBIT_R
+    ' Compute orbit position centered on player (use HitCol/HitRow as temps
+    ' to avoid clobbering RogueX/RogueY which the rogue dive system needs)
+    HitCol = PlayerX - 4 + CaptureOrbitDX(CaptureStep) - CAPTURE_ORBIT_R
+    HitRow = PLAYER_Y - 12 + CaptureOrbitDY(CaptureStep) - CAPTURE_ORBIT_R
 
     ' Clamp X to valid sprite range
-    IF RogueX > 200 THEN RogueX = 0  ' unsigned underflow guard
-    IF RogueX > 160 THEN RogueX = 160
+    IF HitCol > 200 THEN HitCol = 0  ' unsigned underflow guard
+    IF HitCol > 160 THEN HitCol = 160
 
     ' Render wingman (skip if power-up capsule is using the sprite)
     ' Uses Mooninite-style graphics (GRAM_WINGMAN_F1/F2) in captured alien's color
     IF TitleFrame = 0 THEN
         IF AnimFrame = 0 THEN
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
+            SPRITE SPR_POWERUP, HitCol + SPR_VISIBLE, HitRow, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
         ELSE
-            SPRITE SPR_POWERUP, RogueX + SPR_VISIBLE, RogueY, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
+            SPRITE SPR_POWERUP, HitCol + SPR_VISIBLE, HitRow, GRAM_WINGMAN_F2 * 8 + CaptureColor + $0800
+        END IF
+    END IF
+
+    ' Rogue alien body collision with wingman
+    IF RogueState = ROGUE_DIVE THEN
+        IF RogueX + 6 >= HitCol THEN
+            IF HitCol + 8 >= RogueX THEN
+                IF RogueY + 6 >= HitRow THEN
+                    IF HitRow + 6 >= RogueY THEN
+                        ' Rogue destroys wingman! Release capture
+                        IF #GameFlags AND FLAG_CAPBULLET THEN
+                            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                            IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+                        END IF
+                        #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
+                        SPRITE SPR_POWERUP, 0, 0, 0
+                        SfxType = 1 : SfxVolume = 12 : #SfxPitch = 150
+                        SOUND 2, 150, 12
+                        RETURN
+                    END IF
+                END IF
+            END IF
         END IF
     END IF
 
@@ -4719,9 +4748,9 @@ UpdateCapture: PROCEDURE
         CaptureTimer = CAPTURE_FIRE_RATE
         IF (#GameFlags AND FLAG_CAPBULLET) = 0 THEN
             ' Launch visible upward bullet from wingman position
-            CapBulletCol = (RogueX - 8) / 8
+            CapBulletCol = (HitCol - 8) / 8
             IF CapBulletCol > 19 THEN CapBulletCol = 19
-            CapBulletRow = (RogueY - 8) / 8
+            CapBulletRow = (HitRow - 8) / 8
             IF CapBulletRow > 11 THEN CapBulletRow = 11
             #GameFlags = #GameFlags OR FLAG_CAPBULLET
             ' SFX: soft pew on channel 3
@@ -4750,6 +4779,38 @@ UpdateCapture: PROCEDURE
 
         ' Check for alien hit at new position
         GOSUB CaptureHitscan
+
+        ' Check wingman bullet vs rogue sprite (not in grid)
+        IF #GameFlags AND FLAG_CAPBULLET THEN
+            IF RogueState = ROGUE_DIVE THEN
+                IF RogueX >= 8 THEN
+                    IF RogueY >= 8 THEN
+                        IF CapBulletRow = (RogueY - 8) / 8 THEN
+                            #ScreenPos = (RogueX - 8) / 8
+                            IF CapBulletCol >= #ScreenPos THEN
+                                IF CapBulletCol <= #ScreenPos + 1 THEN
+                                    ' Wingman bullet kills rogue!
+                                    RogueState = ROGUE_IDLE
+                                    RogueTimer = 0 : RogueDivePhase = 0
+                                    SPRITE SPR_FLYER, 0, 0, 0
+                                    #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                                    IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+                                    #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
+                                    #Score = #Score + 50
+                                    #GameFlags = #GameFlags OR FLAG_SHOTLAND
+                                    ChainCount = ChainCount + 1
+                                    IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                                    IF ChainCount > 50 THEN ChainCount = 50
+                                    ChainTimeout = 90
+                                    SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
+                                    SOUND 2, 180, 14
+                                END IF
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
 
         ' Draw bullet tile if still active
         IF #GameFlags AND FLAG_CAPBULLET THEN
@@ -4791,15 +4852,15 @@ CaptureHitscan: PROCEDURE
     ' Multi-boss intercept (inlined FindBoss for speed)
     FoundBoss = 255
     IF BossCount > 0 THEN
-        FOR BossIdx = 0 TO BossCount - 1
-            IF BossHP(BossIdx) > 0 THEN
-                IF AlienGridRow = BossRow(BossIdx) THEN
-                    IF AlienGridCol = BossCol(BossIdx) OR AlienGridCol = BossCol(BossIdx) + 1 THEN
-                        FoundBoss = BossIdx
+        FOR LoopVar = 0 TO BossCount - 1
+            IF BossHP(LoopVar) > 0 THEN
+                IF AlienGridRow = BossRow(LoopVar) THEN
+                    IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                        FoundBoss = LoopVar
                     END IF
                 END IF
             END IF
-        NEXT BossIdx
+        NEXT LoopVar
     END IF
     IF FoundBoss < 255 THEN
         BossHP(FoundBoss) = BossHP(FoundBoss) - 1
@@ -5048,7 +5109,29 @@ RogueUpdate: PROCEDURE
                             IF FlyState <> SAUCER_CHASE THEN
                                 ABulletX = RogueX + 3
                                 ABulletY = RogueY + 8
+                                ABulFrame = ABulFrame AND 1
                                 #GameFlags = #GameFlags OR FLAG_ABULLET
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+            ' Also fire when crossing wingman position (if present)
+            IF #GameFlags AND FLAG_CAPTURE THEN
+                IF RogueTimer >= 20 THEN
+                    #ScreenPos = PlayerX - 4 + CaptureOrbitDX(CaptureStep) - CAPTURE_ORBIT_R
+                    IF #ScreenPos < 200 THEN
+                        IF RogueX + 8 >= #ScreenPos THEN
+                            IF RogueX <= #ScreenPos + 8 THEN
+                                RogueTimer = 0
+                                IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
+                                    IF FlyState <> SAUCER_CHASE THEN
+                                        ABulletX = RogueX + 3
+                                        ABulletY = RogueY + 8
+                                        ABulFrame = ABulFrame AND 1
+                                        #GameFlags = #GameFlags OR FLAG_ABULLET
+                                    END IF
+                                END IF
                             END IF
                         END IF
                     END IF
@@ -5103,10 +5186,11 @@ RogueUpdate: PROCEDURE
         ' Fire bullet at bottom of circle (step 8, closest to player)
         IF RogueDivePhase = 8 THEN
             IF (RogueTimer AND 1) = 0 THEN
-                IF #GameFlags = #GameFlags AND $FFFD THEN
+                IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
                     IF FlyState <> SAUCER_CHASE THEN
                         ABulletX = RogueX + 3
                         ABulletY = RogueY + 8
+                        ABulFrame = ABulFrame AND 1
                         #GameFlags = #GameFlags OR FLAG_ABULLET
                     END IF
                 END IF
