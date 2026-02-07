@@ -196,6 +196,8 @@ TempoDebounce:
     IF CONT.BUTTON THEN GOTO TempoDebounce
     IF CONT.KEY < 12 THEN GOTO TempoDebounce
 
+    DiscPrev = 0
+
     ' Selection loop
 TempoLoop:
     WAIT
@@ -210,6 +212,27 @@ TempoLoop:
     END IF
     IF TempVal = 3 THEN
         IF TempoChoice <> 2 THEN TempoChoice = 2 : GOSUB DrawTempoChoices
+    END IF
+
+    ' Disc up/down to cycle tempo
+    IF CONT.UP THEN
+        IF DiscPrev = 0 THEN
+            DiscPrev = 1
+            IF TempoChoice > 0 THEN
+                TempoChoice = TempoChoice - 1
+                GOSUB DrawTempoChoices
+            END IF
+        END IF
+    ELSEIF CONT.DOWN THEN
+        IF DiscPrev = 0 THEN
+            DiscPrev = 1
+            IF TempoChoice < 2 THEN
+                TempoChoice = TempoChoice + 1
+                GOSUB DrawTempoChoices
+            END IF
+        END IF
+    ELSE
+        DiscPrev = 0
     END IF
 
     ' Fire button starts game
@@ -281,9 +304,6 @@ StartGame:
     ' Draw sync meter - Row 8 (below melody grid)
     GOSUB DrawSyncMeter
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SYNCDIRTY)
-
-    ' Draw legend - Row 11
-    GOSUB DrawLegend
 
     ' Countdown
     GOSUB CountdownSequence
