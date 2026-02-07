@@ -575,19 +575,17 @@ ResetToTitle:
     LastClearedY = 0
     AlienDir = 1
     MarchCount = 0
-    #GameFlags = #GameFlags AND $FFFE
-    #GameFlags = #GameFlags AND $FFFD : ABulFrame = 0
+    #GameFlags = #GameFlags AND $FFFC : ABulFrame = 0  ' Clear FLAG_BULLET + FLAG_ABULLET
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPTURE) : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPBULLET) : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_KEY0HELD)
+    #GameFlags = #GameFlags AND $EFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET + FLAG_KEY0HELD
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
     #MegaTimer = 0
     MegaBeamTimer = 0
     #GameFlags = #GameFlags AND $FFBF
     Key1Held = 0
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
-    #GameFlags = #GameFlags AND $FEFF
+    #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
     RightRevealCol = ALIEN_COLS - 1
     DeathTimer = 0
     Invincible = 0
@@ -1057,6 +1055,17 @@ HideAllSprites: PROCEDURE
     RETURN
 END
 
+' --- HitShield: Absorb a hit on the shield, announce if shields down ---
+HitShield: PROCEDURE
+    ShieldHits = ShieldHits - 1
+    SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
+    SOUND 2, 800, 12
+    IF ShieldHits = 0 THEN
+        IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
+    END IF
+    RETURN
+END
+
 ' --- SilenceSfx: Stop all sound effects on channel 3 ---
 SilenceSfx: PROCEDURE
     SOUND 2, , 0
@@ -1392,8 +1401,7 @@ StartGame:
     CurrentMarchSpeed = MARCH_SPEED_START
     MusicGear = 0
     WaveRevealRow = 0
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
-    #GameFlags = #GameFlags AND $FEFF
+    #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
     LoopVar = 0  ' Wave 1 = index 0
     GOSUB SetEntrancePattern
     RightRevealCol = ALIEN_COLS - 1
@@ -1439,7 +1447,7 @@ StartGame:
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR BossIdx = 0 TO MAX_BOSSES - 1 : BossHP(BossIdx) = 0 : NEXT BossIdx
     BossCount = 0 : BombExpTimer = 0  ' Wave 1 has no boss
-    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
+    #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
     TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0
@@ -1701,9 +1709,9 @@ GameLoop:
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
                     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
-                    #GameFlags = #GameFlags AND $FFFD : #GameFlags = #GameFlags AND $FFFE
+                    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                     RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
-                    #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
+                    #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                     GOSUB SilenceSfx
                     SPRITE SPR_PLAYER, 0, 0, 0
                     SPRITE SPR_SHIP_ACCENT, 0, 0, 0
@@ -1711,6 +1719,7 @@ GameLoop:
                     SPRITE SPR_ABULLET, 0, 0, 0
                     SPRITE SPR_FLYER, 0, 0, 0
                     SPRITE SPR_POWERUP, 0, 0, 0
+                    TitleFrame = 0  ' Cancel any falling/landed capsule
                     IF Lives = 0 THEN
                         ' No lives left — game over
                         GameOver = 3
@@ -1877,8 +1886,7 @@ ChainDone:
                     IF BulletY >= ABulletY - 4 THEN
                         IF BulletY <= ABulletY + 4 THEN
                             ' PARRY! Bullets collide - destroy both
-                            #GameFlags = #GameFlags AND $FFFE
-                            #GameFlags = #GameFlags AND $FFFD
+                            #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Parry counts as a successful hit — chain preserved
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
@@ -1944,13 +1952,12 @@ ChainDone:
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
-                #GameFlags = #GameFlags AND $FFFD
-                ' Clear active player bullet (prevents ghost kills during death animation)
-                #GameFlags = #GameFlags AND $FFFE
+                #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
-                ' Clear wingman (dies with player)
-                #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
+                ' Clear wingman and any active capsule (dies with player)
+                #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                 SPRITE SPR_POWERUP, 0, 0, 0
+                TitleFrame = 0  ' Cancel any falling/landed capsule
                 ' Rogue: if diving, let it complete escape animation; otherwise clear it
                 IF RogueState <> ROGUE_DIVE THEN
                     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
@@ -2006,7 +2013,7 @@ ChainDone:
                 GameOver = 4
             ELSEIF GameOver = 4 THEN
                 ' Alien crawl done — fancy Game Over screen
-                #GameFlags = #GameFlags AND $FFFB : #GameFlags = #GameFlags AND $FFF7
+                #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                 GOSUB SilenceSfx
                 ' Game-over music: intensity matches how far the player got
                 IF Level >= 5 THEN
@@ -2976,13 +2983,7 @@ MoveAlienBullet: PROCEDURE
                         IF ABulletX <= PlayerX + 10 THEN
                             ' Bullet hit - check shield first
                             IF ShieldHits > 0 THEN
-                                ShieldHits = ShieldHits - 1
-                                ' Shield absorb SFX (high-pitched ping)
-                                SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
-                                SOUND 2, 800, 12
-                                IF ShieldHits = 0 THEN
-                                    IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
-                                END IF
+                                GOSUB HitShield
                             ELSE
                                 #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                                 SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
@@ -3021,8 +3022,7 @@ END
 ' WaveEntranceData values: 0=left sweep, 1=top-down reveal, 2=fly-down from above
 SetEntrancePattern: PROCEDURE
     ' Clear both entrance flags
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_TOPDOWN)
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_FLYDOWN)
+    #GameFlags = #GameFlags AND $F3FF  ' Clear FLAG_TOPDOWN + FLAG_FLYDOWN
     WaveRevealCol = 0
     WaveRevealRow = 0
     HitRow = WaveEntranceData(LoopVar)
@@ -3891,8 +3891,7 @@ LoadPatternB: PROCEDURE
     SfxType = 0
 
     ' Clear active bullets, rogue (but preserve wingman!)
-    #GameFlags = #GameFlags AND $FFFE
-    #GameFlags = #GameFlags AND $FFFD
+    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
     MegaBeamTimer = 0
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -4129,8 +4128,7 @@ StartNewWave: PROCEDURE
     END IF
 
     ' Clear any active bullets (power-ups AND wingman persist until death!)
-    #GameFlags = #GameFlags AND $FFFE
-    #GameFlags = #GameFlags AND $FFFD
+    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
     #MegaTimer = 0
     MegaBeamTimer = 0
     GOSUB ClearRogueOnly
@@ -4143,8 +4141,7 @@ StartNewWave: PROCEDURE
     TitleFrame = 0
     TitleJitter = 0
     WaveRevealRow = 0
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SUBWAVE)
-    #GameFlags = #GameFlags AND $FEFF
+    #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
     LoopVar = Level - 1
     IF LoopVar > 7 THEN LoopVar = LoopVar AND 7
     GOSUB SetEntrancePattern
@@ -4263,8 +4260,7 @@ StartNewWave: PROCEDURE
         ' Clear capture state
         SPRITE SPR_POWERUP, 0, 0, 0
         SPRITE SPR_PLAYER, 0, 0, 0
-        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPTURE)
-        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_CAPBULLET)
+        #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
         CaptureStep = 0
         CaptureTimer = 0
 
@@ -4272,6 +4268,10 @@ StartNewWave: PROCEDURE
         FOR LoopVar = 0 TO 10
             WAIT
         NEXT LoopVar
+
+        ' Restore powerup HUD GRAM cards (bye! overwrote slots 25-26)
+        DEFINE GRAM_PWR_BE, 4, PowerupBEGfx  ' Cards 25-28: BE, AM, RP, ID
+        WAIT
     SkipEscape:
     END IF
 
@@ -4797,12 +4797,7 @@ RogueDiveRender:
                             IF RogueX <= PlayerX + 8 THEN
                                 ' Rogue body hit - check shield first
                                 IF ShieldHits > 0 THEN
-                                    ShieldHits = ShieldHits - 1
-                                    SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
-                                    SOUND 2, 800, 12
-                                    IF ShieldHits = 0 THEN
-                                        IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
-                                    END IF
+                                    GOSUB HitShield
                                 ELSE
                                     #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                                     SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
@@ -4959,12 +4954,7 @@ UpdateSaucer: PROCEDURE
                 IF FlyX <= PlayerX + 16 THEN
                     ' Saucer body hit - check shield first
                     IF ShieldHits > 0 THEN
-                        ShieldHits = ShieldHits - 1
-                        SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
-                        SOUND 2, 800, 12
-                        IF ShieldHits = 0 THEN
-                            IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
-                        END IF
+                        GOSUB HitShield
                     ELSE
                         #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                     END IF
