@@ -169,9 +169,9 @@ TitleScreen:
     GOSUB HideAllSprites
 
     ' Draw title
-    PRINT AT 24 COLOR COL_WHITE, "DOWNBEAT"
-    PRINT AT 65 COLOR COL_GREEN, "A RHYTHM GAME"
-    PRINT AT 103 COLOR COL_TAN, "BY SHAYA B LYON"
+    PRINT AT 24 COLOR COL_RED, "DOWNBEAT!"
+    PRINT AT 65 COLOR COL_BLUE, "A RHYTHM GAME"
+    PRINT AT 103 COLOR COL_WHITE, "BY SHAYA B LYON"
     PRINT AT 187 COLOR COL_YELLOW, "PRESS FIRE"
 
     ' Debounce: wait for button release
@@ -205,9 +205,9 @@ TempoSelect:
     WAIT
     TempoChoice = 1  ' Default to Moderato
 
-    PRINT AT 22 COLOR COL_WHITE, "SELECT TEMPO"
+    PRINT AT 22 COLOR COL_RED, "SELECT TEMPO"
 
-    PRINT AT 201 COLOR COL_GREEN, "DISC OR KEYS 1-3"
+    PRINT AT 201 COLOR COL_WHITE, "DISC OR KEYS 1-3"
     PRINT AT 221 COLOR COL_YELLOW, "FIRE TO START"
 
     GOSUB DrawTempoChoices
@@ -514,31 +514,31 @@ ResultsScreen:
     CLS
     WAIT
 
-    PRINT AT 22 COLOR COL_WHITE, "TURN COMPLETE!"
+    PRINT AT 22 COLOR COL_RED, "TURN COMPLETE!"
 
-    PRINT AT 62 COLOR COL_TAN, "SCORE:"
-    PRINT AT 69 COLOR COL_WHITE, <>#Score
+    PRINT AT 62 COLOR COL_BLUE, "SCORE:"
+    PRINT AT 69 COLOR COL_YELLOW, <>#Score
 
-    PRINT AT 82 COLOR COL_TAN, "BEST STREAK:"
+    PRINT AT 82 COLOR COL_BLUE, "BEST STREAK:"
     PRINT AT 95 COLOR COL_YELLOW, <>HitStreakBest
 
-    PRINT AT 102 COLOR COL_TAN, "INSTRUMENTS:"
-    PRINT AT 115 COLOR COL_GREEN, <>UniqueInstr
-    PRINT AT 117 COLOR COL_TAN, "/8"
+    PRINT AT 102 COLOR COL_BLUE, "INSTRUMENTS:"
+    PRINT AT 115 COLOR COL_YELLOW, <>UniqueInstr
+    PRINT AT 117 COLOR COL_WHITE, "/8"
 
-    ' Variety tier display
+    ' Variety tier display (escalating: White → Blue → Yellow → Red)
     IF UniqueInstr >= 8 THEN
-        PRINT AT 122 COLOR COL_YELLOW, "MAESTRO! x3"
+        PRINT AT 122 COLOR COL_RED, "MAESTRO! x3"
     ELSEIF UniqueInstr >= 7 THEN
         PRINT AT 122 COLOR COL_YELLOW, "VIRTUOSO x1.5"
     ELSEIF UniqueInstr >= 5 THEN
-        PRINT AT 122 COLOR COL_GREEN, "SKILLED x1.25"
+        PRINT AT 122 COLOR COL_BLUE, "SKILLED x1.25"
     ELSEIF UniqueInstr >= 3 THEN
-        PRINT AT 122 COLOR COL_TAN, "DIVERSE x1.1"
+        PRINT AT 122 COLOR COL_WHITE, "DIVERSE x1.1"
     END IF
 
     PRINT AT 180 COLOR COL_YELLOW, "FIRE: PLAY AGAIN"
-    PRINT AT 200 COLOR COL_TAN, "1: CHANGE TEMPO"
+    PRINT AT 200 COLOR COL_WHITE, "1: CHANGE TEMPO"
 
     ' Debounce
 ResultsDebounce:
@@ -1073,25 +1073,25 @@ END
 
 ' --- Draw tempo selection choices ---
 DrawTempoChoices: PROCEDURE
-    ' Row 3 (pos 60): Adagio
+    ' Row 3 (pos 60): Adagio — Blue when selected (calm/slow)
     IF TempoChoice = 0 THEN
-        PRINT AT 62 COLOR COL_GREEN, "1 ADAGIO     90"
+        PRINT AT 62 COLOR COL_BLUE, "1 ADAGIO     90"
     ELSE
-        PRINT AT 62 COLOR COL_TAN, "1 ADAGIO     90"
+        PRINT AT 62 COLOR COL_WHITE, "1 ADAGIO     90"
     END IF
 
-    ' Row 5 (pos 100): Moderato
+    ' Row 5 (pos 100): Moderato — Yellow when selected (warm/balanced)
     IF TempoChoice = 1 THEN
         PRINT AT 102 COLOR COL_YELLOW, "2 MODERATO  110"
     ELSE
-        PRINT AT 102 COLOR COL_TAN, "2 MODERATO  110"
+        PRINT AT 102 COLOR COL_WHITE, "2 MODERATO  110"
     END IF
 
-    ' Row 7 (pos 140): Allegro
+    ' Row 7 (pos 140): Allegro — Red when selected (fast/energetic)
     IF TempoChoice = 2 THEN
         PRINT AT 142 COLOR COL_RED, "3 ALLEGRO   130"
     ELSE
-        PRINT AT 142 COLOR COL_TAN, "3 ALLEGRO   130"
+        PRINT AT 142 COLOR COL_WHITE, "3 ALLEGRO   130"
     END IF
     RETURN
 END
