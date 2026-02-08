@@ -1135,16 +1135,17 @@ DefineGramCards: PROCEDURE
 END
 
 ' --- Grey out phrase notes on miss ---
-' When a phrase breaks, dim all previously hit notes to dark green
+' When a phrase breaks, dim instrument dots to dark green (skip dashes)
 GreyOutPhrase: PROCEDURE
     IF PhraseLen < 1 THEN RETURN
     IF TotalBeats < 2 THEN RETURN
 
-    ' Phrase covers beats from (TotalBeats - 1 - PhraseLen) to (TotalBeats - 2)
-    ' TotalBeats - 1 = current beat (missed), so phrase ends at TotalBeats - 2
-    TempVal = TotalBeats - 2   ' Last hit beat in phrase
-    IF TempVal >= PhraseLen THEN
-        LoopVar = TempVal - PhraseLen + 1  ' First hit beat in phrase
+    ' With every-other-beat, N hits span up to 2*N beat positions
+    ' Walk back enough to cover all phrase dots plus interleaved dashes
+    TempVal = TotalBeats - 2   ' Last potential hit position
+    LoopVar = PhraseLen + PhraseLen  ' Double range for passive gaps
+    IF TempVal >= LoopVar THEN
+        LoopVar = TempVal - LoopVar + 1
     ELSE
         LoopVar = 0
     END IF
@@ -1160,10 +1161,12 @@ GreyOutPhrase: PROCEDURE
 
         #BeatScreenPos = RowStartData(BeatRow) + BeatCol
 
-        ' Read current BACKTAB card, recolor to dark green
+        ' Only recolor dots (GRAM_CURSOR1), skip dashes and empty slots
         #Card = PEEK($200 + #BeatScreenPos)
-        IF #Card > 0 THEN
-            PRINT AT #BeatScreenPos, (#Card AND $EFF8) OR COL_DKGREEN
+        IF #Card AND $0800 THEN
+            IF (#Card AND $1F8) = (GRAM_CURSOR1 * 8) THEN
+                PRINT AT #BeatScreenPos, (#Card AND $EFF8) OR COL_DKGREEN
+            END IF
         END IF
 
         LoopVar = LoopVar + 1
@@ -1283,13 +1286,13 @@ GfxBeatEmpty:
     BITMAP "........"
     BITMAP "........"
 
-' Connecting dash (thin rail between station dots)
+' Connecting dash (short rail between station dots, 2px margins for gap)
 GfxDash:
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"
