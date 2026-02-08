@@ -411,7 +411,7 @@ GameLoop:
             ELSE
                 ' Passive beat — stamp connecting dash (subway map line)
                 GOSUB BeatToScreen
-                PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_TAN + $0800
+                PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_WHITE + $0800
             END IF
         END IF
         ' Reset for next beat
@@ -1283,13 +1283,13 @@ GfxBeatEmpty:
     BITMAP "........"
     BITMAP "........"
 
-' Connecting dash (horizontal line at dot center height)
+' Connecting dash (horizontal bar at dot center height)
 GfxDash:
     BITMAP "........"
     BITMAP "........"
-    BITMAP "........"
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
-    BITMAP "........"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
     BITMAP "........"
     BITMAP "........"
