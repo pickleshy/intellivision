@@ -863,6 +863,31 @@ END IF
 
 `VOICE.AVAILABLE` safely detects hardware presence without initialization. `VOICE PLAY` and `VOICE NUMBER` are also safe to gate this way — they silently no-op if voice is unavailable.
 
+### Avoid VOICE WAIT — use fire-and-forget speech
+
+`VOICE WAIT` blocks execution until Intellivoice hardware signals speech completion. On FPGA hardware (MiSTer), the completion flag may not behave identically to real hardware or emulators, causing `VOICE WAIT` to hang permanently — especially when called multiple times per session or while `PLAY SIMPLE`/`PLAY FULL` music ISR is active.
+
+```basic
+' BAD — hangs on FPGA hardware:
+IF VOICE.AVAILABLE THEN
+    VOICE PLAY my_phrase
+    VOICE WAIT              ' Blocks forever on MiSTer FPGA!
+    VOICE NUMBER score
+END IF
+
+' GOOD — fire-and-forget, let speech play during game pause:
+IF VOICE.AVAILABLE THEN
+    VOICE PLAY my_phrase
+    VOICE NUMBER score      ' Queues after phrase
+END IF
+' Speech plays during this display pause:
+FOR LoopVar = 0 TO 90
+    WAIT
+NEXT LoopVar
+```
+
+**Rule:** Never use `VOICE WAIT` in production code. Schedule speech with `VOICE PLAY` and let it run during existing WAIT loops (wave announcements, transition pauses, etc.). The 1.5-second standard pause (90 frames) is more than enough for any speech phrase.
+
 ### Button debounce at state transitions
 
 When transitioning between game states (gameplay → game over → title screen → gameplay), the fire button is often still held from the previous state. Without debounce, the player blows through screens instantly.

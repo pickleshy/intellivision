@@ -1489,10 +1489,9 @@ StartGame:
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
 
-    ' Wave 1 announcement
+    ' Wave 1 announcement (fire-and-forget, VOICE WAIT hangs on FPGA)
     IF VOICE.AVAILABLE THEN
         VOICE PLAY wave_phrase
-        VOICE WAIT
         VOICE NUMBER 1
     END IF
     PRINT AT 107 COLOR 6, "WAVE 1"
@@ -3243,14 +3242,18 @@ MarchAliens: PROCEDURE
             #AlienRow(Row) = #AlienRow(Row) / ColMaskData(HitRow)
         NEXT Row
         AlienOffsetX = AlienOffsetX + HitRow
-        ' Adjust boss grid positions
-        FOR LoopVar = 0 TO BossCount - 1
-            IF BossHP(LoopVar) > 0 THEN
-                BossCol(LoopVar) = BossCol(LoopVar) - HitRow
-            END IF
-        NEXT LoopVar
-        ' Update boundaries after shift
-        LoopVar = LoopVar - HitRow
+        ' Save rightmost col before boss loop overwrites LoopVar
+        Col = LoopVar - HitRow
+        ' Adjust boss grid positions (guard BossCount=0 to avoid unsigned underflow)
+        IF BossCount > 0 THEN
+            FOR LoopVar = 0 TO BossCount - 1
+                IF BossHP(LoopVar) > 0 THEN
+                    BossCol(LoopVar) = BossCol(LoopVar) - HitRow
+                END IF
+            NEXT LoopVar
+        END IF
+        ' Restore rightmost col for boundary check below
+        LoopVar = Col
         HitRow = 0
     END IF
 
@@ -4317,13 +4320,11 @@ StartNewWave: PROCEDURE
     END IF
     CurrentMarchSpeed = BaseMarchSpeed
 
-    ' Set initial music gear (descent will escalate within wave)
+    ' Set initial music gear (music starts AFTER voice announcement below)
     IF Level >= 2 THEN
         MusicGear = 1
-        PLAY si_bg_mid
     ELSE
         MusicGear = 0
-        PLAY si_bg_slow
     END IF
 
     ' Reset alien positions
@@ -4618,13 +4619,19 @@ StartNewWave: PROCEDURE
     NEXT LoopVar
 
     ' Phase B: Voice announcement + Banner display
+    ' Fire-and-forget voice (VOICE WAIT hangs on MiSTer FPGA hardware)
     IF VOICE.AVAILABLE THEN
         VOICE PLAY wave_phrase        ' Say "WAVE"
-        VOICE WAIT                    ' Wait for speech to finish
         VOICE NUMBER Level            ' Say the number
     END IF
     PRINT AT 107 COLOR 6, "WAVE "     ' Yellow, centered row 5 col 7
     PRINT AT 112, <> Level
+    ' Start music for new wave (speech finishes during 90-frame pause below)
+    IF MusicGear >= 1 THEN
+        PLAY si_bg_mid
+    ELSE
+        PLAY si_bg_slow
+    END IF
     FOR LoopVar = 0 TO 90
         WAIT
     NEXT LoopVar
