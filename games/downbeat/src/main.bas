@@ -39,6 +39,11 @@ CONST GRAM_CURSOR2    = 3  ' Beat cursor frame 2 (dim)
 CONST GRAM_BEAT_EMPTY = 4  ' Empty beat slot on melody grid
 CONST GRAM_DASH       = 5  ' Connecting dash between beats
 
+' Grid layout
+CONST GRID_COLS  = 16   ' Columns per melody row (2 col padding each side)
+CONST GRID_LEFT  = 2    ' Left padding columns
+CONST GRID_ROWS  = 5    ' Number of melody rows (on screen rows 2,4,6,8,10)
+
 ' Bit-packed game flags (#GameFlags)
 CONST FLAG_BEATFIRE    = 1    ' Bit 0: Beat event fired this frame
 CONST FLAG_KEYHELD     = 2    ' Bit 1: Key is being held (edge detect)
@@ -316,10 +321,10 @@ StartGame:
     GOSUB DrawBPM
     PRINT AT 15 COLOR COL_WHITE, "    0"
 
-    ' Draw beat grid - Rows 2-7
+    ' Draw beat grid - Rows 2,4,6,8,10 (16 cols with 2-col padding)
     GOSUB DrawBeatGrid
 
-    ' Draw sync meter - Row 8 (below melody grid)
+    ' Draw sync meter - Row 1
     GOSUB DrawSyncMeter
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SYNCDIRTY)
 
@@ -809,23 +814,23 @@ END
 BeatToScreen: PROCEDURE
     ' Use beat before current (TotalBeats already incremented by FireBeat)
     TempVal = TotalBeats - 1
-    IF TempVal > 119 THEN TempVal = 119
+    IF TempVal > (GRID_ROWS * GRID_COLS - 1) THEN TempVal = GRID_ROWS * GRID_COLS - 1
 
-    ' Row = beat / 20, Col = beat mod 20
-    BeatRow = TempVal / 20
-    BeatCol = TempVal - (BeatRow * 20)
+    ' Row = beat / GRID_COLS, Col = beat mod GRID_COLS
+    BeatRow = TempVal / GRID_COLS
+    BeatCol = TempVal - (BeatRow * GRID_COLS)
 
     ' Odd rows snake right-to-left
     IF BeatRow AND 1 THEN
-        BeatCol = 19 - BeatCol
+        BeatCol = GRID_COLS - 1 - BeatCol
     END IF
 
-    ' BACKTAB position (melody starts at row 2)
-    #BeatScreenPos = RowStartData(BeatRow) + BeatCol
+    ' BACKTAB position (with left padding)
+    #BeatScreenPos = RowStartData(BeatRow) + BeatCol + GRID_LEFT
 
-    ' Sprite position (8px offset)
-    CursorSprX = BeatCol * 8 + 8
-    CursorSprY = (BeatRow + 2) * 8 + 8
+    ' Sprite position (8px offset, account for left padding)
+    CursorSprX = (BeatCol + GRID_LEFT) * 8 + 8
+    CursorSprY = RowSpriteYData(BeatRow)
     RETURN
 END
 
@@ -897,8 +902,8 @@ END
 ' --- Update cursor sprite position ---
 UpdateCursor: PROCEDURE
     IF TotalBeats = 0 THEN
-        ' No beats yet, position at start
-        CursorSprX = 8
+        ' No beats yet, position at first grid column
+        CursorSprX = GRID_LEFT * 8 + 8
         CursorSprY = 24  ' Row 2
     ELSE
         GOSUB BeatToScreen
@@ -956,17 +961,17 @@ ApplyVariety: PROCEDURE
     RETURN
 END
 
-' --- Draw sync meter on row 8 (below melody grid) ---
+' --- Draw sync meter on row 1 ---
 DrawSyncMeter: PROCEDURE
     TempVal = SyncMeter / 5  ' 0-20 blocks
 
     FOR LoopVar = 0 TO 19
         IF LoopVar < TempVal THEN
             ' Filled block: white per design doc
-            PRINT AT 160 + LoopVar, GRAM_SYNC_FULL * 8 + COL_WHITE + $0800
+            PRINT AT 20 + LoopVar, GRAM_SYNC_FULL * 8 + COL_WHITE + $0800
         ELSE
             ' Empty block: dark green (grey stand-in)
-            PRINT AT 160 + LoopVar, GRAM_SYNC_EMPTY * 8 + COL_DKGREEN + $0800
+            PRINT AT 20 + LoopVar, GRAM_SYNC_EMPTY * 8 + COL_DKGREEN + $0800
         END IF
     NEXT LoopVar
     RETURN
@@ -998,76 +1003,57 @@ DrawBPM: PROCEDURE
     RETURN
 END
 
-' --- Draw beat grid (clean black) on rows 2-7 ---
+' --- Draw beat grid (clean black) on melody rows ---
 DrawBeatGrid: PROCEDURE
     ' Grid starts empty — only hits and cursor are visible
     ' CLS already cleared it, but ensure it's clean after replays
-    FOR LoopVar = 0 TO 5
-        #BeatScreenPos = RowStartData(LoopVar)
-        FOR TempVal = 0 TO 19
+    FOR LoopVar = 0 TO GRID_ROWS - 1
+        #BeatScreenPos = RowStartData(LoopVar) + GRID_LEFT
+        FOR TempVal = 0 TO GRID_COLS - 1
             PRINT AT #BeatScreenPos + TempVal, 0
         NEXT TempVal
     NEXT LoopVar
     RETURN
 END
 
-' --- Draw hit quality text on row 9 ---
+' --- Draw hit quality text on row 11 (left side) ---
 DrawHitQuality: PROCEDURE
-    ' Clear row 9
-    PRINT AT 180 COLOR COL_BLACK, "                    "
+    ' Clear left half of row 11
+    PRINT AT 220 COLOR COL_BLACK, "          "
 
     IF HitQuality = HIT_PERFECT THEN
-        PRINT AT 180 COLOR COL_GREEN, "PERFECT!"
+        PRINT AT 220 COLOR COL_GREEN, "PERFECT!"
     ELSEIF HitQuality = HIT_GOOD THEN
-        PRINT AT 181 COLOR COL_YELLOW, "GOOD"
+        PRINT AT 221 COLOR COL_YELLOW, "GOOD"
     ELSEIF HitQuality = HIT_MISS THEN
-        PRINT AT 181 COLOR COL_RED, "MISS"
-    END IF
-
-    ' Show hit streak
-    IF HitStreak >= 3 THEN
-        PRINT AT 190 COLOR COL_WHITE, "x"
-        PRINT AT 191 COLOR COL_WHITE, <>HitStreak
+        PRINT AT 221 COLOR COL_RED, "MISS"
     END IF
     RETURN
 END
 
 ' --- Clear hit quality display ---
 ClearHitDisplay: PROCEDURE
-    PRINT AT 180 COLOR COL_BLACK, "                    "
+    PRINT AT 220 COLOR COL_BLACK, "          "
     RETURN
 END
 
-' --- Draw instrument name on row 10 ---
+' --- Draw instrument name on row 11 (right side) ---
 DrawInstrumentName: PROCEDURE
-    PRINT AT 200 COLOR COL_BLACK, "                    "
+    ' Clear right half of row 11
+    PRINT AT 231 COLOR COL_BLACK, "         "
 
-    IF CurrentInstr = 1 THEN PRINT AT 205 COLOR COL_BLUE, "PICCOLO"
-    IF CurrentInstr = 2 THEN PRINT AT 205 COLOR COL_YELLOW, "TRUMPET"
-    IF CurrentInstr = 3 THEN PRINT AT 206 COLOR COL_WHITE, "VIOLIN"
-    IF CurrentInstr = 4 THEN PRINT AT 207 COLOR COL_TAN, "OBOE"
-    IF CurrentInstr = 5 THEN PRINT AT 206 COLOR COL_RED, "VIOLA"
-    IF CurrentInstr = 6 THEN PRINT AT 204 COLOR COL_GREEN, "TROMBONE"
-    IF CurrentInstr = 7 THEN PRINT AT 205 COLOR COL_DKGREEN, "BASSOON"
-    IF CurrentInstr = 8 THEN PRINT AT 205 COLOR COL_YELLOW, "TIMPANI"
-    IF CurrentInstr = 9 THEN PRINT AT 207 COLOR COL_TAN, "REST"
+    IF CurrentInstr = 1 THEN PRINT AT 232 COLOR COL_BLUE, "PICCOLO"
+    IF CurrentInstr = 2 THEN PRINT AT 232 COLOR COL_YELLOW, "TRUMPET"
+    IF CurrentInstr = 3 THEN PRINT AT 233 COLOR COL_WHITE, "VIOLIN"
+    IF CurrentInstr = 4 THEN PRINT AT 235 COLOR COL_TAN, "OBOE"
+    IF CurrentInstr = 5 THEN PRINT AT 234 COLOR COL_RED, "VIOLA"
+    IF CurrentInstr = 6 THEN PRINT AT 231 COLOR COL_GREEN, "TROMBONE"
+    IF CurrentInstr = 7 THEN PRINT AT 232 COLOR COL_DKGREEN, "BASSOON"
+    IF CurrentInstr = 8 THEN PRINT AT 232 COLOR COL_YELLOW, "TIMPANI"
+    IF CurrentInstr = 9 THEN PRINT AT 235 COLOR COL_TAN, "REST"
     RETURN
 END
 
-' --- Draw instrument legend on row 11 ---
-DrawLegend: PROCEDURE
-    PRINT AT 220 COLOR COL_BLUE, "1"
-    PRINT AT 222 COLOR COL_YELLOW, "2"
-    PRINT AT 224 COLOR COL_WHITE, "3"
-    PRINT AT 226 COLOR COL_TAN, "4"
-    PRINT AT 228 COLOR COL_RED, "5"
-    PRINT AT 230 COLOR COL_GREEN, "6"
-    PRINT AT 232 COLOR COL_DKGREEN, "7"
-    PRINT AT 234 COLOR COL_YELLOW, "8"
-    PRINT AT 236 COLOR COL_TAN, "9"
-    PRINT AT 237 COLOR COL_TAN, "R"
-    RETURN
-END
 
 ' --- Draw tempo selection choices ---
 DrawTempoChoices: PROCEDURE
@@ -1182,15 +1168,15 @@ GreyOutPhrase: PROCEDURE
     END IF
 
     WHILE LoopVar <= TempVal
-        BeatRow = LoopVar / 20
-        BeatCol = LoopVar - (BeatRow * 20)
+        BeatRow = LoopVar / GRID_COLS
+        BeatCol = LoopVar - (BeatRow * GRID_COLS)
 
         ' Odd rows snake right-to-left
         IF BeatRow AND 1 THEN
-            BeatCol = 19 - BeatCol
+            BeatCol = GRID_COLS - 1 - BeatCol
         END IF
 
-        #BeatScreenPos = RowStartData(BeatRow) + BeatCol
+        #BeatScreenPos = RowStartData(BeatRow) + BeatCol + GRID_LEFT
 
         ' Only recolor dots (GRAM_CURSOR1), skip dashes and empty slots
         #Card = PEEK($200 + #BeatScreenPos)
@@ -1216,9 +1202,9 @@ END
 TempoFramesData:
     DATA 40, 33, 28
 
-' Tempo: beats per 45-sec turn
+' Tempo: beats per turn (capped to grid capacity: 5 rows × 16 cols = 80)
 TempoBeatsData:
-    DATA 67, 82, 97
+    DATA 67, 80, 80
 
 ' Perfect hit window (frames from beat) - ±167ms = 10 frames at 60fps
 ' Generous but still distinct from Good for scoring
@@ -1230,9 +1216,13 @@ PerfectWindowData:
 GoodWindowData:
     DATA 14, 14, 14
 
-' Row start BACKTAB positions for melody rows 0-5 (screen rows 2-7)
+' Row start BACKTAB positions for melody rows 0-4 (screen rows 2,4,6,8,10)
 RowStartData:
-    DATA 40, 60, 80, 100, 120, 140
+    DATA 40, 80, 120, 160, 200
+
+' Sprite Y positions for melody rows 0-4 (screen rows 2,4,6,8,10)
+RowSpriteYData:
+    DATA 24, 40, 56, 72, 88
 
 ' Instrument colors (indexed 0-8 for instruments 1-9)
 InstrColorData:
