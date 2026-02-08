@@ -145,6 +145,11 @@ TempVal = 0
     CLS
     BORDER COL_BLACK
 
+    ' Initialize Intellivoice (once only, gated on hardware presence)
+    IF VOICE.AVAILABLE THEN
+        VOICE INIT
+    END IF
+
     ' Define GRAM cards for gameplay
     GOSUB DefineGramCards
     WAIT
@@ -1104,6 +1109,7 @@ CountdownSequence: PROCEDURE
     ' "4"
     PRINT AT 109 COLOR COL_WHITE, "4"
     SOUND 1, 400, 10
+    IF VOICE.AVAILABLE THEN VOICE NUMBER 4
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1113,6 +1119,7 @@ CountdownSequence: PROCEDURE
     ' "3"
     PRINT AT 109 COLOR COL_WHITE, "3"
     SOUND 1, 400, 10
+    IF VOICE.AVAILABLE THEN VOICE NUMBER 3
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1122,6 +1129,7 @@ CountdownSequence: PROCEDURE
     ' "2"
     PRINT AT 109 COLOR COL_YELLOW, "2"
     SOUND 1, 400, 12
+    IF VOICE.AVAILABLE THEN VOICE NUMBER 2
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1131,6 +1139,7 @@ CountdownSequence: PROCEDURE
     ' "1"
     PRINT AT 109 COLOR COL_GREEN, "1"
     SOUND 1, 400, 12
+    IF VOICE.AVAILABLE THEN VOICE NUMBER 1
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
