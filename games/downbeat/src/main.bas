@@ -37,6 +37,7 @@ CONST GRAM_SYNC_EMPTY = 1  ' Sync meter: empty block
 CONST GRAM_CURSOR1    = 2  ' Beat cursor frame 1 (bright)
 CONST GRAM_CURSOR2    = 3  ' Beat cursor frame 2 (dim)
 CONST GRAM_BEAT_EMPTY = 4  ' Empty beat slot on melody grid
+CONST GRAM_DASH       = 5  ' Connecting dash between beats
 
 ' Bit-packed game flags (#GameFlags)
 CONST FLAG_BEATFIRE    = 1    ' Bit 0: Beat event fired this frame
@@ -52,6 +53,7 @@ CONST FLAG_DEBUG       = 128  ' Bit 7: Debug mode
 ' Accounts for audio/visual processing delay in emulator
 ' 3 frames = 50ms — covers typical display pipeline lag
 CONST LATENCY_OFFSET = 3
+CONST RELEASE_FRAMES = 8   ' Frames of volume fade at note end
 
 ' Hit quality values
 CONST HIT_NONE    = 0
@@ -88,8 +90,8 @@ EarlyHitQuality = 0     ' Quality for pending early hit
 ' Hit detection
 HitQuality = 0          ' Last hit quality (HIT_NONE/MISS/GOOD/PERFECT)
 HitDisplayTimer = 0     ' Frames to show hit text
-PerfectWindow = 2       ' Frames for perfect hit
-GoodWindow = 5          ' Frames for good hit
+PerfectWindow = 10      ' Frames for perfect hit
+GoodWindow = 14         ' Frames for good hit
 
 ' Phrases and streaks
 PhraseLen = 0           ' Current consecutive hit count
@@ -104,6 +106,7 @@ DazeTimer = 0           ' Frames of daze remaining
 
 ' Instrument sounds
 InstrVol = 0            ' Current instrument volume (decaying)
+InstrPeakVol = 0        ' Target sustain volume for envelope
 InstrDecayCount = 0     ' Frames of instrument sound remaining
 #InstrFreq = 0          ' Current instrument frequency
 FeedbackDecay = 0       ' Frames of feedback sound remaining
@@ -399,12 +402,16 @@ GameLoop:
             GOSUB ProcessHit
             #GameFlags = #GameFlags AND ($FFFF XOR FLAG_EARLYHIT)
         ELSEIF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
-            ' No input this beat — only penalize on active (odd) beats
-            ' Passive (even) beats pass without penalty for breathing room
-            IF DazeTimer = 0 THEN
-                IF TotalBeats AND 1 THEN
+            ' No input this beat
+            IF TotalBeats AND 1 THEN
+                ' Active beat missed
+                IF DazeTimer = 0 THEN
                     GOSUB HandleMissedBeat
                 END IF
+            ELSE
+                ' Passive beat — stamp connecting dash (subway map line)
+                GOSUB BeatToScreen
+                PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_TAN + $0800
             END IF
         END IF
         ' Reset for next beat
@@ -806,12 +813,14 @@ PlayInstrSound: PROCEDURE
         InstrDecayCount = 2
         #InstrFreq = 400
         InstrVol = 2
+        InstrPeakVol = 2
         RETURN
     END IF
 
     TempVal = CurrentInstr - 1
     #InstrFreq = InstrPeriodData(TempVal)
     InstrVol = InstrVolumeData(TempVal)
+    InstrPeakVol = InstrPeakVolData(TempVal)
     InstrDecayCount = InstrDecayData(TempVal)
 
     SOUND 0, #InstrFreq, InstrVol
@@ -825,7 +834,7 @@ PlayInstrSound: PROCEDURE
     RETURN
 END
 
-' --- Decay instrument sound each frame (channel A) ---
+' --- Instrument envelope: attack → sustain → release ---
 UpdateInstrSfx: PROCEDURE
     InstrDecayCount = InstrDecayCount - 1
     IF InstrDecayCount = 0 THEN
@@ -834,7 +843,21 @@ UpdateInstrSfx: PROCEDURE
         TempVal = PEEK($1F8) OR $24
         POKE $1F8, TempVal
     ELSE
-        IF InstrVol > 1 THEN InstrVol = InstrVol - 1
+        IF InstrVol < InstrPeakVol THEN
+            ' Attack: ramp up toward sustain (strings/woodwinds)
+            InstrVol = InstrVol + 2
+            IF InstrVol > InstrPeakVol THEN InstrVol = InstrPeakVol
+        ELSEIF InstrVol > InstrPeakVol THEN
+            ' Percussive: quick decay toward sustain (trumpet/timpani)
+            InstrVol = InstrVol - 1
+        ELSEIF InstrDecayCount <= RELEASE_FRAMES THEN
+            ' Release: fade out
+            IF InstrVol >= 2 THEN
+                InstrVol = InstrVol - 2
+            ELSE
+                InstrVol = 0
+            END IF
+        END IF
         SOUND 0, #InstrFreq, InstrVol
     END IF
     RETURN
@@ -1105,6 +1128,9 @@ DefineGramCards: PROCEDURE
     ' Card 4: Empty beat slot
     DEFINE 4, 1, GfxBeatEmpty
     WAIT
+    ' Card 5: Connecting dash (subway map line)
+    DEFINE 5, 1, GfxDash
+    WAIT
     RETURN
 END
 
@@ -1160,15 +1186,15 @@ TempoFramesData:
 TempoBeatsData:
     DATA 67, 82, 97
 
-' Perfect hit window (frames from beat) - ±117ms = 7 frames at 60fps
-' Wider than spec's ±75ms to compensate for frame-level quantization
+' Perfect hit window (frames from beat) - ±167ms = 10 frames at 60fps
+' Generous but still distinct from Good for scoring
 PerfectWindowData:
-    DATA 7, 7, 7
-
-' Good hit window (frames from beat) - ±167ms = 10 frames at 60fps
-' Wider than spec's ±125ms for better feel on real hardware
-GoodWindowData:
     DATA 10, 10, 10
+
+' Good hit window (frames from beat) - ±233ms = 14 frames at 60fps
+' Very forgiving — most presses near a beat should register
+GoodWindowData:
+    DATA 14, 14, 14
 
 ' Row start BACKTAB positions for melody rows 0-5 (screen rows 2-7)
 RowStartData:
@@ -1183,17 +1209,22 @@ InstrColorData:
 InstrPeriodData:
     DATA 35, 70, 90, 140, 190, 250, 350, 700, 0
 
-' Instrument volumes (from audio spec envelopes)
-' Piccolo=15(bright), Trumpet=15(sharp), Violin=14(sustain),
-' Oboe=14(buzzy), Viola=13(warm), Trombone=14(brassy),
-' Bassoon=12(deep), Timpani=15(percussive), REST=0
+' Instrument initial volume (attack start)
+' Sharp attack (brass/perc) starts at/above peak; soft attack (strings) starts low
 InstrVolumeData:
-    DATA 15, 15, 14, 14, 13, 14, 12, 15, 0
+    DATA 14, 15, 8, 12, 7, 11, 9, 15, 0
 
-' Instrument decay (frames)
-' Short for percussive, longer for sustained instruments
+' Instrument peak/sustain volume
+' Strings build to full sustain; percussion settles to lower sustain
+InstrPeakVolData:
+    DATA 14, 14, 14, 14, 13, 14, 12, 12, 0
+
+' Instrument total duration (frames)
+' Longer for sustained instruments, shorter for percussive
+' Piccolo=14(233ms) Trumpet=18(300ms) Violin=28(467ms) Oboe=16(267ms)
+' Viola=26(433ms) Trombone=20(333ms) Bassoon=30(500ms) Timpani=16(267ms)
 InstrDecayData:
-    DATA 4, 6, 10, 6, 10, 8, 12, 5, 0
+    DATA 14, 18, 28, 16, 26, 20, 30, 16, 0
 
 ' --- GRAM Bitmap Data ---
 
@@ -1248,6 +1279,17 @@ GfxBeatEmpty:
     BITMAP "........"
     BITMAP "...XX..."
     BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+' Connecting dash (horizontal line at dot center height)
+GfxDash:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"

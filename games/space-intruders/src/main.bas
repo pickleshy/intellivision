@@ -140,11 +140,11 @@ CONST GRAM_BYE2     = 26        ' "bye!" right half (e + !)
 
 ' Large alien (2x2 BACKTAB cards = 16x16 pixels)
 ' TL/TR use title-only crab slots (free during gameplay)
-' BL/BR share powerup BE/AM slots (overwritten during Pattern B only)
+' BL/BR use warp-in slots (warp-in only used in Pattern A, large alien only in Pattern B)
 CONST GRAM_LARGE_TL = 19       ' Top-left quadrant (reuse crab F1)
 CONST GRAM_LARGE_TR = 20       ' Top-right quadrant (reuse crab F2)
-CONST GRAM_LARGE_BL = 25       ' Bottom-left quadrant (reuse powerup BE)
-CONST GRAM_LARGE_BR = 26       ' Bottom-right quadrant (reuse powerup AM)
+CONST GRAM_LARGE_BL = 34       ' Bottom-left quadrant (reuse warp-in F1)
+CONST GRAM_LARGE_BR = 35       ' Bottom-right quadrant (reuse warp-in F2)
 
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
@@ -4174,7 +4174,7 @@ LoadPatternB: PROCEDURE
         #GameFlags = #GameFlags OR FLAG_HASLARGE
         DEFINE GRAM_LARGE_TL, 2, LargeAlienTLGfx  ' Cards 19-20 (TL + TR)
         WAIT
-        DEFINE GRAM_LARGE_BL, 2, LargeAlienBLGfx  ' Cards 25-26 (BL + BR)
+        DEFINE GRAM_LARGE_BL, 2, LargeAlienBLGfx  ' Cards 34-35 (BL + BR, reuse warp-in slots)
         WAIT
     ELSE
         #GameFlags = #GameFlags AND ($FFFF XOR FLAG_HASLARGE)
@@ -4606,8 +4606,10 @@ StartNewWave: PROCEDURE
     SkipEscape:
     END IF
 
-    ' Restore powerup GRAM cards (large alien may have overwritten slots 25-26)
-    DEFINE GRAM_PWR_BE, 2, PowerupBEGfx  ' Cards 25-26: BE, AM
+    ' Note: large alien BL/BR now use cards 34-35 (warp-in slots), no HUD conflict
+
+    ' Restore warp-in GRAM cards (large alien may have overwritten slots 34-35)
+    DEFINE GRAM_WARP1, 2, WarpInGfx1    ' Cards 34-35: warp-in frames 1-2
     WAIT
 
     ' Phase A: Breather pause (blank screen + HUD only)
