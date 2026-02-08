@@ -1283,13 +1283,13 @@ GfxBeatEmpty:
     BITMAP "........"
     BITMAP "........"
 
-' Connecting dash (horizontal bar at dot center height)
+' Connecting dash (thin rail between station dots)
 GfxDash:
     BITMAP "........"
     BITMAP "........"
+    BITMAP "........"
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
+    BITMAP "........"
     BITMAP "........"
     BITMAP "........"
