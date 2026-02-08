@@ -13,9 +13,9 @@ The game supports three tempo settings:
 
 | Tempo Name | BPM | Milliseconds per Beat | Beats in 45 seconds |
 |------------|-----|----------------------|---------------------|
-| Adagio     | 80  | 750ms                | 60 beats            |
-| Moderato   | 120 | 500ms                | 90 beats            |
-| Allegro    | 160 | 375ms                | 108 beats           |
+| Adagio     | 90  | 667ms                | 67 beats            |
+| Moderato   | 110 | 545ms                | 82 beats            |
+| Allegro    | 130 | 462ms                | 97 beats            |
 
 **Calculation:**
 ```javascript

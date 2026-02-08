@@ -50,7 +50,8 @@ CONST FLAG_DEBUG       = 128  ' Bit 7: Debug mode
 
 ' Latency compensation (frames to shift late window)
 ' Accounts for audio/visual processing delay in emulator
-CONST LATENCY_OFFSET = 2
+' 3 frames = 50ms — covers typical display pipeline lag
+CONST LATENCY_OFFSET = 3
 
 ' Hit quality values
 CONST HIT_NONE    = 0
@@ -1186,13 +1187,15 @@ TempoFramesData:
 TempoBeatsData:
     DATA 67, 82, 97
 
-' Perfect hit window (frames from beat) - fixed ±75ms = 5 frames at 60fps
+' Perfect hit window (frames from beat) - ±117ms = 7 frames at 60fps
+' Wider than spec's ±75ms to compensate for frame-level quantization
 PerfectWindowData:
-    DATA 5, 5, 5
+    DATA 7, 7, 7
 
-' Good hit window (frames from beat) - fixed ±125ms = 8 frames at 60fps
+' Good hit window (frames from beat) - ±167ms = 10 frames at 60fps
+' Wider than spec's ±125ms for better feel on real hardware
 GoodWindowData:
-    DATA 8, 8, 8
+    DATA 10, 10, 10
 
 ' Row start BACKTAB positions for melody rows 0-5 (screen rows 2-7)
 RowStartData:

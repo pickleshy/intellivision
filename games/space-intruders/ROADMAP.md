@@ -6,7 +6,7 @@
 
 ## 1. Bugs (Known Issues)
 
-- [ ] **Captured alien dive bomb behavior** — Captured alien slams directly into the player ship instead of engaging in a dogfight. Should behave as an adversarial encounter (strafing, evasion) rather than a kamikaze run.
+- [x] **Captured alien dive bomb behavior** — Rogue now dogfights both wingman and player ship with strafing passes, targeted firing, and body collision.
 
 ---
 
@@ -28,9 +28,16 @@
 - [ ] Color tuning and visual consistency
 - [ ] Physics/collision refinement
 
+### Recently Completed
+- [x] Active powerup indicator (HUD shows active powerup)
+- [x] Better wingman firing as partner (BACKTAB bullets, can kill rogue)
+- [x] Beam weapon rework (2-hit pierce, 2px laser shared with boss beam)
+- [x] Boss beam laser (green/white flash, reuses player beam GRAM)
+- [x] Wingman goodbye animation (stop at center, "bye!" speech bubbles)
+- [x] Rogue vs wingman dogfight (body collision, wingman bullet kills rogue, strafing fire at wingman)
+- [x] Bug fixes: powerup capsule ghost, wingman bullet ghost tile, mega beam vs rogue, rogue/wingman variable conflict
+
 ### Backlog
-- [ ] Active powerup indicator (see detailed spec below)
-- [ ] Better wingman firing as partner (optional tuning)
 - [ ] Impact pause / "dopamine moments" (see spec #7)
 - [ ] Saucer animation refactor (see spec #11)
 
@@ -79,10 +86,10 @@
 | Endless | Loop | Until death | Waves repeat with scaling difficulty |
 
 ### Wave Content Tasks
-- [ ] Define wave count target
-- [ ] Design pattern variety (formations per wave)
-- [ ] Place bosses (every N waves?)
-- [ ] Plan wave entrance animations (see spec #9)
+- [x] Define wave count target (8-wave arcade loop)
+- [x] Design pattern variety (8 Pattern B formations, data-driven WaveDefTable)
+- [x] Place bosses (per-wave table-driven placement)
+- [x] Plan wave entrance animations (3 types + pincer)
 - [ ] Extended first wave / tutorial escalation (see spec #10)
 
 ### Current Patterns
@@ -113,20 +120,21 @@ _Document existing patterns here as reference._
 ## 6. Performance
 
 ### Known Issues
-- [ ] Saucer animation may cause frame drops
-- [ ] Need to profile with debug border colors
+- [ ] Saucer animation may cause frame drops (needs profiling)
 
-### Optimization Targets
+### Completed Optimizations
+- [x] ColMaskData ROM lookup table (replaced 14 shift loops, 27-37% frame savings in heavy action)
+- [x] DrawAliens dirty flag pattern (60→4-10 calls/sec)
+- [x] Row-level boss pre-check cache (RowBoss1/RowBoss2, eliminated FindBoss GOSUB)
+- [x] Variable audit: 187→183 8-bit vars (ABulletType packed, RowHasBoss/BossIdx/LaserColor eliminated)
+- [x] Rogue circle fire bug fix (condition was always true, wasting cycles)
+- [x] Debug mode (type "36"): BORDER color band shows CPU usage
+
+### Remaining Optimization Targets
 | Routine | Priority | Notes |
 |---------|----------|-------|
-| SaucerAnimate | High | Suspected CPU spike |
-| Alien grid rendering | Medium | Especially with bosses |
-| Collision detection loops | Medium | Multiple nested loops |
-| DrawAliens shimmer | Low | Already uses dirty flag |
-
-### Tools
-- Debug mode (type "36"): BORDER color band shows CPU usage
-- Assembly listing: Check compiled output for hot paths
+| SaucerAnimate | Medium | Suspected CPU spike, needs profiling |
+| Collision detection loops | Low | Already optimized with lookup tables |
 
 ### Future: CP1610 Assembly Optimization
 See detailed spec #14 below — only pursue after feature-complete.
@@ -135,18 +143,20 @@ See detailed spec #14 below — only pursue after feature-complete.
 
 ## 7. Features (Backlog)
 
+### Completed
+- [x] Captured alien escape after 2 waves (spec #15) — goodbye animation with speech bubbles
+- [x] Large sprite alien variants (spec #8) — BACKTAB 2x2 LARGE_TYPE bosses
+- [x] Wave entrance animations (spec #9) — left sweep, top-down, fly-down + pincer
+- [x] Title screen: 3D rotating letters (spec #1) — Y-axis rotation cascade
+
 ### Near-Term
 - [ ] Destructible barriers/shields (spec #2)
 - [ ] Wave announcement transition (spec #6)
-- [ ] Captured alien escape after 2 waves (spec #15)
 
 ### Medium-Term
-- [ ] Boss fight (spec #3)
-- [ ] Large sprite alien variants (spec #8)
-- [ ] Wave entrance animations (spec #9)
+- [ ] Boss fight (spec #3) — dedicated boss wave (skull/bomb/large exist but no standalone encounter)
 
 ### Stretch Goals
-- [ ] Title screen: 3D rotating letters (spec #1)
 - [ ] Player 2 controls Zod on title/game over (spec #4)
 - [ ] Zod shoots away letters on game over (spec #5)
 - [ ] Saucer explosion: escaping aliens (spec #12)
@@ -347,13 +357,29 @@ Depends on defining capture mechanic. Currently speculative.
 
 ---
 
-## GRAM Budget Summary
+## Resource Budget Summary
 
+### GRAM (64 cards)
 **Currently allocated:** ~61 of 64 cards
 **Free slots:** 3 (cards 13, 41, 53)
 **Reclaimable during gameplay:** 12 (title font, cards 25-36)
-
 **Available for new features during gameplay:** 15 cards
+
+### Variables
+**8-bit:** 183/187 used (4 free)
+**16-bit:** 25/25 used (0 free — use bit-packing in #GameFlags for new booleans)
+**#GameFlags:** All 16 bits allocated (FLAG_BULLET through FLAG_HASLARGE)
+
+### ROM
+**Total:** 32,703 of 42,016 words used (9,713 available)
+**Seg 0:** 57 words free (tight — main loop)
+**Seg 1:** 1,299 words free (procedures)
+**Seg 2:** 1,199 words free (collision, music, DATA)
+**Seg 3:** 1,286 words free (title animation, music DATA)
+**Seg 4-5:** 5,872 words free (empty, available)
+
+### Sprites
+**8/8 allocated** — no free MOBs during gameplay
 
 ---
 
@@ -364,3 +390,10 @@ Depends on defining capture mechanic. Currently speculative.
 - Easter eggs / cheat codes
 - Attract mode demo playback
 - Wingman "goodbye" animation when player dies
+
+## Variable Optimization Notes (for future sessions)
+**Medium wins available if more slots needed:**
+- BulletColor → reuse a frame counter (1 var)
+- GOAnimFrame → share with gameplay-only counter during game-over (1 var)
+- BombExpTimer → reuse ExplosionTimer if mutually exclusive (1 var)
+- RevealCol/VanishCol/WavePhase/TitleAnimState → derive from timers, title-only (4 vars)
