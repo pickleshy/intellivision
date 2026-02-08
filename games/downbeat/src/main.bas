@@ -328,7 +328,7 @@ StartGame:
 
     ' Enter gameplay
     GameState = GS_GAMEPLAY
-    BeatFrameCount = 0
+    BeatFrameCount = BeatFramesPerBeat - 1  ' Fire beat on first frame so beat "1" is active
     GOTO GameLoop
 
 ' ============================================
@@ -395,23 +395,22 @@ GameLoop:
 
     ' --- Beat advance processing ---
     IF #GameFlags AND FLAG_BEATFIRE THEN
-        ' Process early hit if pending
-        IF #GameFlags AND FLAG_EARLYHIT THEN
-            CurrentInstr = EarlyHitInstr
-            HitQuality = EarlyHitQuality
-            GOSUB ProcessHit
-            #GameFlags = #GameFlags AND ($FFFF XOR FLAG_EARLYHIT)
-        ELSEIF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
-            ' No input this beat
-            IF TotalBeats AND 1 THEN
-                ' Active beat missed
+        IF (TotalBeats AND 1) = 0 THEN
+            ' PASSIVE beat — always stamp dash, never process hits here
+            GOSUB BeatToScreen
+            PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_WHITE + $0800
+        ELSE
+            ' ACTIVE beat — process input
+            IF #GameFlags AND FLAG_EARLYHIT THEN
+                CurrentInstr = EarlyHitInstr
+                HitQuality = EarlyHitQuality
+                GOSUB ProcessHit
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_EARLYHIT)
+            ELSEIF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
+                ' No input — missed beat
                 IF DazeTimer = 0 THEN
                     GOSUB HandleMissedBeat
                 END IF
-            ELSE
-                ' Passive beat — stamp connecting dash (subway map line)
-                GOSUB BeatToScreen
-                PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_WHITE + $0800
             END IF
         END IF
         ' Reset for next beat
@@ -598,7 +597,27 @@ END
 CheckHitTiming: PROCEDURE
     IF #GameFlags AND FLAG_INPUTLOCKED THEN RETURN
 
-    ' Calculate distance from nearest beat boundary
+    ' On passive beats (even TotalBeats), only accept early presses
+    ' for the next active beat — never stamp dots on passive positions
+    IF (TotalBeats AND 1) = 0 THEN
+        IF BeatFrameCount > (BeatFramesPerBeat / 2) + LATENCY_OFFSET THEN
+            ' Second half of passive interval — close to next active beat
+            TempVal = BeatFramesPerBeat - BeatFrameCount
+            IF TempVal <= PerfectWindow THEN
+                EarlyHitQuality = HIT_PERFECT
+                EarlyHitInstr = CurrentInstr
+                #GameFlags = #GameFlags OR FLAG_EARLYHIT
+            ELSEIF TempVal <= GoodWindow THEN
+                EarlyHitQuality = HIT_GOOD
+                EarlyHitInstr = CurrentInstr
+                #GameFlags = #GameFlags OR FLAG_EARLYHIT
+            END IF
+        END IF
+        CurrentInstr = 0
+        RETURN
+    END IF
+
+    ' --- Active beat timing ---
     ' Apply latency compensation: the perceived beat is LATENCY_OFFSET
     ' frames after the actual beat fire (audio/visual processing delay)
     ' This shifts the "ideal press point" later, forgiving late presses
