@@ -27,6 +27,9 @@ CONST COL_DKGREEN = 4
 CONST COL_GREEN   = 5
 CONST COL_YELLOW  = 6
 CONST COL_WHITE   = 7
+' Extended colors (8-15, require bit 12 in BACKTAB — use PrintColorText)
+CONST COL_ORANGE  = 10
+CONST COL_PINK    = 12
 
 ' Sprite assignments
 CONST SPR_CURSOR  = 0    ' Beat cursor on melody grid
@@ -137,6 +140,11 @@ UniqueInstr = 0         ' Count of unique instruments
 LoopVar = 0
 TempVal = 0
 
+' Extended color printing (for colors 8-15 on GROM text)
+PrintColor = 0          ' Color 0-15 for PrintColorText
+PrintLen = 0            ' Number of characters to print
+PrintOffset = 0         ' Starting index in PrintCharsData
+
 ' --------------------------------------------
 ' Initialization
 ' --------------------------------------------
@@ -168,11 +176,13 @@ TitleScreen:
     ' Hide all sprites
     GOSUB HideAllSprites
 
-    ' Draw title
-    PRINT AT 24 COLOR COL_RED, "DOWNBEAT!"
+    ' Draw title (Orange = extended color, needs PrintColorText)
+    #BeatScreenPos = 24 : PrintColor = COL_ORANGE : PrintLen = 9 : PrintOffset = 0
+    GOSUB PrintColorText
     PRINT AT 65 COLOR COL_BLUE, "A RHYTHM GAME"
     PRINT AT 103 COLOR COL_WHITE, "BY SHAYA B LYON"
-    PRINT AT 187 COLOR COL_YELLOW, "PRESS FIRE"
+    #BeatScreenPos = 187 : PrintColor = COL_ORANGE : PrintLen = 10 : PrintOffset = 9
+    GOSUB PrintColorText
 
     ' Debounce: wait for button release
 TitleDebounce:
@@ -205,10 +215,12 @@ TempoSelect:
     WAIT
     TempoChoice = 1  ' Default to Moderato
 
-    PRINT AT 22 COLOR COL_RED, "SELECT TEMPO"
+    #BeatScreenPos = 22 : PrintColor = COL_PINK : PrintLen = 12 : PrintOffset = 62
+    GOSUB PrintColorText
 
     PRINT AT 201 COLOR COL_WHITE, "DISC OR KEYS 1-3"
-    PRINT AT 221 COLOR COL_YELLOW, "FIRE TO START"
+    #BeatScreenPos = 221 : PrintColor = COL_ORANGE : PrintLen = 13 : PrintOffset = 19
+    GOSUB PrintColorText
 
     GOSUB DrawTempoChoices
 
@@ -514,7 +526,8 @@ ResultsScreen:
     CLS
     WAIT
 
-    PRINT AT 22 COLOR COL_RED, "TURN COMPLETE!"
+    #BeatScreenPos = 22 : PrintColor = COL_PINK : PrintLen = 14 : PrintOffset = 32
+    GOSUB PrintColorText
 
     PRINT AT 62 COLOR COL_BLUE, "SCORE:"
     PRINT AT 69 COLOR COL_YELLOW, <>#Score
@@ -537,7 +550,8 @@ ResultsScreen:
         PRINT AT 122 COLOR COL_WHITE, "DIVERSE x1.1"
     END IF
 
-    PRINT AT 180 COLOR COL_YELLOW, "FIRE: PLAY AGAIN"
+    #BeatScreenPos = 180 : PrintColor = COL_ORANGE : PrintLen = 16 : PrintOffset = 46
+    GOSUB PrintColorText
     PRINT AT 200 COLOR COL_WHITE, "1: CHANGE TEMPO"
 
     ' Debounce
@@ -1214,6 +1228,24 @@ GreyOutPhrase: PROCEDURE
     RETURN
 END
 
+' --- Print GROM text in any color 0-15 (extended palette) ---
+' Inputs: #BeatScreenPos=position, PrintColor=color, PrintLen=length, PrintOffset=offset
+' For colors 0-7: normal BACKTAB encoding
+' For colors 8-15: sets bit 12 for the 4th color bit
+PrintColorText: PROCEDURE
+    FOR LoopVar = 0 TO PrintLen - 1
+        TempVal = PrintCharsData(PrintOffset + LoopVar)
+        IF PrintColor >= 8 THEN
+            #Card = (TempVal * 8) OR (PrintColor AND 7) OR $1000
+        ELSE
+            #Card = (TempVal * 8) OR PrintColor
+        END IF
+        PRINT AT #BeatScreenPos, #Card
+        #BeatScreenPos = #BeatScreenPos + 1
+    NEXT LoopVar
+    RETURN
+END
+
 ' ============================================
 ' SEGMENT 2 - Data Tables and GRAM Graphics
 ' ============================================
@@ -1252,6 +1284,22 @@ RowSpriteYData:
 ' Row 2→3: screen row 7 col 17=157, Row 3→4: row 9 col 2=182
 ConnectorPosData:
     DATA 77, 102, 157, 182
+
+' GROM card numbers for extended-color text strings
+' (GROM: Space=0, !=1, 0-9=16-25, :=26, A=33..Z=58)
+PrintCharsData:
+    ' Offset 0: "DOWNBEAT!" (9 chars)
+    DATA 36, 47, 55, 46, 34, 37, 33, 52, 1
+    ' Offset 9: "PRESS FIRE" (10 chars)
+    DATA 48, 50, 37, 51, 51, 0, 38, 41, 50, 37
+    ' Offset 19: "FIRE TO START" (13 chars)
+    DATA 38, 41, 50, 37, 0, 52, 47, 0, 51, 52, 33, 50, 52
+    ' Offset 32: "TURN COMPLETE!" (14 chars)
+    DATA 52, 53, 50, 46, 0, 35, 47, 45, 48, 44, 37, 52, 37, 1
+    ' Offset 46: "FIRE: PLAY AGAIN" (16 chars)
+    DATA 38, 41, 50, 37, 26, 0, 48, 44, 33, 57, 0, 33, 39, 33, 41, 46
+    ' Offset 62: "SELECT TEMPO" (12 chars)
+    DATA 51, 37, 44, 37, 35, 52, 0, 52, 37, 45, 48, 47
 
 ' Instrument colors (indexed 0-8 for instruments 1-9)
 InstrColorData:
