@@ -38,6 +38,7 @@ CONST GRAM_CURSOR1    = 2  ' Beat cursor frame 1 (bright)
 CONST GRAM_CURSOR2    = 3  ' Beat cursor frame 2 (dim)
 CONST GRAM_BEAT_EMPTY = 4  ' Empty beat slot on melody grid
 CONST GRAM_DASH       = 5  ' Connecting dash between beats
+CONST GRAM_VERT       = 6  ' Vertical connector at row turns
 
 ' Grid layout
 CONST GRID_COLS  = 16   ' Columns per melody row (2 col padding each side)
@@ -324,8 +325,8 @@ StartGame:
     ' Draw beat grid - Rows 2,4,6,8,10 (16 cols with 2-col padding)
     GOSUB DrawBeatGrid
 
-    ' Draw sync meter - Row 1
-    GOSUB DrawSyncMeter
+    ' Sync meter display hidden (logic still active for future 2-player use)
+    ' GOSUB DrawSyncMeter
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SYNCDIRTY)
 
     ' Countdown
@@ -409,6 +410,16 @@ GameLoop:
             GOSUB BeatToScreen
             PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_WHITE + $0800
 
+            ' Draw vertical connector when last beat of a row is stamped
+            IF BeatRow < GRID_ROWS - 1 THEN
+                ' Check snaked BeatCol: even rows end at right (col 15), odd rows end at left (col 0)
+                TempVal = GRID_COLS - 1
+                IF BeatRow AND 1 THEN TempVal = 0
+                IF BeatCol = TempVal THEN
+                    PRINT AT ConnectorPosData(BeatRow), GRAM_VERT * 8 + COL_WHITE + $0800
+                END IF
+            END IF
+
             ' Was previous active beat missed?
             IF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
                 IF DazeTimer = 0 AND TotalBeats > 1 THEN
@@ -438,9 +449,9 @@ GameLoop:
     ' --- Update cursor ---
     GOSUB UpdateCursor
 
-    ' --- Redraw sync meter if dirty ---
+    ' --- Sync meter redraw hidden (logic still active) ---
     IF #GameFlags AND FLAG_SYNCDIRTY THEN
-        GOSUB DrawSyncMeter
+        ' GOSUB DrawSyncMeter
         #GameFlags = #GameFlags AND ($FFFF XOR FLAG_SYNCDIRTY)
     END IF
 
@@ -1148,6 +1159,9 @@ DefineGramCards: PROCEDURE
     ' Card 5: Connecting dash (subway map line)
     DEFINE 5, 1, GfxDash
     WAIT
+    ' Card 6: Vertical connector at row turns
+    DEFINE 6, 1, GfxVert
+    WAIT
     RETURN
 END
 
@@ -1223,6 +1237,12 @@ RowStartData:
 ' Sprite Y positions for melody rows 0-4 (screen rows 2,4,6,8,10)
 RowSpriteYData:
     DATA 24, 40, 56, 72, 88
+
+' Vertical connector BACKTAB positions (gap rows 3,5,7,9 at turn columns)
+' Row 0→1: screen row 3 col 17=77, Row 1→2: row 5 col 2=102
+' Row 2→3: screen row 7 col 17=157, Row 3→4: row 9 col 2=182
+ConnectorPosData:
+    DATA 77, 102, 157, 182
 
 ' Instrument colors (indexed 0-8 for instruments 1-9)
 InstrColorData:
@@ -1317,3 +1337,14 @@ GfxDash:
     BITMAP "........"
     BITMAP "........"
     BITMAP "........"
+
+' Vertical connector at snaking row turns
+GfxVert:
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
