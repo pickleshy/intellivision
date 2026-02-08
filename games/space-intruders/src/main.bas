@@ -138,14 +138,6 @@ CONST TGRAM_V = 54              ' Cards 54-56 (reuse TGRAM_D slot)
 CONST GRAM_BYE1     = 25        ' "bye!" left half (b + y)
 CONST GRAM_BYE2     = 26        ' "bye!" right half (e + !)
 
-' Large alien (2x2 BACKTAB cards = 16x16 pixels)
-' TL/TR use title-only crab slots (free during gameplay)
-' BL/BR use warp-in slots (warp-in only used in Pattern A, large alien only in Pattern B)
-CONST GRAM_LARGE_TL = 19       ' Top-left quadrant (reuse crab F1)
-CONST GRAM_LARGE_TR = 20       ' Top-right quadrant (reuse crab F2)
-CONST GRAM_LARGE_BL = 34       ' Bottom-left quadrant (reuse warp-in F1)
-CONST GRAM_LARGE_BR = 35       ' Bottom-right quadrant (reuse warp-in F2)
-
 ' Additional sprite slots
 CONST SPR_SHIP_ACCENT = 4       ' Ship accent sprite (stacked for 2-color effect)
 CONST SPR_FLYER     = 5         ' Title screen flying alien
@@ -221,7 +213,6 @@ CONST BOMB_SCORE   = 50         ' Score for bomb alien itself
 CONST MAX_BOSSES   = 4          ' Maximum simultaneous special aliens
 CONST SKULL_TYPE   = 0          ' BossType: multi-hit skull boss
 CONST BOMB_TYPE    = 1          ' BossType: single-hit bomb alien (chain explodes)
-CONST LARGE_TYPE   = 2          ' BossType: 2x2 large alien (Phase B)
 
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
@@ -247,7 +238,7 @@ CONST FLAG_FLYDOWN   = 2048     ' Bit 11: FlyDown mode (aliens descend from abov
 CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Key0 debounce (wingman toggle)
 CONST FLAG_DUAL      = 8192     ' Bit 13: Quad laser active
 CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
-CONST FLAG_HASLARGE  = 32768    ' Bit 15: HasLargeAlien (gates LARGE_TYPE checks in hot paths)
+CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this wave
 
 ' --------------------------------------------
 ' Variables
@@ -1776,6 +1767,8 @@ GameLoop:
     END IF ' DeathTimer gate for march
     END IF ' reveal complete gate
 
+    ' (Relentless wave mechanic is now handled in CheckWaveWin → ReloadHorde)
+
     ' Update bullets
     IF #GameFlags AND FLAG_BULLET THEN
         GOSUB MoveBullet
@@ -2717,15 +2710,6 @@ CheckOneColumn: PROCEDURE
                                 IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
                                     FoundBoss = LoopVar
                                 END IF
-                            ELSEIF #GameFlags AND FLAG_HASLARGE THEN
-                                ' Only check bottom-half match when a large alien exists
-                                IF BossType(LoopVar) = LARGE_TYPE THEN
-                                    IF AlienGridRow = BossRow(LoopVar) + 1 THEN
-                                        IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
-                                            FoundBoss = LoopVar
-                                        END IF
-                                    END IF
-                                END IF
                             END IF
                         END IF
                     NEXT LoopVar
@@ -2766,44 +2750,6 @@ CheckOneColumn: PROCEDURE
                             IF ChainCount > 50 THEN ChainCount = 50
                             ChainTimeout = 90
                             GOSUB BombExplode
-                            RETURN
-                        ELSEIF BossType(FoundBoss) = LARGE_TYPE THEN
-                            ' Large 2x2 alien dead! Clear all 4 grid cells
-                            ' Top row (BossRow): cols BossCol and BossCol+1
-                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
-                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
-                            ' Bottom row (BossRow+1): cols BossCol and BossCol+1
-                            Row = BossRow(FoundBoss) + 1
-                            IF Row < ALIEN_ROWS THEN
-                                #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(BossCol(FoundBoss))
-                                #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(BossCol(FoundBoss) + 1)
-                            END IF
-                            ' Clear all 4 BACKTAB tiles
-                            #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
-                            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                            IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
-                            IF #ExplosionPos + 20 < 220 THEN PRINT AT #ExplosionPos + 20, 0
-                            IF #ExplosionPos + 21 < 220 THEN PRINT AT #ExplosionPos + 21, 0
-                            ' Big score + explosion on all 4 tiles
-                            #Score = #Score + BOSS_SCORE + BOSS_SCORE
-                            IF BeamTimer = 0 OR BeamHits = 0 THEN
-                                #GameFlags = #GameFlags AND $FFFE
-                            END IF
-                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            ChainCount = ChainCount + 1
-                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                            IF ChainCount > 50 THEN ChainCount = 50
-                            ChainTimeout = 90
-                            ExplosionTimer = 25
-                            ' Show explosion on top-left and bottom-right for visual spread
-                            IF #ExplosionPos < 220 THEN
-                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
-                            END IF
-                            IF #ExplosionPos + 21 < 220 THEN
-                                PRINT AT #ExplosionPos + 21, GRAM_EXPLOSION * 8 + COL_RED + $1800
-                            END IF
-                            SfxType = 1 : SfxVolume = 15 : #SfxPitch = 60
-                            SOUND 2, 60, 15
                             RETURN
                         ELSE
                             ' Skull boss dead! XOR BOTH columns out
@@ -3199,6 +3145,20 @@ DrawGOLetterStatic: PROCEDURE
 END
 
 ' --------------------------------------------
+' HandleDescent - Shared descent logic (called from MarchAliens)
+' Accelerates march speed, updates music gear
+' Caller must set AlienDir before calling
+' --------------------------------------------
+HandleDescent: PROCEDURE
+    AlienOffsetY = AlienOffsetY + 1
+    IF CurrentMarchSpeed > 6 THEN
+        CurrentMarchSpeed = CurrentMarchSpeed - 6
+    END IF
+    GOSUB UpdateMusicGear
+    RETURN
+END
+
+' --------------------------------------------
 ' MarchAliens - Move alien grid (dynamic boundaries)
 ' --------------------------------------------
 MarchAliens: PROCEDURE
@@ -3264,13 +3224,8 @@ MarchAliens: PROCEDURE
             AlienOffsetX = AlienOffsetX + 1
         ELSE
             ' Hit right edge - drop down and reverse
-            AlienOffsetY = AlienOffsetY + 1
             AlienDir = 255
-            ' Accelerate march + music on descent (balanced ramp)
-            IF CurrentMarchSpeed > 6 THEN
-                CurrentMarchSpeed = CurrentMarchSpeed - 6
-            END IF
-            GOSUB UpdateMusicGear
+            GOSUB HandleDescent
         END IF
     ELSE
         ' Moving left
@@ -3281,21 +3236,13 @@ MarchAliens: PROCEDURE
                 AlienOffsetX = AlienOffsetX - 1
             ELSE
                 ' Hit left edge - drop down and reverse
-                AlienOffsetY = AlienOffsetY + 1
                 AlienDir = 1
-                IF CurrentMarchSpeed > 6 THEN
-                    CurrentMarchSpeed = CurrentMarchSpeed - 6
-                END IF
-                GOSUB UpdateMusicGear
+                GOSUB HandleDescent
             END IF
         ELSE
             ' AlienOffsetX = 0: reverse (can't represent negative offset)
-            AlienOffsetY = AlienOffsetY + 1
             AlienDir = 1
-            IF CurrentMarchSpeed > 6 THEN
-                CurrentMarchSpeed = CurrentMarchSpeed - 6
-            END IF
-            GOSUB UpdateMusicGear
+            GOSUB HandleDescent
         END IF
     END IF
     RETURN
@@ -3838,13 +3785,6 @@ DrawAliens: PROCEDURE
                 IF BossHP(LoopVar) > 0 THEN
                     IF Row = BossRow(LoopVar) THEN
                         IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
-                    ELSEIF #GameFlags AND FLAG_HASLARGE THEN
-                        ' Only check bottom-half match when a large alien exists
-                        IF BossType(LoopVar) = LARGE_TYPE THEN
-                            IF Row = BossRow(LoopVar) + 1 THEN
-                                IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
-                            END IF
-                        END IF
                     END IF
                 END IF
             NEXT LoopVar
@@ -3879,29 +3819,7 @@ DrawAliens: PROCEDURE
                     END IF
                     IF FoundBoss < 255 THEN
                         ' Special alien in slide-in mode
-                        IF BossType(FoundBoss) = LARGE_TYPE THEN
-                            ' Large 2x2 alien — pulse color on shimmer
-                            IF BossColor(FoundBoss) >= 8 THEN
-                                #Card = (BossColor(FoundBoss) AND 7) + $1800
-                            ELSE
-                                #Card = BossColor(FoundBoss) + $0800
-                            END IF
-                            IF ShimmerCount AND 8 THEN #Card = COL_WHITE + $0800
-                            ' Select quadrant based on row/col
-                            IF Row = BossRow(FoundBoss) THEN
-                                IF Col = BossCol(FoundBoss) THEN
-                                    #Card = GRAM_LARGE_TL * 8 + #Card
-                                ELSE
-                                    #Card = GRAM_LARGE_TR * 8 + #Card
-                                END IF
-                            ELSE
-                                IF Col = BossCol(FoundBoss) THEN
-                                    #Card = GRAM_LARGE_BL * 8 + #Card
-                                ELSE
-                                    #Card = GRAM_LARGE_BR * 8 + #Card
-                                END IF
-                            END IF
-                        ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+                        IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Flash red/white when bomb alien at HP=1
                             HitCol = BossColor(FoundBoss)
                             IF BossHP(FoundBoss) = 1 THEN
@@ -3981,29 +3899,8 @@ DrawAliens: PROCEDURE
                             END IF
                         END IF
                         IF FoundBoss < 255 THEN
-                            ' Special alien — large, bomb, or skull boss
-                            IF BossType(FoundBoss) = LARGE_TYPE THEN
-                                ' Large 2x2 alien — pulse color on shimmer
-                                IF BossColor(FoundBoss) >= 8 THEN
-                                    #Card = (BossColor(FoundBoss) AND 7) + $1800
-                                ELSE
-                                    #Card = BossColor(FoundBoss) + $0800
-                                END IF
-                                IF ShimmerCount AND 8 THEN #Card = COL_WHITE + $0800
-                                IF Row = BossRow(FoundBoss) THEN
-                                    IF Col = BossCol(FoundBoss) THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_LARGE_TL * 8 + #Card
-                                    ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_LARGE_TR * 8 + #Card
-                                    END IF
-                                ELSE
-                                    IF Col = BossCol(FoundBoss) THEN
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_LARGE_BL * 8 + #Card
-                                    ELSE
-                                        PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, GRAM_LARGE_BR * 8 + #Card
-                                    END IF
-                                END IF
-                            ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+                            ' Special alien — bomb or skull boss
+                            IF BossType(FoundBoss) = BOMB_TYPE THEN
                                 ' Bomb alien: use BossColor, but flash red/white at HP=1
                                 HitCol = BossColor(FoundBoss)
                                 IF BossHP(FoundBoss) = 1 THEN
@@ -4104,6 +4001,7 @@ LoadPatternB: PROCEDURE
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
     MegaBeamTimer = 0
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_REINFORCE)
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
@@ -4141,11 +4039,20 @@ LoadPatternB: PROCEDURE
     ' Pattern B boss placement per wave (wraps every 8)
     LoopVar = (Level - 1) AND 7  ' 0-based wave index
 
-    IF LoopVar = 1 THEN
-        ' Wave 2 Pattern B (Diamond): 1 skull center
+    IF LoopVar = 0 THEN
+        ' Wave 1 Pattern B (V-shape): 1 skull in center of V
         BossCount = 1
         BossCol(0) = 4 : BossRow(0) = 2
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 10 : BossType(0) = SKULL_TYPE
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+    ELSEIF LoopVar = 1 THEN
+        ' Wave 2 Pattern B (Diamond): 1 bomb center, 2 skull satellites
+        BossCount = 3
+        BossCol(0) = 3 : BossRow(0) = 2
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 1 : BossRow(1) = 0
+        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 6 : BossRow(2) = 0
+        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 3 THEN
         ' Wave 4 Pattern B (Cross): 1 skull on horizontal bar
         BossCount = 1
@@ -4155,10 +4062,10 @@ LoadPatternB: PROCEDURE
         ' Wave 6 Pattern B (Arrow): no bosses (no adjacent cols)
         ' BossCount already 0
     ELSEIF LoopVar = 6 THEN
-        ' Wave 7 Pattern B (Fortress): 1 large alien center
+        ' Wave 7 Pattern B (Fortress): 1 skull boss center
         BossCount = 1
         BossCol(0) = 3 : BossRow(0) = 1
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 12 : BossType(0) = LARGE_TYPE
+        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
     ELSEIF LoopVar = 7 THEN
         ' Wave 8 Pattern B (Phalanx): 2 skulls on dense rows
         BossCount = 2
@@ -4166,21 +4073,6 @@ LoadPatternB: PROCEDURE
         BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
         BossCol(1) = 2 : BossRow(1) = 4
         BossHP(1) = BOSS_HP_MAX : BossColor(1) = 10 : BossType(1) = SKULL_TYPE
-    END IF
-
-    ' Load large alien GRAM cards if any LARGE_TYPE boss in this pattern
-    FoundBoss = 0
-    FOR LoopVar = 0 TO BossCount - 1
-        IF BossType(LoopVar) = LARGE_TYPE THEN FoundBoss = 1
-    NEXT LoopVar
-    IF FoundBoss THEN
-        #GameFlags = #GameFlags OR FLAG_HASLARGE
-        DEFINE GRAM_LARGE_TL, 2, LargeAlienTLGfx  ' Cards 19-20 (TL + TR)
-        WAIT
-        DEFINE GRAM_LARGE_BL, 2, LargeAlienBLGfx  ' Cards 34-35 (BL + BR, reuse warp-in slots)
-        WAIT
-    ELSE
-        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_HASLARGE)
     END IF
 
     ' Normalize grid: shift bitmasks so leftmost alive column = 0
@@ -4283,12 +4175,98 @@ CheckWaveWin: PROCEDURE
     IF #AliensAlive = 0 THEN
         IF ExplosionTimer = 0 THEN
             IF (#GameFlags AND FLAG_SUBWAVE) = 0 THEN
+                ' Relentless waves: send a second horde before Pattern B
+                Col = (Level - 1) AND 7
+                IF Col = 2 THEN  ' Wave 3 (add more: OR Col = 5, etc.)
+                    IF (#GameFlags AND FLAG_REINFORCE) = 0 THEN
+                        GOSUB ReloadHorde
+                        RETURN
+                    END IF
+                END IF
                 GOSUB LoadPatternB
             ELSE
                 GOSUB StartNewWave
             END IF
         END IF
     END IF
+    RETURN
+END
+
+' --------------------------------------------
+' ReloadHorde - Send a second wave of aliens (relentless wave mechanic)
+' Resets the grid to full and triggers fly-down entrance
+' --------------------------------------------
+ReloadHorde: PROCEDURE
+    #GameFlags = #GameFlags OR FLAG_REINFORCE  ' Mark second horde
+    ' Silence SFX
+    GOSUB SilenceSfx
+    POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
+    ' Clear bullets and rogue (preserve wingman)
+    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
+    IF #GameFlags AND FLAG_CAPBULLET THEN
+        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
+    END IF
+    MegaBeamTimer = 0
+    GOSUB ClearRogueOnly
+    SPRITE SPR_PBULLET, 0, 0, 0
+    SPRITE SPR_ABULLET, 0, 0, 0
+    TitleFrame = 0
+    ' Reset alien grid to full
+    FOR LoopVar = 0 TO ALIEN_ROWS - 1
+        #AlienRow(LoopVar) = $1FF
+    NEXT LoopVar
+    BossCount = 0 : BombExpTimer = 0
+    ' Reset positions
+    AlienOffsetX = 0
+    AlienOffsetY = 0
+    LastClearedY = 0
+    AlienDir = 1
+    MarchCount = 0
+    CurrentMarchSpeed = BaseMarchSpeed
+    ' Clear screen and redraw HUD
+    CLS
+    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    IF ChainCount = 0 THEN
+        PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+        PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+        PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+        PRINT AT 231, 111 : PRINT AT 232, 0
+    ELSE
+        PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+        PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+        PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+        PRINT AT 231 COLOR COL_BLUE, <>ChainCount
+        IF ChainCount < 10 THEN PRINT AT 232, 0
+    END IF
+    PRINT AT 233, 0 : PRINT AT 234, 0
+    PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
+    GOSUB UpdateLivesHUD
+    GOSUB DrawSilhouette
+    ' Set fly-down entrance
+    #GameFlags = #GameFlags AND $F3FF  ' Clear FLAG_TOPDOWN + FLAG_FLYDOWN
+    #GameFlags = #GameFlags OR FLAG_FLYDOWN
+    WaveRevealCol = ALIEN_COLS - 1
+    WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
+    RightRevealCol = ALIEN_COLS - 1
+    HitCol = 0  ' Reset reveal-complete gate
+    ' Announcement: "INCOMING HORDE!" — rapid flash + Intellivoice
+    IF VOICE.AVAILABLE THEN
+        VOICE PLAY reinforce_phrase
+    END IF
+    FOR LoopVar = 0 TO 47
+        WAIT
+        IF (LoopVar AND 4) = 0 THEN
+            PRINT AT 103 COLOR 6, "INCOMING HORDE!"  ' Row 5 col 3, yellow
+        ELSE
+            PRINT AT 103, "               "           ' 15 spaces
+        END IF
+    NEXT LoopVar
+    PRINT AT 103, "               "                   ' Final clear
     RETURN
 END
 
@@ -4301,8 +4279,7 @@ StartNewWave: PROCEDURE
     SfxVolume = 0
     SfxType = 0
     ChainCount = 0  ' Reset kill chain for new wave
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_HASLARGE)  ' Clear until LoadPatternB sets it
-
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_REINFORCE)  ' Clear reinforcement flag
     ' Increment level
     Level = Level + 1
 
@@ -4345,75 +4322,8 @@ StartNewWave: PROCEDURE
     NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0
 
-    ' Boss placement per wave (wraps every 8 waves)
-    ' Boss colors: Cyan(9), Orange(10), Pink(12) contrast well against alien row colors
-    LoopVar = (Level - 1) AND 7  ' 0-based wave index, wraps after 8
-
-    IF LoopVar = 2 THEN
-        ' Wave 3: 2 skull top + 1 bomb bottom
-        BossCount = 3
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 4 : BossRow(2) = 3
-        BossHP(2) = 2 : BossColor(2) = 12 : BossType(2) = BOMB_TYPE
-    ELSEIF LoopVar = 3 THEN
-        ' Wave 4: 2 skull top + 1 skull mid + 1 bomb bottom
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 3 : BossRow(2) = 1
-        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 4 : BossRow(3) = 3
-        BossHP(3) = 2 : BossColor(3) = 12 : BossType(3) = BOMB_TYPE
-    ELSEIF LoopVar = 4 THEN
-        ' Wave 5: 1 skull top + 1 skull mid + 2 bomb bottom
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 10 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 4 : BossRow(1) = 2
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 2 : BossRow(2) = 4
-        BossHP(2) = 2 : BossColor(2) = 9 : BossType(2) = BOMB_TYPE
-        BossCol(3) = 6 : BossRow(3) = 4
-        BossHP(3) = 2 : BossColor(3) = 9 : BossType(3) = BOMB_TYPE
-    ELSEIF LoopVar = 5 THEN
-        ' Wave 6: flanking skulls + center skull + bomb bottom
-        BossCount = 4
-        BossCol(0) = 0 : BossRow(0) = 1
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 10 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 7 : BossRow(1) = 1
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 10 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 4 : BossRow(2) = 2
-        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 4 : BossRow(3) = 4
-        BossHP(3) = 2 : BossColor(3) = 9 : BossType(3) = BOMB_TYPE
-    ELSEIF LoopVar = 6 THEN
-        ' Wave 7: center pressure + flanking bombs
-        BossCount = 4
-        BossCol(0) = 3 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 3 : BossRow(1) = 2
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 1 : BossRow(2) = 3
-        BossHP(2) = 2 : BossColor(2) = 10 : BossType(2) = BOMB_TYPE
-        BossCol(3) = 6 : BossRow(3) = 3
-        BossHP(3) = 2 : BossColor(3) = 10 : BossType(3) = BOMB_TYPE
-    ELSEIF LoopVar >= 7 THEN
-        ' Wave 8: max intensity
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 4 : BossRow(2) = 2
-        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 3 : BossRow(3) = 4
-        BossHP(3) = 2 : BossColor(3) = 10 : BossType(3) = BOMB_TYPE
-    END IF
+    ' Pattern A = pure small alien horde (no bosses)
+    ' Bosses only appear in Pattern B formations
 
     ' Clear any active bullets (power-ups AND wingman persist until death!)
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
@@ -4607,12 +4517,6 @@ StartNewWave: PROCEDURE
     SkipEscape:
     END IF
 
-    ' Note: large alien BL/BR now use cards 34-35 (warp-in slots), no HUD conflict
-
-    ' Restore warp-in GRAM cards (large alien may have overwritten slots 34-35)
-    DEFINE GRAM_WARP1, 2, WarpInGfx1    ' Cards 34-35: warp-in frames 1-2
-    WAIT
-
     ' Phase A: Breather pause (blank screen + HUD only)
     FOR LoopVar = 0 TO 30
         WAIT
@@ -4687,6 +4591,9 @@ auto_on_phrase:
 auto_off_phrase:
     VOICE AO, TT2, OW, PA2, AO, FF, PA1, 0
 
+reinforce_phrase:
+    VOICE IH, NN1, KK2, AX, MM, IH, NN1, PA2, HH1, OR, DD1, PA1, 0
+
 ' Saucer primary/secondary colors per power-up type
 ' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega, 4=shield)
 SaucerColor1:
@@ -4728,8 +4635,9 @@ UpdateCapture: PROCEDURE
         END IF
     END IF
 
-    ' Rogue alien body collision with wingman
+    ' Rogue alien body collision with wingman (dogfight strafe only, not circle)
     IF RogueState = ROGUE_DIVE THEN
+    IF RogueDivePhase = 254 THEN
         IF RogueX + 6 >= HitCol THEN
             IF HitCol + 8 >= RogueX THEN
                 IF RogueY + 6 >= HitRow THEN
@@ -4748,6 +4656,7 @@ UpdateCapture: PROCEDURE
                 END IF
             END IF
         END IF
+    END IF
     END IF
 
     ' Fire timer — launch upward bullet
@@ -5571,8 +5480,8 @@ ColMaskData:
 
 ' Pattern B formations (5 bitmasks per pattern, one per row)
 PatternBData:
-    DATA $100, $082, $044, $028, $010  ' 0: V-shape (chevron pointing down)
-    DATA $010, $038, $07C, $038, $010  ' 1: Diamond
+    DATA $101, $082, $074, $028, $010  ' 0: V-shape (symmetric opening, skull cols 4-5 center)
+    DATA $0D6, $038, $07C, $038, $010  ' 1: Diamond (+cols 1-2,6-7 for skull satellites)
     DATA $101, $101, $101, $101, $101  ' 2: Walls (left+right columns)
     DATA $010, $010, $1FF, $010, $010  ' 3: Cross / Plus
     DATA $155, $0AA, $155, $0AA, $155  ' 4: Checkerboard
@@ -5627,7 +5536,7 @@ WavePalette2:
 ' Pattern B always uses pincer (both sides meet in middle)
 WaveEntranceData:
     ' 0=Left sweep, 1=Top-down reveal (rows in place), 2=Fly-down from above
-    DATA 1, 0, 1, 0, 2, 0, 1, 2  ' Waves 1-8: T, L, T, L, F, L, T, F
+    DATA 1, 0, 2, 0, 2, 0, 1, 2  ' Waves 1-8: T, L, F, L, F, L, T, F
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)
@@ -6211,49 +6120,6 @@ Bye2Gfx:
     BITMAP "XXX.X..."
     BITMAP "X......."
     BITMAP ".XX.X..."
-    BITMAP "........"
-    BITMAP "........"
-
-' Large alien 2x2 (16x16 pixels) - placeholder art
-' User can replace with final bitmaps later
-' TL and TR form top half, BL and BR form bottom half
-LargeAlienTLGfx:
-    BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
-    BITMAP "XXXXXXXX"
-    BITMAP "XX.XX.XX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP ".XXXXXX."
-    BITMAP ".XXXXXX."
-
-LargeAlienTRGfx:
-    BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
-    BITMAP "XXXXXXXX"
-    BITMAP "XX.XX.XX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP ".XXXXXX."
-    BITMAP ".XXXXXX."
-
-LargeAlienBLGfx:
-    BITMAP ".XX..XX."
-    BITMAP ".XX..XX."
-    BITMAP "..X..X.."
-    BITMAP "..XXXX.."
-    BITMAP ".XX..XX."
-    BITMAP "XX....XX"
-    BITMAP "........"
-    BITMAP "........"
-
-LargeAlienBRGfx:
-    BITMAP ".XX..XX."
-    BITMAP ".XX..XX."
-    BITMAP "..X..X.."
-    BITMAP "..XXXX.."
-    BITMAP ".XX..XX."
-    BITMAP "XX....XX"
     BITMAP "........"
     BITMAP "........"
 
