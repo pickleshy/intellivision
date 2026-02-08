@@ -1185,6 +1185,25 @@ DefineGramCards: PROCEDURE
     ' Card 6: Vertical connector at row turns
     DEFINE 6, 1, GfxVert
     WAIT
+    ' Cards 7-27: GRAM letter bitmaps for extended-color text
+    ' Batch 1: Cards 7-10 (!, :, A, B)
+    DEFINE 7, 4, GfxLetter_Bang
+    WAIT
+    ' Batch 2: Cards 11-14 (C, D, E, F)
+    DEFINE 11, 4, GfxLetter_C
+    WAIT
+    ' Batch 3: Cards 15-18 (G, I, L, M)
+    DEFINE 15, 4, GfxLetter_G
+    WAIT
+    ' Batch 4: Cards 19-22 (N, O, P, R)
+    DEFINE 19, 4, GfxLetter_N
+    WAIT
+    ' Batch 5: Cards 23-26 (S, T, U, W)
+    DEFINE 23, 4, GfxLetter_S
+    WAIT
+    ' Batch 6: Card 27 (Y)
+    DEFINE 27, 1, GfxLetter_Y
+    WAIT
     RETURN
 END
 
@@ -1228,19 +1247,20 @@ GreyOutPhrase: PROCEDURE
     RETURN
 END
 
-' --- Print GROM text in any color 0-15 (extended palette) ---
+' --- Print GRAM text in any color 0-15 (extended palette) ---
 ' Inputs: #BeatScreenPos=position, PrintColor=color, PrintLen=length, PrintOffset=offset
-' For colors 0-7: normal BACKTAB encoding
-' For colors 8-15: sets bit 12 for the 4th color bit
+' Uses GRAM letter bitmaps (cards 7-27) so bit 12 = FG color bit 3 (not colored squares)
+' Space (card 0) is written as blank BACKTAB entry
 PrintColorText: PROCEDURE
     FOR LoopVar = 0 TO PrintLen - 1
         TempVal = PrintCharsData(PrintOffset + LoopVar)
-        IF PrintColor >= 8 THEN
-            #Card = (TempVal * 8) OR (PrintColor AND 7) OR $1000
+        IF TempVal = 0 THEN
+            PRINT AT #BeatScreenPos, 0
         ELSE
-            #Card = (TempVal * 8) OR PrintColor
+            #Card = (TempVal * 8) OR (PrintColor AND 7) OR $0800
+            IF PrintColor >= 8 THEN #Card = #Card OR $1000
+            PRINT AT #BeatScreenPos, #Card
         END IF
-        PRINT AT #BeatScreenPos, #Card
         #BeatScreenPos = #BeatScreenPos + 1
     NEXT LoopVar
     RETURN
@@ -1285,21 +1305,23 @@ RowSpriteYData:
 ConnectorPosData:
     DATA 77, 102, 157, 182
 
-' GROM card numbers for extended-color text strings
-' (GROM: Space=0, !=1, 0-9=16-25, :=26, A=33..Z=58)
+' GRAM card numbers for extended-color text strings
+' GRAM letter cards: !=7, :=8, A=9, B=10, C=11, D=12, E=13, F=14
+'   G=15, I=16, L=17, M=18, N=19, O=20, P=21, R=22, S=23, T=24
+'   U=25, W=26, Y=27   Space=0 (blank)
 PrintCharsData:
     ' Offset 0: "DOWNBEAT!" (9 chars)
-    DATA 36, 47, 55, 46, 34, 37, 33, 52, 1
+    DATA 12, 20, 26, 19, 10, 13, 9, 24, 7
     ' Offset 9: "PRESS FIRE" (10 chars)
-    DATA 48, 50, 37, 51, 51, 0, 38, 41, 50, 37
+    DATA 21, 22, 13, 23, 23, 0, 14, 16, 22, 13
     ' Offset 19: "FIRE TO START" (13 chars)
-    DATA 38, 41, 50, 37, 0, 52, 47, 0, 51, 52, 33, 50, 52
+    DATA 14, 16, 22, 13, 0, 24, 20, 0, 23, 24, 9, 22, 24
     ' Offset 32: "TURN COMPLETE!" (14 chars)
-    DATA 52, 53, 50, 46, 0, 35, 47, 45, 48, 44, 37, 52, 37, 1
+    DATA 24, 25, 22, 19, 0, 11, 20, 18, 21, 17, 13, 24, 13, 7
     ' Offset 46: "FIRE: PLAY AGAIN" (16 chars)
-    DATA 38, 41, 50, 37, 26, 0, 48, 44, 33, 57, 0, 33, 39, 33, 41, 46
+    DATA 14, 16, 22, 13, 8, 0, 21, 17, 9, 27, 0, 9, 15, 9, 16, 19
     ' Offset 62: "SELECT TEMPO" (12 chars)
-    DATA 51, 37, 44, 37, 35, 52, 0, 52, 37, 45, 48, 47
+    DATA 23, 13, 17, 13, 11, 24, 0, 24, 13, 18, 21, 20
 
 ' Instrument colors (indexed 0-8 for instruments 1-9)
 InstrColorData:
@@ -1405,3 +1427,237 @@ GfxVert:
     BITMAP "..XXXX.."
     BITMAP "..XXXX.."
     BITMAP "..XXXX.."
+
+' === GRAM Letter Bitmaps for Extended-Color Text (Cards 7-27) ===
+' 8x8 pixel font — clean, readable at Intellivision resolution
+
+' Card 7: !
+GfxLetter_Bang:
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "........"
+
+' Card 8: :
+GfxLetter_Colon:
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+    BITMAP "........"
+
+' Card 9: A
+GfxLetter_A:
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+' Card 10: B
+GfxLetter_B:
+    BITMAP ".XXXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXX.."
+    BITMAP "........"
+
+' Card 11: C
+GfxLetter_C:
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 12: D
+GfxLetter_D:
+    BITMAP ".XXXX..."
+    BITMAP ".XX.XX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX.XX.."
+    BITMAP ".XXXX..."
+    BITMAP "........"
+
+' Card 13: E
+GfxLetter_E:
+    BITMAP ".XXXXXX."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XXXXX.."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XXXXXX."
+    BITMAP "........"
+
+' Card 14: F
+GfxLetter_F:
+    BITMAP ".XXXXXX."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XXXXX.."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP "........"
+
+' Card 15: G
+GfxLetter_G:
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX....."
+    BITMAP ".XX.XXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 16: I
+GfxLetter_I:
+    BITMAP "..XXXX.."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 17: L
+GfxLetter_L:
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XXXXXX."
+    BITMAP "........"
+
+' Card 18: M
+GfxLetter_M:
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX.XXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+' Card 19: N
+GfxLetter_N:
+    BITMAP ".XX..XX."
+    BITMAP ".XXX.XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX.XXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+' Card 20: O
+GfxLetter_O:
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 21: P
+GfxLetter_P:
+    BITMAP ".XXXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXX.."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP ".XX....."
+    BITMAP "........"
+
+' Card 22: R
+GfxLetter_R:
+    BITMAP ".XXXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXX.."
+    BITMAP ".XX.XX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+' Card 23: S
+GfxLetter_S:
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XX....."
+    BITMAP "..XXXX.."
+    BITMAP ".....XX."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 24: T
+GfxLetter_T:
+    BITMAP ".XXXXXX."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+
+' Card 25: U
+GfxLetter_U:
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+' Card 26: W
+GfxLetter_W:
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX.XXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+' Card 27: Y
+GfxLetter_Y:
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
