@@ -394,27 +394,39 @@ GameLoop:
     END IF
 
     ' --- Beat advance processing ---
+    ' Miss detection is DEFERRED: when an active beat fires, the player
+    ' gets the full late window (GoodWindow frames) to press a key.
+    ' The miss is only declared when the NEXT passive beat fires and
+    ' FLAG_INPUTLOCKED is still clear (no hit was registered).
     IF #GameFlags AND FLAG_BEATFIRE THEN
         IF (TotalBeats AND 1) = 0 THEN
-            ' PASSIVE beat — always stamp dash, never process hits here
+            ' PASSIVE beat — stamp dash, then check if previous active beat was missed
             GOSUB BeatToScreen
             PRINT AT #BeatScreenPos, GRAM_DASH * 8 + COL_WHITE + $0800
+
+            ' Was previous active beat missed?
+            IF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
+                IF DazeTimer = 0 AND TotalBeats > 1 THEN
+                    TotalBeats = TotalBeats - 1  ' Point to missed active beat
+                    GOSUB HandleMissedBeat
+                    TotalBeats = TotalBeats + 1  ' Restore
+                END IF
+            END IF
+            ' Clear input lock — ready for next active beat
+            #GameFlags = #GameFlags AND ($FFFF XOR FLAG_INPUTLOCKED)
         ELSE
-            ' ACTIVE beat — process input
+            ' ACTIVE beat — process early hits only; late hits handled by
+            ' CheckHitTiming on subsequent frames; miss deferred to passive beat
             IF #GameFlags AND FLAG_EARLYHIT THEN
                 CurrentInstr = EarlyHitInstr
                 HitQuality = EarlyHitQuality
                 GOSUB ProcessHit
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_EARLYHIT)
-            ELSEIF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
-                ' No input — missed beat
-                IF DazeTimer = 0 THEN
-                    GOSUB HandleMissedBeat
-                END IF
+                #GameFlags = #GameFlags OR FLAG_INPUTLOCKED  ' Mark beat as hit
             END IF
         END IF
-        ' Reset for next beat
-        #GameFlags = #GameFlags AND ($FFFF XOR (FLAG_INPUTLOCKED OR FLAG_BEATFIRE))
+        ' Clear beat fire flag (but NOT input lock — needed for deferred miss check)
+        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BEATFIRE)
         CurrentInstr = 0
     END IF
 
