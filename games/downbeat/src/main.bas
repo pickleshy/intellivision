@@ -69,7 +69,6 @@ GameState = GS_TITLE
 ' Beat engine
 BeatFrameCount = 0      ' Frames since last beat
 BeatFramesPerBeat = 30  ' Frames per beat (set by tempo)
-BeatHalf = 0            ' Alternation counter for 160 BPM
 TotalBeats = 0          ' Total beats this turn
 MaxBeats = 90           ' Beats per turn (set by tempo)
 
@@ -110,7 +109,6 @@ InstrDecayCount = 0     ' Frames of instrument sound remaining
 FeedbackDecay = 0       ' Frames of feedback sound remaining
 
 ' Display
-CursorPulse = 0         ' Animation counter for cursor
 BeatRow = 0             ' Current beat's grid row
 BeatCol = 0             ' Current beat's grid column
 CursorSprX = 0          ' Cursor sprite X
@@ -280,7 +278,6 @@ StartGame:
     #GameFlags = FLAG_SYNCDIRTY OR FLAG_SCOREDIRTY
     TotalBeats = 0
     BeatFrameCount = 0
-    BeatHalf = 0
     #TurnFrameCount = 0
     SyncMeter = 100   ' Start full per spec
     PhraseLen = 0
@@ -300,7 +297,6 @@ StartGame:
     LastKeyPress = 12
     EarlyHitInstr = 0
     EarlyHitQuality = 0
-    CursorPulse = 0
 
     ' Clear instrument usage
     FOR LoopVar = 0 TO 8
@@ -403,9 +399,12 @@ GameLoop:
             GOSUB ProcessHit
             #GameFlags = #GameFlags AND ($FFFF XOR FLAG_EARLYHIT)
         ELSEIF (#GameFlags AND FLAG_INPUTLOCKED) = 0 THEN
-            ' No input this beat = miss
+            ' No input this beat — only penalize on active (odd) beats
+            ' Passive (even) beats pass without penalty for breathing room
             IF DazeTimer = 0 THEN
-                GOSUB HandleMissedBeat
+                IF TotalBeats AND 1 THEN
+                    GOSUB HandleMissedBeat
+                END IF
             END IF
         END IF
         ' Reset for next beat
@@ -563,12 +562,8 @@ FireBeat: PROCEDURE
     #GameFlags = #GameFlags OR FLAG_BEATFIRE
     TotalBeats = TotalBeats + 1
 
-    ' 160 BPM alternation
-    BeatHalf = BeatHalf + 1
-    IF BeatHalf >= 8 THEN BeatHalf = 0
-
-    ' Metronome click on channel B (1)
-    SOUND 1, 60, 12
+    ' Metronome click on channel B — low tick (~280 Hz)
+    SOUND 1, 400, 10
     MetroDecay = 3
 
     ' Border flash
@@ -796,23 +791,10 @@ BeatToScreen: PROCEDURE
     RETURN
 END
 
-' --- Stamp instrument 2-letter code on melody grid ---
+' --- Stamp colored round dot on melody grid ---
 StampInstrument: PROCEDURE
-    ' Each instrument takes 2 BACKTAB positions
-    ' But at 20 columns that uses too much space
-    ' Use single colored GROM character instead
     TempVal = InstrColorData(CurrentInstr - 1)
-
-    ' Use first letter of instrument as single-char stamp
-    IF CurrentInstr = 1 THEN PRINT AT #BeatScreenPos COLOR TempVal, "P"
-    IF CurrentInstr = 2 THEN PRINT AT #BeatScreenPos COLOR TempVal, "T"
-    IF CurrentInstr = 3 THEN PRINT AT #BeatScreenPos COLOR TempVal, "V"
-    IF CurrentInstr = 4 THEN PRINT AT #BeatScreenPos COLOR TempVal, "O"
-    IF CurrentInstr = 5 THEN PRINT AT #BeatScreenPos COLOR TempVal, "A"
-    IF CurrentInstr = 6 THEN PRINT AT #BeatScreenPos COLOR TempVal, "B"
-    IF CurrentInstr = 7 THEN PRINT AT #BeatScreenPos COLOR TempVal, "N"
-    IF CurrentInstr = 8 THEN PRINT AT #BeatScreenPos COLOR TempVal, "X"
-    IF CurrentInstr = 9 THEN PRINT AT #BeatScreenPos COLOR TempVal, "-"
+    PRINT AT #BeatScreenPos, GRAM_CURSOR1 * 8 + TempVal + $0800
     RETURN
 END
 
@@ -868,17 +850,8 @@ UpdateCursor: PROCEDURE
         GOSUB BeatToScreen
     END IF
 
-    ' Pulse animation
-    CursorPulse = CursorPulse + 1
-    IF CursorPulse >= 8 THEN CursorPulse = 0
-
-    IF CursorPulse < 4 THEN
-        TempVal = GRAM_CURSOR1
-    ELSE
-        TempVal = GRAM_CURSOR2
-    END IF
-
-    SPRITE SPR_CURSOR, CursorSprX + $0300, CursorSprY, TempVal * 8 + COL_YELLOW + $0800
+    ' Full dot cursor (goldenrod)
+    SPRITE SPR_CURSOR, CursorSprX + $0300, CursorSprY, GRAM_CURSOR1 * 8 + COL_YELLOW + $0800
     RETURN
 END
 
@@ -1079,7 +1052,7 @@ CountdownSequence: PROCEDURE
 
     ' "4"
     PRINT AT 109 COLOR COL_WHITE, "4"
-    SOUND 1, 120, 10
+    SOUND 1, 400, 10
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1088,7 +1061,7 @@ CountdownSequence: PROCEDURE
 
     ' "3"
     PRINT AT 109 COLOR COL_WHITE, "3"
-    SOUND 1, 120, 10
+    SOUND 1, 400, 10
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1097,7 +1070,7 @@ CountdownSequence: PROCEDURE
 
     ' "2"
     PRINT AT 109 COLOR COL_YELLOW, "2"
-    SOUND 1, 120, 10
+    SOUND 1, 400, 12
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
@@ -1106,7 +1079,7 @@ CountdownSequence: PROCEDURE
 
     ' "1"
     PRINT AT 109 COLOR COL_GREEN, "1"
-    SOUND 1, 60, 14
+    SOUND 1, 400, 12
     FOR LoopVar = 0 TO TempVal
         WAIT
     NEXT LoopVar
