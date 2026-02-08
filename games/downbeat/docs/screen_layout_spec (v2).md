@@ -231,9 +231,9 @@ Copyright:         (0, 90, 159, 6)
 **Labels on wedges:**
 - Font: Press Start 2P, 5px
 - Color: White (always)
-- Adagio: "Adagio" at (25, 55), "80" at (30, 62)
-- Moderato: "Mod." at (70, 45), "120" at (73, 52)
-- Allegro: "Allegro" at (115, 55), "160" at (118, 62)
+- Adagio: "Adagio" at (25, 55), "90" at (30, 62)
+- Moderato: "Mod." at (70, 45), "110" at (73, 52)
+- Allegro: "Allegro" at (115, 55), "130" at (118, 62)
 
 **4. Instructions** (Center, y=72)
 - Text: "◄ Rotate disc to select tempo ►"

@@ -615,9 +615,9 @@ DIM frames_per_beat         REM Frames between beats
 
 REM Initialize for tempo
 SELECT CASE tempo
-    CASE 0: frames_per_beat = 45    REM Adagio (750ms = 45 frames)
-    CASE 1: frames_per_beat = 30    REM Moderato (500ms = 30 frames)
-    CASE 2: frames_per_beat = 22    REM Allegro (375ms = 22.5 frames ≈ 22)
+    CASE 0: frames_per_beat = 40    REM Adagio (667ms = 40 frames)
+    CASE 1: frames_per_beat = 33    REM Moderato (545ms = 32.7 frames ≈ 33)
+    CASE 2: frames_per_beat = 28    REM Allegro (462ms = 27.7 frames ≈ 28)
 END SELECT
 
 REM In main game loop

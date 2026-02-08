@@ -1388,6 +1388,97 @@ PRINT AT 234, (GRAM_FONT_S * 8) + color + $0800
 
 **When to use:** Any graphics that are exclusive to one game state (title-only fonts, gameplay-only HUD icons, cutscene-only art).
 
+### DEFINE-based animation (save GRAM cards)
+
+The naive approach to animation stores each frame as a separate GRAM card. A 2-frame walk cycle costs 2 GRAM cards; a 4-frame explosion costs 4. With 64 total cards, this burns through the budget fast.
+
+**Alternative:** Use a single GRAM card and DEFINE new bitmap data into it when the animation frame changes:
+
+```basic
+' NAIVE: 2 GRAM cards per animated element (instant switch, zero CPU)
+CONST GRAM_ALIEN1_F1 = 2   ' Walk pose A
+CONST GRAM_ALIEN1_F2 = 3   ' Walk pose B
+' Render: choose card based on AnimFrame
+#Card = (GRAM_ALIEN1_F1 + AnimFrame) * 8 + Color + $0800
+
+' OPTIMIZED: 1 GRAM card, DEFINE swap on animation tick
+CONST GRAM_ALIEN1 = 2      ' Single card, reloaded when frame changes
+' On animation tick only (not every frame!):
+IF AnimFrame = 0 THEN
+    DEFINE GRAM_ALIEN1, 1, Alien1PoseA
+ELSE
+    DEFINE GRAM_ALIEN1, 1, Alien1PoseB
+END IF
+' Render: always use same card number
+#Card = GRAM_ALIEN1 * 8 + Color + $0800
+```
+
+| Approach | GRAM cost | CPU cost | Best for |
+|----------|-----------|---------|----------|
+| Multi-card | N cards per N frames | Zero | Fast animations, few elements |
+| DEFINE swap | 1 card per element | 1 DEFINE per tick | Slow animations, many elements |
+
+**Key insight:** If animation toggles every 16+ game frames (4× per second), the DEFINE only fires 4× per second — negligible CPU. The GRAM savings are permanent.
+
+**DEFINE bandwidth budget:** ~2-4 DEFINE calls per WAIT without visual glitches. Plan which cards get redefined on which frames. Stagger redefines across frames if you need more than 4 per cycle.
+
+**When to use:** When GRAM cards are scarce and you have animated elements with slow cycle rates (walk cycles, shimmer effects, pulsing). Don't use for rapid per-frame animation (explosions, smooth rotation) where the DEFINE overhead per WAIT adds up.
+
+### GRAM budget planning
+
+With only 64 cards, GRAM is often the tightest resource in an Intellivision game. Plan allocation early using a card map:
+
+```
+Cards 0-7:   Player + core enemies (locked — always visible)
+Cards 8-15:  Bullets, explosions, bosses (locked — unpredictable timing)
+Cards 16-31: Time-shared pool (title art → gameplay HUD → game over)
+Cards 32-47: Gameplay-specific (powerups, special enemies, effects)
+Cards 48-63: HUD, score display, static UI elements
+```
+
+**Classification system for each card:**
+
+| Status | Meaning | Can borrow? |
+|--------|---------|-------------|
+| **Locked** | Needed unpredictably during gameplay | No |
+| **Time-shared** | Used in one game state, free in others | Yes, with DEFINE at state transition |
+| **Conditional** | Only needed when specific feature is active | Yes, if feature is guaranteed inactive |
+| **Free** | Unused in current state | Yes |
+
+**Common pitfall — triple-booking:** When a card is time-shared between 3+ purposes (e.g., title font → gameplay HUD → boss art), transitions between the gameplay uses will corrupt whichever system isn't aware of the switch. Every card should have at most 2 owners with a clean transition point between them.
+
+**Audit technique:** Grep for all GRAM card constants and DEFINE calls, then build a matrix of card × game-state to spot conflicts:
+```bash
+grep "CONST GRAM_" src/main.bas
+grep "DEFINE" src/main.bas
+```
+
+### Sprite vs BACKTAB decision framework
+
+The Intellivision offers two ways to draw game objects: hardware sprites (MOBs, 8 total) and BACKTAB cards (240 tiles on screen). Choose based on:
+
+| Factor | Sprites (MOBs) | BACKTAB Cards |
+|--------|----------------|---------------|
+| **Movement** | Pixel-precise, smooth | 8px grid-snapped |
+| **Quantity** | Max 8 total, 2-4 per scanline | 240 positions |
+| **Collision** | Hardware COL registers | Manual coordinate checks |
+| **Size** | 8×8 (or 8×16 with DOUBLEY) | 8×8 per card, combine for larger |
+| **Colors** | 1 color per sprite (+BEHIND layering) | 1 FG color per card (Color Stack) |
+| **Overlap** | Can overlay BACKTAB freely | Overwrites other cards |
+| **Cost** | 1 of 8 slots | 1+ of 64 GRAM cards |
+
+**Decision rules:**
+
+1. **Use sprites for:** The player, bullets, and any object requiring smooth sub-tile movement or hardware collision detection.
+
+2. **Use BACKTAB for:** Grid-aligned enemies, HUD elements, backgrounds, and anything that benefits from quantity over smoothness. A grid of 45 aliens as BACKTAB cards is impossible with 8 sprites but trivial with BACKTAB.
+
+3. **Use both for:** Multi-color objects (sprite overlaid on BACKTAB for 2+ colors), or objects that switch between smooth movement and grid-snapped positions.
+
+4. **Sprite-over-BACKTAB layering:** Sprites naturally composite over BACKTAB tiles. A sprite enemy flying over a BACKTAB background costs 1 MOB and zero BACKTAB conflict. Use this for intermittent visitors (saucers, bonus items) that shouldn't compete with the background for tile positions.
+
+5. **Time-sharing sprites:** If two sprite-based features never overlap in time (e.g., a powerup capsule vs. a wingman companion), assign them the same MOB slot and switch ownership based on game state.
+
 ### Dirty flag pattern for expensive drawing operations
 
 When a drawing procedure is expensive (loops over grid, multiple PRINT ATs), track whether anything changed and skip the call when nothing needs redrawing:
