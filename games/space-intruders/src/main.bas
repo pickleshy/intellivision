@@ -2708,11 +2708,15 @@ BombExplode: PROCEDURE
     IF FoundBoss = 0 THEN OrbitStep = 255
     IF FoundBoss = 1 THEN OrbitStep2 = 255
 
-    ' XOR out bomb's own two columns
+    ' Clear bomb's own two columns (guarded to prevent resurrection)
     #Mask = ColMaskData(BombExpCol)
-    #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+    IF #AlienRow(BombExpRow) AND #Mask THEN
+        #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+    END IF
     #Mask = ColMaskData(BombExpCol + 1)
-    #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+    IF #AlienRow(BombExpRow) AND #Mask THEN
+        #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
+    END IF
 
     ' --- OPTIMIZATION: Pre-scan bosses in blast radius (4 checks vs 48) ---
     ' Check each boss once; if in blast radius, kill it now
@@ -2729,9 +2733,15 @@ BombExplode: PROCEDURE
                     Row = BossRow(LoopVar)
                     Col = BossCol(LoopVar)
                     BossHP(LoopVar) = 0
-                    ' XOR out both boss columns from alien grid
-                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col)
-                    #AlienRow(Row) = #AlienRow(Row) XOR ColMaskData(Col + 1)
+                    ' Clear both boss columns (guarded to prevent resurrection)
+                    #Mask = ColMaskData(Col)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
+                    #Mask = ColMaskData(Col + 1)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
                     #Score = #Score + 10
                 END IF
                 END IF
@@ -2856,9 +2866,15 @@ CheckOneColumn: PROCEDURE
                             GOSUB BombExplode
                             RETURN
                         ELSE
-                            ' Skull boss dead! XOR BOTH columns out
-                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
-                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                            ' Skull boss dead! Clear BOTH columns (guarded to prevent resurrection)
+                            #Mask = ColMaskData(BossCol(FoundBoss))
+                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                            END IF
+                            #Mask = ColMaskData(BossCol(FoundBoss) + 1)
+                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                            END IF
                             ' Clear both BACKTAB tiles
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
                             IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
@@ -3621,9 +3637,15 @@ MegaBeamKill: PROCEDURE
                                             ' Bomb alien — chain explosion!
                                             GOSUB BombExplode
                                         ELSE
-                                            ' Skull boss dead! XOR both columns
-                                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
-                                            #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                                            ' Skull boss dead! Clear both columns (guarded)
+                                            #Mask = ColMaskData(BossCol(FoundBoss))
+                                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                                            END IF
+                                            #Mask = ColMaskData(BossCol(FoundBoss) + 1)
+                                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                                            END IF
                                             #Score = #Score + BOSS_SCORE
                                         END IF
                                         ' Restore #Mask for current column iteration
@@ -4387,6 +4409,15 @@ LoadPatternB: PROCEDURE
     END IF
 
     ' ── END Boss Placement ──
+
+    ' Force-set both boss columns alive in grid (pattern data may have gaps)
+    ' Without this, XOR on death resurrects dead cells → "ghost alien" bug
+    IF BossCount > 0 THEN
+        FOR LoopVar = 0 TO BossCount - 1
+            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar))
+            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar) + 1)
+        NEXT LoopVar
+    END IF
 
     ' Normalize grid: shift bitmasks so leftmost alive column = 0
     ' This ensures symmetric march range (AlienOffsetX can't go below 0)
