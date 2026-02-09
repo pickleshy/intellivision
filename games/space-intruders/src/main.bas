@@ -235,7 +235,7 @@ CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode (pincer)
 CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
 CONST FLAG_TOPDOWN   = 1024     ' Bit 10: TopDown reveal mode (rows appear in place)
 CONST FLAG_FLYDOWN   = 2048     ' Bit 11: FlyDown mode (aliens descend from above)
-CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Bottom-right button debounce (capture)
+CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Keypad 0 debounce (capture)
 CONST FLAG_DUAL      = 8192     ' Bit 13: Quad laser active
 CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
 CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this wave
@@ -387,7 +387,7 @@ RogueCenterY   = 0                 ' Circle center Y during dive
 CaptureColor   = 0                 ' Color of captured alien type
 CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
-' Capture button debounce packed into #GameFlags (FLAG_KEY0HELD)
+' Keypad 0 debounce packed into #GameFlags (FLAG_KEY0HELD)
 ' CapBulletActive packed into #GameFlags (FLAG_CAPBULLET)
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
@@ -2345,8 +2345,8 @@ MovePlayer: PROCEDURE
         Key1Held = 0
     END IF
 
-    ' Bottom-right button: capture rogue alien during dogfight (with debounce)
-    IF CONT.BUTTON AND 4 THEN
+    ' Keypad 0: capture rogue alien during dogfight (with debounce)
+    IF CONT.KEY = 0 THEN
         IF (#GameFlags AND FLAG_KEY0HELD) = 0 THEN
             #GameFlags = #GameFlags OR FLAG_KEY0HELD
             IF RogueDivePhase = 254 THEN
@@ -2367,7 +2367,8 @@ MovePlayer: PROCEDURE
                 END IF
             END IF
         END IF
-    ELSE
+    END IF
+    IF CONT.KEY <> 0 THEN
         #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD
     END IF
 
@@ -3200,7 +3201,7 @@ DrawAlienBullet: PROCEDURE
 END
 
 ' --- SetEntrancePattern: Set entrance mode from DATA table ---
-' Input: LoopVar = wave index (0-7)
+' Input: LoopVar = wave index (0-31)
 ' WaveEntranceData values: 0=left sweep, 1=top-down reveal, 2=fly-down from above
 SetEntrancePattern: PROCEDURE
     ' Clear both entrance flags
@@ -4119,7 +4120,7 @@ LoadPatternB: PROCEDURE
     CurrentMarchSpeed = BaseMarchSpeed  ' Reset speed (don't inherit Pattern A's acceleration)
 
     ' Look up which pattern to use for this level
-    LoopVar = (Level - 1) AND 7
+    LoopVar = (Level - 1) AND 31
     LoopVar = PatternBIndex(LoopVar)
     ' Load bitmasks from packed data (each pattern = 5 consecutive words)
     Col = LoopVar * 5
@@ -4133,54 +4134,259 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
 
-    ' Pattern B boss placement per wave (wraps every 8)
-    LoopVar = (Level - 1) AND 7  ' 0-based wave index
+    ' ── LEVEL DESIGN: Boss Placement (edit here or paste from Wave Designer) ──
+    LoopVar = (Level - 1) AND 31  ' 0-based wave index (0-31)
+    ' Boss types: SKULL_TYPE=0 (3 HP multi-hit), BOMB_TYPE=1 (2 HP chain explode)
+    ' Bosses are 2-wide: occupy BossCol and BossCol+1. Max 4 bosses per wave.
+    ' Orbiters: OrbitStep/OrbitStep2 = 0 to activate (bomb bosses only, max 2).
 
     IF LoopVar = 0 THEN
-        ' Wave 1 Pattern B (V-shape): 1 skull in center of V
+        ' Wave 1: 1 skull boss
         BossCount = 1
-        BossCol(0) = 4 : BossRow(0) = 2
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(0) = 3 : BossRow(0) = 3
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
     ELSEIF LoopVar = 1 THEN
-        ' Wave 2 Pattern B (Diamond): 1 bomb center, 2 skull satellites
-        BossCount = 3
-        BossCol(0) = 3 : BossRow(0) = 2
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 1 : BossRow(1) = 0
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 6 : BossRow(2) = 0
-        BossHP(2) = BOSS_HP_MAX : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
+        ' Wave 2: 2 skull bosses
+        BossCount = 2
+        BossCol(0) = 2 : BossRow(0) = 2
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 5 : BossRow(1) = 2
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ELSEIF LoopVar = 2 THEN
-        ' Wave 3 Pattern B (Pillars): bomb boss center + single orbiter
+        ' Wave 3: 1 bomb boss
         BossCount = 1
-        BossCol(0) = 3 : BossRow(0) = 2
+        BossCol(0) = 3 : BossRow(0) = 1
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        OrbitStep = 0  ' Activate orbiter
     ELSEIF LoopVar = 3 THEN
-        ' Wave 4 Pattern B (Dual Pillars): 2 bomb bosses + 2 orbiters
+        ' Wave 4: 2 bomb bosses + 2 orbiters
         BossCount = 2
         BossCol(0) = 2 : BossRow(0) = 1
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
         BossCol(1) = 5 : BossRow(1) = 3
         BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0   ' Activate orbiter 1
-        OrbitStep2 = 5  ' Activate orbiter 2 (offset for visual variety)
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 4 THEN
+        ' Wave 5: 2 skull bosses
+        BossCount = 2
+        BossCol(0) = 2 : BossRow(0) = 2
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 5 : BossRow(1) = 2
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ELSEIF LoopVar = 5 THEN
-        ' Wave 6 Pattern B (Arrow): no bosses (no adjacent cols)
-        ' BossCount already 0
+        ' Wave 6: 3 skull bosses
+        BossCount = 3
+        BossCol(0) = 3 : BossRow(0) = 3
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 5 : BossRow(1) = 3
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 4 : BossRow(2) = 2
+        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 6 THEN
-        ' Wave 7 Pattern B (Fortress): 1 skull boss center
+        ' Wave 7: 1 bomb boss
         BossCount = 1
-        BossCol(0) = 3 : BossRow(0) = 1
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
+        BossCol(0) = 4 : BossRow(0) = 2
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
     ELSEIF LoopVar = 7 THEN
-        ' Wave 8 Pattern B (Phalanx): 2 skulls on dense rows
+        ' Wave 8: 4 bomb bosses
+        BossCount = 4
+        BossCol(0) = 2 : BossRow(0) = 3
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 1
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        BossCol(2) = 5 : BossRow(2) = 3
+        BossHP(2) = 2 : BossColor(2) = 10 : BossType(2) = BOMB_TYPE
+        BossCol(3) = 2 : BossRow(3) = 1
+        BossHP(3) = 2 : BossColor(3) = 10 : BossType(3) = BOMB_TYPE
+    ' ── Waves 9-16 ──
+    ' Wave 9 (LoopVar=8): no bosses
+    ELSEIF LoopVar = 9 THEN
+        ' Wave 10: 2 skull bosses on wings
+        BossCount = 2
+        BossCol(0) = 0 : BossRow(0) = 1
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 6 : BossRow(1) = 1
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+    ELSEIF LoopVar = 10 THEN
+        ' Wave 11: 1 bomb + orbiter
+        BossCount = 1
+        BossCol(0) = 4 : BossRow(0) = 2
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        OrbitStep = 0
+    ELSEIF LoopVar = 11 THEN
+        ' Wave 12: 2 skulls guarding corners
+        BossCount = 2
+        BossCol(0) = 0 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 7 : BossRow(1) = 4
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+    ' Wave 13 (LoopVar=12): no bosses (breather)
+    ELSEIF LoopVar = 13 THEN
+        ' Wave 14: 1 bomb boss
+        BossCount = 1
+        BossCol(0) = 2 : BossRow(0) = 2
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+    ELSEIF LoopVar = 14 THEN
+        ' Wave 15: 1 skull boss
+        BossCount = 1
+        BossCol(0) = 3 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+    ELSEIF LoopVar = 15 THEN
+        ' Wave 16: 2 bombs + 1 orbiter
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 4
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 4
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        OrbitStep = 0
+    ' ── Waves 17-24: Harder ──
+    ELSEIF LoopVar = 16 THEN
+        ' Wave 17: 3 skulls
+        BossCount = 3
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 4 : BossRow(1) = 0
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 7 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
+    ELSEIF LoopVar = 17 THEN
+        ' Wave 18: 2 bombs + 2 orbiters
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 1
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 3
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 18 THEN
+        ' Wave 19: 1 bomb w/ orbiter + 1 skull
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 1
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 6 : BossRow(1) = 3
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+        OrbitStep = 0
+    ELSEIF LoopVar = 19 THEN
+        ' Wave 20: 2 bombs + 2 orbiters
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 4
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 20 THEN
+        ' Wave 21: 3 skulls
+        BossCount = 3
+        BossCol(0) = 0 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 7 : BossRow(1) = 0
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 3 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
+    ELSEIF LoopVar = 21 THEN
+        ' Wave 22: 1 bomb w/ orbiter + 2 skulls
+        BossCount = 3
+        BossCol(0) = 3 : BossRow(0) = 2
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 1 : BossRow(1) = 0
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 1 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
+        OrbitStep = 0
+    ' Wave 23 (LoopVar=22): no bosses (breather)
+    ELSEIF LoopVar = 23 THEN
+        ' Wave 24: 2 skulls
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 3
+        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 5 : BossRow(1) = 4
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+    ' ── Waves 25-32: Endgame gauntlet ──
+    ELSEIF LoopVar = 24 THEN
+        ' Wave 25: 4 bosses — 1 bomb w/ orbiter + 3 skulls
+        BossCount = 4
+        BossCol(0) = 1 : BossRow(0) = 4
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 3
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 3 : BossRow(2) = 2
+        BossHP(2) = 3 : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
+        BossCol(3) = 7 : BossRow(3) = 4
+        BossHP(3) = 3 : BossColor(3) = 9 : BossType(3) = SKULL_TYPE
+        OrbitStep = 0
+    ELSEIF LoopVar = 25 THEN
+        ' Wave 26: 2 bombs + 2 orbiters
+        BossCount = 2
+        BossCol(0) = 3 : BossRow(0) = 1
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 3 : BossRow(1) = 3
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 26 THEN
+        ' Wave 27: 3 skulls
+        BossCount = 3
+        BossCol(0) = 0 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 4 : BossRow(1) = 2
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 0 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
+    ELSEIF LoopVar = 27 THEN
+        ' Wave 28: 4 bosses — 2 bombs w/ orbiters + 2 skulls
+        BossCount = 4
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 0
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        BossCol(2) = 1 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
+        BossCol(3) = 5 : BossRow(3) = 4
+        BossHP(3) = 3 : BossColor(3) = 12 : BossType(3) = SKULL_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 28 THEN
+        ' Wave 29: 2 skulls
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 6 : BossRow(1) = 0
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+    ELSEIF LoopVar = 29 THEN
+        ' Wave 30: 3 skulls
+        BossCount = 3
+        BossCol(0) = 0 : BossRow(0) = 0
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 4 : BossRow(1) = 2
+        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 0 : BossRow(2) = 4
+        BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
+    ELSEIF LoopVar = 30 THEN
+        ' Wave 31: 2 bombs + 2 orbiters
         BossCount = 2
         BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = BOSS_HP_MAX : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 2 : BossRow(1) = 4
-        BossHP(1) = BOSS_HP_MAX : BossColor(1) = 10 : BossType(1) = SKULL_TYPE
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 2
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
+    ELSEIF LoopVar = 31 THEN
+        ' Wave 32: FINAL — 4 bosses (2 bombs w/ orbiters + 2 skulls)
+        BossCount = 4
+        BossCol(0) = 1 : BossRow(0) = 1
+        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 5 : BossRow(1) = 1
+        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
+        BossCol(2) = 1 : BossRow(2) = 3
+        BossHP(2) = 3 : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
+        BossCol(3) = 5 : BossRow(3) = 3
+        BossHP(3) = 3 : BossColor(3) = 9 : BossType(3) = SKULL_TYPE
+        OrbitStep = 0
+        OrbitStep2 = 5
     END IF
+
+    ' ── END Boss Placement ──
 
     ' Normalize grid: shift bitmasks so leftmost alive column = 0
     ' This ensures symmetric march range (AlienOffsetX can't go below 0)
@@ -4269,8 +4475,8 @@ CheckWaveWin: PROCEDURE
         IF ExplosionTimer = 0 THEN
             IF (#GameFlags AND FLAG_SUBWAVE) = 0 THEN
                 ' Relentless waves: send a second horde before Pattern B
-                Col = (Level - 1) AND 7
-                IF Col = 2 THEN  ' Wave 3 (add more: OR Col = 5, etc.)
+                Col = (Level - 1) AND 31
+                IF Col = 2 OR Col = 5 OR Col = 8 OR Col = 11 OR Col = 14 OR Col = 17 OR Col = 20 OR Col = 23 OR Col = 26 OR Col = 29 THEN  ' Waves 3,6,9,12,15,18,21,24,27,30
                     IF (#GameFlags AND FLAG_REINFORCE) = 0 THEN
                         GOSUB ReloadHorde
                         RETURN
@@ -4364,9 +4570,9 @@ StartNewWave: PROCEDURE
     WaveColor1 = WavePalette1(LoopVar)
     WaveColor2 = WavePalette2(LoopVar)
 
-    ' Set base march speed for this wave (faster each wave)
-    IF BaseMarchSpeed > MARCH_SPEED_MIN + 10 THEN
-        BaseMarchSpeed = BaseMarchSpeed - 10
+    ' Set base march speed for this wave (gradually faster across 32 waves)
+    IF BaseMarchSpeed > MARCH_SPEED_MIN + 2 THEN
+        BaseMarchSpeed = BaseMarchSpeed - 2
     ELSE
         BaseMarchSpeed = MARCH_SPEED_MIN
     END IF
@@ -4424,7 +4630,7 @@ StartNewWave: PROCEDURE
     WaveRevealRow = 0
     #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
     LoopVar = Level - 1
-    IF LoopVar > 7 THEN LoopVar = LoopVar AND 7
+    IF LoopVar > 31 THEN LoopVar = LoopVar AND 31
     GOSUB SetEntrancePattern
     RightRevealCol = ALIEN_COLS - 1
 
@@ -5536,20 +5742,45 @@ END
 ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 
-' Pattern B formations (5 bitmasks per pattern, one per row)
-PatternBData:
-    DATA $101, $082, $074, $028, $010  ' 0: V-shape (symmetric opening, skull cols 4-5 center)
-    DATA $0D6, $038, $07C, $038, $010  ' 1: Diamond (+cols 1-2,6-7 for skull satellites)
-    DATA $101, $10D, $101, $161, $101  ' 2: Dual Pillars (cols 0,8 + boss1 cols 2-3 row 1 + boss2 cols 5-6 row 3)
-    DATA $101, $101, $119, $101, $101  ' 3: Pillars (cols 0,8 + bomb boss cols 3-4 row 2)
-    DATA $155, $0AA, $155, $0AA, $155  ' 4: Checkerboard
-    DATA $010, $028, $044, $082, $101  ' 5: Arrow pointing up
-    DATA $038, $07C, $0FE, $07C, $038  ' 6: Fortress (dense concentric diamond)
-    DATA $1FF, $000, $1FF, $000, $1FF  ' 7: Phalanx (3 dense rows, 2 gaps)
+' ╔════════════════════════════════════════════════════════════╗
+' ║  LEVEL DESIGN — 32-wave cycle (AND 31 wrapping)          ║
+' ║  Edit here or use Wave Designer tool:                     ║
+' ║  Run: cd tools/wave-designer && python3 app.py            ║
+' ╚════════════════════════════════════════════════════════════╝
 
-' Which pattern B per level (wraps after 8)
+' Pattern B formations: 5 bitmasks per pattern (rows 0-4), 9 cols = bits 0-8
+' $1FF = all 9 alive, $000 = empty row. Each bit = one alien column.
+PatternBData:
+    DATA $081, $042, $024, $018, $024  '  0: Chevron
+    DATA $0D6, $038, $06C, $092, $000  '  1: Diamond
+    DATA $099, $0BD, $099, $081, $081  '  2: Pillars
+    DATA $081, $08D, $101, $162, $102  '  3: Dual Pillars
+    DATA $155, $0AA, $16D, $092, $155  '  4: Checkerboard
+    DATA $030, $048, $0B4, $17A, $084  '  5: Arrow
+    DATA $078, $084, $1B6, $0CC, $078  '  6: Fortress
+    DATA $0FE, $0FE, $0FE, $0FE, $0FE '  7: Phalanx
+    DATA $010, $038, $1C7, $038, $010  '  8: Cross
+    DATA $183, $0C6, $000, $0C6, $183  '  9: Wings
+    DATA $007, $038, $1C0, $038, $007  ' 10: Zigzag
+    DATA $1FF, $101, $101, $101, $1FF  ' 11: Frame
+    DATA $111, $000, $054, $000, $111  ' 12: Scatter
+    DATA $1FF, $07C, $038, $010, $000  ' 13: Funnel
+    DATA $010, $028, $044, $0AA, $1FF  ' 14: Inverted V
+    DATA $1FF, $1FF, $000, $1FF, $1FF  ' 15: Dense Rows
+    DATA $038, $07C, $0FE, $07C, $038  ' 16: Fortress (alt)
+    DATA $155, $0AA, $155, $0AA, $155  ' 17: Checkerboard (alt)
+    DATA $010, $038, $1FF, $038, $010  ' 18: Cross (alt)
+    DATA $101, $10D, $101, $161, $101  ' 19: Dual Pillars (alt)
+    DATA $010, $028, $044, $082, $101  ' 20: Arrow (alt)
+    DATA $119, $13D, $119, $101, $101  ' 21: Pillars (alt)
+    DATA $1FF, $000, $1FF, $000, $1FF  ' 22: Phalanx (alt)
+
+' Which pattern B per level (wraps after 32)
 PatternBIndex:
-    DATA 0, 1, 3, 2, 4, 5, 6, 7
+    DATA 0, 1, 2, 3, 4, 5, 6, 7        ' Waves  1-8
+    DATA 8, 9, 10, 11, 0, 12, 13, 14   ' Waves  9-16
+    DATA 15, 16, 9, 17, 11, 18, 19, 20 ' Waves 17-24
+    DATA 14, 21, 10, 15, 13, 22, 12, 16 ' Waves 25-32
 
 ' Orbiter path around 2-wide bomb boss (10 steps, biased +1)
 ' Actual offset = DATA value - 1 (so 0 means -1, 1 means 0, etc.)
@@ -5588,22 +5819,28 @@ CaptureOrbitDY:
     DATA 6, 8, 10, 11, 12, 11, 10, 8
     DATA 6, 4, 2, 1, 0, 1, 2, 4
 
-' Wave color palettes (6 palettes, indexed by (Level-1) MOD 6)
+' Wave color palettes (6 palettes, cycling via (Level-1) MOD 6)
+' Independent of the 32-wave cycle — provides 6-color variety
 ' Each palette: squid (row 0), crab (rows 1-2), octopus (rows 3-4)
 WavePalette0:
-    DATA 6, 7, 5, 2, 1, 3  ' Squid colors:  Yel, Wht, Grn, Red, Blu, Tan
+    DATA 6, 7, 5, 1, 2, 3
 WavePalette1:
-    DATA 1, 2, 3, 7, 5, 6  ' Crab colors:   Blu, Red, Tan, Wht, Grn, Yel
+    DATA 5, 6, 1, 2, 1, 7
 WavePalette2:
-    DATA 5, 6, 1, 3, 2, 7  ' Octopus colors: Grn, Yel, Blu, Tan, Red, Wht
+    DATA 7, 5, 2, 3, 6, 7
 
-' Wave entrance patterns (8 entries, indexed by (Level-1) MOD 8)
+' Wave entrance patterns (32 entries, indexed by (Level-1) AND 31)
 ' 0 = left sweep (columns appear left-to-right)
 ' 1 = top-down (rows appear top-to-bottom)
 ' Pattern B always uses pincer (both sides meet in middle)
 WaveEntranceData:
     ' 0=Left sweep, 1=Top-down reveal (rows in place), 2=Fly-down from above
-    DATA 1, 0, 2, 0, 2, 0, 1, 2  ' Waves 1-8: T, L, F, L, F, L, T, F
+    DATA 1, 0, 2, 0, 2, 2, 1, 2  ' Waves  1- 8
+    DATA 2, 2, 1, 2, 2, 1, 2, 2  ' Waves  9-16
+    DATA 2, 2, 1, 2, 2, 1, 2, 2  ' Waves 17-24
+    DATA 1, 2, 2, 2, 1, 2, 2, 1  ' Waves 25-32
+
+' ╚══════════════════ END LEVEL DESIGN DATA ══════════════════╝
 
 ' Pattern 0: Figure-8 Lissajous (title screen, 316 waypoints)
 ' x = 84 + 50*sin(t), y = 56 + 18*sin(2t)

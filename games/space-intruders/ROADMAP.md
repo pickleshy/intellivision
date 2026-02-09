@@ -7,6 +7,7 @@
 ## 1. Bugs (Known Issues)
 
 - [x] **Captured alien dive bomb behavior** — Rogue now dogfights both wingman and player ship with strafing passes, targeted firing, and body collision.
+- [ ] **CONT.BUTTON bitmask breaks input** — Using `CONT.BUTTON AND bitmask` (e.g., `AND 3` to exclude bottom-right, `AND 4` to isolate bottom-right) causes all controller input to stop working in jzintv. Suspected IntyBASIC compilation quirk with bitwise AND on hardware register reads. Needs assembly listing investigation to see what instructions are generated. Capture currently uses keypad 0 as workaround. Removing `--ecsimg` from jzintv_run resolved ECS keyboard bleed-through into CONT.BUTTON but did not fix the bitmask issue.
 
 ---
 
