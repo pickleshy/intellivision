@@ -213,6 +213,18 @@ CONST BOMB_SCORE   = 50         ' Score for bomb alien itself
 CONST MAX_BOSSES   = 4          ' Maximum simultaneous special aliens
 CONST SKULL_TYPE   = 0          ' BossType: multi-hit skull boss
 CONST BOMB_TYPE    = 1          ' BossType: single-hit bomb alien (chain explodes)
+CONST GIANT_TYPE   = 2          ' BossType: 4×4 giant boss (every 8th wave)
+CONST GIANT_SCORE  = 500        ' Score for killing giant boss
+
+' Giant boss GRAM cards (reuse skull/bomb slots on boss waves)
+CONST GRAM_GIANT_HL = 9         ' Head left  (reuses GRAM_BAND1)
+CONST GRAM_GIANT_HR = 10        ' Head right (reuses GRAM_BAND2)
+CONST GRAM_GIANT_BL = 11        ' Body left  (reuses GRAM_BAND1_F1)
+CONST GRAM_GIANT_BR = 12        ' Body right (reuses GRAM_BAND2_F1)
+CONST GRAM_GIANT_ML = 54        ' Mid left   (reuses GRAM_BOMB1)
+CONST GRAM_GIANT_MR = 55        ' Mid right  (reuses GRAM_BOMB2)
+CONST GRAM_GIANT_TL = 56        ' Tentacle L (reuses GRAM_BOMB1_F1)
+CONST GRAM_GIANT_TR = 57        ' Tentacle R (reuses GRAM_BOMB2_F1)
 
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
@@ -1456,7 +1468,7 @@ StartGame:
     ChainMax = 0    ' Reset best chain for new game
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR LoopVar = 0 TO MAX_BOSSES - 1 : BossHP(LoopVar) = 0 : NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255  ' Wave 1 has no boss
+    BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : BossType(0) = SKULL_TYPE  ' Wave 1 has no boss
     #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
     TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
     SPRITE SPR_FLYER, 0, 0, 0
@@ -1498,6 +1510,17 @@ GameLoop:
     WAIT
     ' Debug mode: CPU profiling — red border during game logic
     IF #GameFlags AND FLAG_DEBUG THEN BORDER COL_RED
+
+    ' Debug: press 9 on keypad to skip wave (clears all aliens)
+    IF #GameFlags AND FLAG_DEBUG THEN
+        IF CONT.KEY = 9 THEN
+            #AlienRow(0) = 0 : #AlienRow(1) = 0
+            #AlienRow(2) = 0 : #AlienRow(3) = 0
+            #AlienRow(4) = 0
+            RogueState = 0
+            ExplosionTimer = 0
+        END IF
+    END IF
 
     ' Screen shake effect
     IF ShakeTimer > 0 THEN
@@ -2820,9 +2843,17 @@ CheckOneColumn: PROCEDURE
                 IF BossCount > 0 THEN
                     FOR LoopVar = 0 TO BossCount - 1
                         IF BossHP(LoopVar) > 0 THEN
-                            IF AlienGridRow = BossRow(LoopVar) THEN
-                                IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
-                                    FoundBoss = LoopVar
+                            IF BossType(LoopVar) = GIANT_TYPE THEN
+                                IF AlienGridRow >= BossRow(LoopVar) AND AlienGridRow <= BossRow(LoopVar) + 3 THEN
+                                    IF AlienGridCol >= BossCol(LoopVar) AND AlienGridCol <= BossCol(LoopVar) + 3 THEN
+                                        FoundBoss = LoopVar
+                                    END IF
+                                END IF
+                            ELSE
+                                IF AlienGridRow = BossRow(LoopVar) THEN
+                                    IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                                        FoundBoss = LoopVar
+                                    END IF
                                 END IF
                             END IF
                         END IF
@@ -2846,14 +2877,24 @@ CheckOneColumn: PROCEDURE
                             #GameFlags = #GameFlags AND $FFFE
                         END IF
                         #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Hit landed — chain preserved
-                        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
-                        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+                        GOSUB UpdateBossColor
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
                         SOUND 2, 120, 14
                         RETURN
                     ELSE
                         ' Boss dead! Check type
-                        IF BossType(FoundBoss) = BOMB_TYPE THEN
+                        IF BossType(FoundBoss) = GIANT_TYPE THEN
+                            GOSUB GiantBossDeath
+                            IF BeamTimer = 0 OR BeamHits = 0 THEN
+                                #GameFlags = #GameFlags AND $FFFE
+                            END IF
+                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
+                            ChainCount = ChainCount + 1
+                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
+                            IF ChainCount > 50 THEN ChainCount = 50
+                            ChainTimeout = 90
+                            RETURN
+                        ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
                             IF BeamTimer = 0 OR BeamHits = 0 THEN
                                 #GameFlags = #GameFlags AND $FFFE
@@ -3615,9 +3656,17 @@ MegaBeamKill: PROCEDURE
                             IF BossCount > 0 THEN
                                 FOR Row = 0 TO BossCount - 1
                                     IF BossHP(Row) > 0 THEN
-                                        IF AlienGridRow = BossRow(Row) THEN
-                                            IF AlienGridCol = BossCol(Row) OR AlienGridCol = BossCol(Row) + 1 THEN
-                                                FoundBoss = Row
+                                        IF BossType(Row) = GIANT_TYPE THEN
+                                            IF AlienGridRow >= BossRow(Row) AND AlienGridRow <= BossRow(Row) + 3 THEN
+                                                IF AlienGridCol >= BossCol(Row) AND AlienGridCol <= BossCol(Row) + 3 THEN
+                                                    FoundBoss = Row
+                                                END IF
+                                            END IF
+                                        ELSE
+                                            IF AlienGridRow = BossRow(Row) THEN
+                                                IF AlienGridCol = BossCol(Row) OR AlienGridCol = BossCol(Row) + 1 THEN
+                                                    FoundBoss = Row
+                                                END IF
                                             END IF
                                         END IF
                                     END IF
@@ -3629,11 +3678,12 @@ MegaBeamKill: PROCEDURE
                                     BossBeamHit(FoundBoss) = BossBeamHit(FoundBoss) + 1
                                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                                     IF BossHP(FoundBoss) > 0 THEN
-                                        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
-                                        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+                                        GOSUB UpdateBossColor
                                     ELSE
                                         ' Boss dead! Check type
-                                        IF BossType(FoundBoss) = BOMB_TYPE THEN
+                                        IF BossType(FoundBoss) = GIANT_TYPE THEN
+                                            GOSUB GiantBossDeath
+                                        ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
                                             ' Bomb alien — chain explosion!
                                             GOSUB BombExplode
                                         ELSE
@@ -3888,7 +3938,26 @@ END
 ' Uses: HitCol (temp for bomb flash color)
 ' --------------------------------------------
 ComputeBossCard: PROCEDURE
-    IF BossType(FoundBoss) = BOMB_TYPE THEN
+    IF BossType(FoundBoss) = GIANT_TYPE THEN
+        ' Giant boss: look up card from 4×4 layout table
+        ' Row and Col are set by DrawAliens outer/inner loops
+        HitRow = (Row - BossRow(FoundBoss)) * 4 + (Col - BossCol(FoundBoss))
+        HitRow = GiantCardLayout(HitRow)
+        IF HitRow = 255 THEN
+            #Card = 0   ' Blank corner — render as empty
+        ELSE
+            ' Build GRAM card with boss color + flash at low HP
+            HitCol = BossColor(FoundBoss)
+            IF BossHP(FoundBoss) <= 2 THEN
+                IF ShimmerCount AND 4 THEN HitCol = COL_WHITE ELSE HitCol = COL_RED
+            END IF
+            IF HitCol >= 8 THEN
+                #Card = HitRow * 8 + (HitCol AND 7) + $1800
+            ELSE
+                #Card = HitRow * 8 + HitCol + $0800
+            END IF
+        END IF
+    ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
         ' Bomb alien: use BossColor, flash red/white at HP=1
         HitCol = BossColor(FoundBoss)
         IF BossHP(FoundBoss) = 1 THEN
@@ -3995,8 +4064,14 @@ DrawAliens: PROCEDURE
         IF BossCount > 0 THEN
             FOR LoopVar = 0 TO BossCount - 1
                 IF BossHP(LoopVar) > 0 THEN
-                    IF Row = BossRow(LoopVar) THEN
-                        IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
+                    IF BossType(LoopVar) = GIANT_TYPE THEN
+                        IF Row >= BossRow(LoopVar) AND Row <= BossRow(LoopVar) + 3 THEN
+                            IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
+                        END IF
+                    ELSE
+                        IF Row = BossRow(LoopVar) THEN
+                            IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
+                        END IF
                     END IF
                 END IF
             NEXT LoopVar
@@ -4022,9 +4097,17 @@ DrawAliens: PROCEDURE
                     ' Check for boss in dual-reveal mode (inline)
                     FoundBoss = 255
                     IF RowBoss1 < 255 THEN
-                        IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                        IF BossType(RowBoss1) = GIANT_TYPE THEN
+                            IF Col >= BossCol(RowBoss1) AND Col <= BossCol(RowBoss1) + 3 THEN FoundBoss = RowBoss1
+                        ELSE
+                            IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                        END IF
                         IF FoundBoss = 255 AND RowBoss2 < 255 THEN
-                            IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                            IF BossType(RowBoss2) = GIANT_TYPE THEN
+                                IF Col >= BossCol(RowBoss2) AND Col <= BossCol(RowBoss2) + 3 THEN FoundBoss = RowBoss2
+                            ELSE
+                                IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                            END IF
                         END IF
                     END IF
                     IF FoundBoss < 255 THEN GOSUB ComputeBossCard
@@ -4058,9 +4141,17 @@ DrawAliens: PROCEDURE
                         ' Check if this cell is a boss (inline)
                         FoundBoss = 255
                         IF RowBoss1 < 255 THEN
-                            IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                            IF BossType(RowBoss1) = GIANT_TYPE THEN
+                                IF Col >= BossCol(RowBoss1) AND Col <= BossCol(RowBoss1) + 3 THEN FoundBoss = RowBoss1
+                            ELSE
+                                IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                            END IF
                             IF FoundBoss = 255 AND RowBoss2 < 255 THEN
-                                IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                                IF BossType(RowBoss2) = GIANT_TYPE THEN
+                                    IF Col >= BossCol(RowBoss2) AND Col <= BossCol(RowBoss2) + 3 THEN FoundBoss = RowBoss2
+                                ELSE
+                                    IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                                END IF
                             END IF
                         END IF
                         IF FoundBoss < 255 THEN
@@ -4150,6 +4241,17 @@ LoadPatternB: PROCEDURE
         #AlienRow(LoopVar) = PatternBData(Col + LoopVar)
     NEXT LoopVar
 
+    ' Restore skull/bomb GRAM if previous wave had giant boss
+    IF BossType(0) = GIANT_TYPE AND BossCount > 0 THEN
+        DEFINE GRAM_BAND1, 1, Band1Gfx : WAIT
+        DEFINE GRAM_BAND2, 1, Band2Gfx : WAIT
+        DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx : WAIT
+        DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx : WAIT
+        DEFINE GRAM_BOMB1, 2, SquidLeftF1Gfx : WAIT
+        DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx : WAIT
+        DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx : WAIT
+    END IF
+
     ' Clear all boss slots
     FOR LoopVar = 0 TO MAX_BOSSES - 1
         BossHP(LoopVar) = 0
@@ -4210,16 +4312,17 @@ LoadPatternB: PROCEDURE
         BossCol(0) = 4 : BossRow(0) = 2
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
     ELSEIF LoopVar = 7 THEN
-        ' Wave 8: 4 bomb bosses
-        BossCount = 4
-        BossCol(0) = 2 : BossRow(0) = 3
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 1
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        BossCol(2) = 5 : BossRow(2) = 3
-        BossHP(2) = 2 : BossColor(2) = 10 : BossType(2) = BOMB_TYPE
-        BossCol(3) = 2 : BossRow(3) = 1
-        BossHP(3) = 2 : BossColor(3) = 10 : BossType(3) = BOMB_TYPE
+        ' Wave 8: GIANT BOSS — first encounter
+        ' Override grid: escorts around boss area (boss cells added by force-set)
+        #AlienRow(0) = $103 : #AlienRow(1) = $103
+        #AlienRow(2) = $103 : #AlienRow(3) = $103
+        #AlienRow(4) = $1FF
+        BossCount = 1
+        BossCol(0) = 2 : BossRow(0) = 0
+        BossHP(0) = 8 : BossColor(0) = 9 : BossType(0) = GIANT_TYPE
+        ' Load giant boss GRAM (redefine skull + bomb slots)
+        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
+        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
     ' ── Waves 9-16 ──
     ' Wave 9 (LoopVar=8): no bosses
     ELSEIF LoopVar = 9 THEN
@@ -4254,13 +4357,15 @@ LoadPatternB: PROCEDURE
         BossCol(0) = 3 : BossRow(0) = 0
         BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
     ELSEIF LoopVar = 15 THEN
-        ' Wave 16: 2 bombs + 1 orbiter
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 4
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 4
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
+        ' Wave 16: GIANT BOSS — harder
+        #AlienRow(0) = $103 : #AlienRow(1) = $103
+        #AlienRow(2) = $103 : #AlienRow(3) = $103
+        #AlienRow(4) = $1FF
+        BossCount = 1
+        BossCol(0) = 2 : BossRow(0) = 0
+        BossHP(0) = 12 : BossColor(0) = 10 : BossType(0) = GIANT_TYPE
+        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
+        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
     ' ── Waves 17-24: Harder ──
     ELSEIF LoopVar = 16 THEN
         ' Wave 17: 3 skulls
@@ -4318,12 +4423,15 @@ LoadPatternB: PROCEDURE
         OrbitStep = 0
     ' Wave 23 (LoopVar=22): no bosses (breather)
     ELSEIF LoopVar = 23 THEN
-        ' Wave 24: 2 skulls
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 3
-        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 5 : BossRow(1) = 4
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
+        ' Wave 24: GIANT BOSS — menacing
+        #AlienRow(0) = $103 : #AlienRow(1) = $103
+        #AlienRow(2) = $103 : #AlienRow(3) = $103
+        #AlienRow(4) = $1FF
+        BossCount = 1
+        BossCol(0) = 2 : BossRow(0) = 0
+        BossHP(0) = 16 : BossColor(0) = 12 : BossType(0) = GIANT_TYPE
+        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
+        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
     ' ── Waves 25-32: Endgame gauntlet ──
     ELSEIF LoopVar = 24 THEN
         ' Wave 25: 4 bosses — 1 bomb w/ orbiter + 3 skulls
@@ -4394,28 +4502,41 @@ LoadPatternB: PROCEDURE
         OrbitStep = 0
         OrbitStep2 = 5
     ELSEIF LoopVar = 31 THEN
-        ' Wave 32: FINAL — 4 bosses (2 bombs w/ orbiters + 2 skulls)
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 1
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        BossCol(2) = 1 : BossRow(2) = 3
-        BossHP(2) = 3 : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 5 : BossRow(3) = 3
-        BossHP(3) = 3 : BossColor(3) = 9 : BossType(3) = SKULL_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
+        ' Wave 32: GIANT BOSS — final boss
+        #AlienRow(0) = $103 : #AlienRow(1) = $103
+        #AlienRow(2) = $103 : #AlienRow(3) = $103
+        #AlienRow(4) = $1FF
+        BossCount = 1
+        BossCol(0) = 2 : BossRow(0) = 0
+        BossHP(0) = 20 : BossColor(0) = 15 : BossType(0) = GIANT_TYPE
+        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
+        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
     END IF
 
     ' ── END Boss Placement ──
 
-    ' Force-set both boss columns alive in grid (pattern data may have gaps)
+    ' Force-set boss cells alive in grid (pattern data may have gaps)
     ' Without this, XOR on death resurrects dead cells → "ghost alien" bug
     IF BossCount > 0 THEN
         FOR LoopVar = 0 TO BossCount - 1
-            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar))
-            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar) + 1)
+            IF BossType(LoopVar) = GIANT_TYPE THEN
+                ' Giant boss: set all filled cells in 4×4 layout
+                FOR Row = 0 TO 3
+                    IF BossRow(LoopVar) + Row < ALIEN_ROWS THEN
+                        FOR Col = 0 TO 3
+                            IF GiantCardLayout(Row * 4 + Col) < 255 THEN
+                                IF BossCol(LoopVar) + Col < ALIEN_COLS THEN
+                                    #AlienRow(BossRow(LoopVar) + Row) = #AlienRow(BossRow(LoopVar) + Row) OR ColMaskData(BossCol(LoopVar) + Col)
+                                END IF
+                            END IF
+                        NEXT Col
+                    END IF
+                NEXT Row
+            ELSE
+                ' Skull/bomb: set 2-wide columns
+                #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar))
+                #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar) + 1)
+            END IF
         NEXT LoopVar
     END IF
 
@@ -4896,6 +5017,8 @@ SaucerColor2:
 PowerUpWeights:
     DATA 0, 0, 1, 1, 2, 2, 3, 4
 
+    SEGMENT 4   ' Move procedures to Segment 4 (Seg 2 near capacity after giant boss)
+
 ' --------------------------------------------
 ' UpdateCapture - Orbit captured wingman around player ship
 ' --------------------------------------------
@@ -5062,9 +5185,17 @@ CaptureHitscan: PROCEDURE
     IF BossCount > 0 THEN
         FOR LoopVar = 0 TO BossCount - 1
             IF BossHP(LoopVar) > 0 THEN
-                IF AlienGridRow = BossRow(LoopVar) THEN
-                    IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
-                        FoundBoss = LoopVar
+                IF BossType(LoopVar) = GIANT_TYPE THEN
+                    IF AlienGridRow >= BossRow(LoopVar) AND AlienGridRow <= BossRow(LoopVar) + 3 THEN
+                        IF AlienGridCol >= BossCol(LoopVar) AND AlienGridCol <= BossCol(LoopVar) + 3 THEN
+                            FoundBoss = LoopVar
+                        END IF
+                    END IF
+                ELSE
+                    IF AlienGridRow = BossRow(LoopVar) THEN
+                        IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                            FoundBoss = LoopVar
+                        END IF
                     END IF
                 END IF
             END IF
@@ -5075,21 +5206,29 @@ CaptureHitscan: PROCEDURE
         #GameFlags = #GameFlags AND $FFF7
         IF BossHP(FoundBoss) > 0 THEN
             ' Damaged but alive
-            IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
-            IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+            GOSUB UpdateBossColor
             SfxType = 1 : SfxVolume = 10 : #SfxPitch = 120
             SOUND 2, 120, 10
             RETURN
         ELSE
             ' Boss dead! Check type
-            IF BossType(FoundBoss) = BOMB_TYPE THEN
+            IF BossType(FoundBoss) = GIANT_TYPE THEN
+                GOSUB GiantBossDeath
+                RETURN
+            ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
                 ' Bomb alien — chain explosion!
                 GOSUB BombExplode
                 RETURN
             ELSE
-                ' Skull boss dead! XOR BOTH columns out
-                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss))
-                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR ColMaskData(BossCol(FoundBoss) + 1)
+                ' Skull boss dead! Clear BOTH columns (guarded to prevent resurrection)
+                #Mask = ColMaskData(BossCol(FoundBoss))
+                IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                    #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                END IF
+                #Mask = ColMaskData(BossCol(FoundBoss) + 1)
+                IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+                    #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+                END IF
                 #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
                 IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
                 IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
@@ -5769,9 +5908,72 @@ SaucerHit: PROCEDURE
     RETURN
 END
 
+UpdateBossColor: PROCEDURE
+    IF BossType(FoundBoss) = GIANT_TYPE THEN
+        IF BossHP(FoundBoss) <= 2 THEN
+            BossColor(FoundBoss) = COL_RED
+        ELSEIF BossHP(FoundBoss) <= 4 THEN
+            BossColor(FoundBoss) = 10  ' Orange
+        ELSEIF BossHP(FoundBoss) <= 6 THEN
+            BossColor(FoundBoss) = COL_YELLOW
+        END IF
+    ELSE
+        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
+        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
+    END IF
+    RETURN
+END
+
+GiantBossDeath: PROCEDURE
+    ' Clear all filled boss cells from grid (guarded XOR)
+    FOR Row = 0 TO 3
+        IF BossRow(FoundBoss) + Row < ALIEN_ROWS THEN
+            FOR Col = 0 TO 3
+                IF GiantCardLayout(Row * 4 + Col) < 255 THEN
+                    IF BossCol(FoundBoss) + Col < ALIEN_COLS THEN
+                        #Mask = ColMaskData(BossCol(FoundBoss) + Col)
+                        IF #AlienRow(BossRow(FoundBoss) + Row) AND #Mask THEN
+                            #AlienRow(BossRow(FoundBoss) + Row) = #AlienRow(BossRow(FoundBoss) + Row) XOR #Mask
+                        END IF
+                    END IF
+                END IF
+            NEXT Col
+        END IF
+    NEXT Row
+
+    ' Explosion animation across boss area
+    FOR Row = 0 TO 3
+        FOR Col = 0 TO 3
+            IF GiantCardLayout(Row * 4 + Col) < 255 THEN
+                #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss) + Row) * 20
+                #ExplosionPos = #ExplosionPos + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss) + Col
+                IF #ExplosionPos < 220 THEN
+                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
+                END IF
+            END IF
+        NEXT Col
+    NEXT Row
+
+    #Score = #Score + GIANT_SCORE
+    ExplosionTimer = 25
+    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 40
+    SOUND 2, 40, 15
+    RETURN
+END
+
+    SEGMENT 2   ' DATA tables remain in Segment 2
+
 ' Column bitmask lookup table: ColMaskData(n) = 2^n (0-9)
 ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+
+' Giant boss 4×4 card layout: row*4+col → GRAM card (255 = blank corner)
+' Layout:  .HH.  /  BMMB  /  BMMB  /  .TT.
+GiantCardLayout:
+    DATA 255, 9, 10, 255            ' Row 0: .HeadL HeadR.
+    DATA 11, 54, 55, 12             ' Row 1: BodyL MidL MidR BodyR
+    DATA 11, 54, 55, 12             ' Row 2: BodyL MidL MidR BodyR (same)
+    DATA 255, 56, 57, 255           ' Row 3: .TentL TentR.
 
 ' ╔════════════════════════════════════════════════════════════╗
 ' ║  LEVEL DESIGN — 32-wave cycle (AND 31 wrapping)          ║
@@ -6917,6 +7119,87 @@ SquidRightF2Gfx:
     BITMAP "XXX.X..."
     BITMAP "..X.X..."
     BITMAP "XX......"
+
+' --- GIANT BOSS (4×4 BACKTAB cards = 32×32 pixels) ---
+' Layout:  .HH.  /  BMMB  /  BMMB  /  .TT.
+' Loaded into skull slots (9-12) + bomb slots (54-57) on boss waves
+' Cards 9-12 loaded as one block, cards 54-57 as another block
+
+GiantBossGfxTop:
+    ' Card 9 — GRAM_GIANT_HL — Head left
+    BITMAP "........"
+    BITMAP "......XX"
+    BITMAP ".....XXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "..XXX..X"
+    BITMAP ".XXXXXXX"
+    BITMAP ".XXXXXXX"
+    ' Card 10 — GRAM_GIANT_HR — Head right
+    BITMAP "........"
+    BITMAP "XX......"
+    BITMAP "XXX....."
+    BITMAP "XXXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "X..XXX.."
+    BITMAP "XXXXXXX."
+    BITMAP "XXXXXXX."
+    ' Card 11 — GRAM_GIANT_BL — Body left
+    BITMAP "....XXXX"
+    BITMAP "...XXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP ".XXXXXXX"
+    BITMAP ".XXXXXXX"
+    BITMAP ".XXXXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "...XXXXX"
+    ' Card 12 — GRAM_GIANT_BR — Body right
+    BITMAP "XXXX...."
+    BITMAP "XXXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XXXXXXX."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXX..."
+
+GiantBossGfxBot:
+    ' Card 54 — GRAM_GIANT_ML — Mid left
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    ' Card 55 — GRAM_GIANT_MR — Mid right
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    BITMAP "XXXXXXXX"
+    ' Card 56 — GRAM_GIANT_TL — Tentacle left
+    BITMAP "......XX"
+    BITMAP ".....XXX"
+    BITMAP "....XXX."
+    BITMAP "..XXX..."
+    BITMAP ".XX....."
+    BITMAP "XX......"
+    BITMAP "X......."
+    BITMAP "........"
+    ' Card 57 — GRAM_GIANT_TR — Tentacle right
+    BITMAP "XX......"
+    BITMAP "XXX....."
+    BITMAP ".XXX...."
+    BITMAP "...XXX.."
+    BITMAP ".....XX."
+    BITMAP "......XX"
+    BITMAP ".......X"
+    BITMAP "........"
 
 ' --- COMPACT CHAIN TEXT (3 tiles, 5px tall) ---
 ' Tile 1: CH
