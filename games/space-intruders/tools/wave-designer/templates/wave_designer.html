@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Intruders Wave Designer</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/wave_designer.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1>Space Intruders Wave Designer</h1>
+        <div class="header-actions">
+            <button id="btn-import" class="btn btn-secondary btn-sm">Import IntyBASIC</button>
+            <button id="btn-export" class="btn btn-success btn-sm">Export IntyBASIC</button>
+            <button id="btn-save-json" class="btn btn-secondary btn-sm">Save JSON</button>
+            <button id="btn-load-json" class="btn btn-secondary btn-sm">Load JSON</button>
+        </div>
+    </header>
+
+    <main class="editor-layout">
+        <!-- Left Panel: Wave selector + settings -->
+        <aside class="wave-settings-panel">
+            <div class="wave-tabs" id="wave-tabs"></div>
+
+            <section class="settings-section">
+                <h3>Entrance Animation</h3>
+                <select id="entrance-type">
+                    <option value="0">Left Sweep</option>
+                    <option value="1">Top-Down Reveal</option>
+                    <option value="2">Fly-Down</option>
+                </select>
+            </section>
+
+            <section class="settings-section">
+                <label class="reinforce-toggle">
+                    <input type="checkbox" id="reinforcement-toggle">
+                    <span class="reinforce-label">Second Horde</span>
+                    <span class="reinforce-badge" id="reinforce-badge">2x</span>
+                </label>
+                <span class="helper-text">Full Pattern A wave before Pattern B</span>
+            </section>
+
+            <section class="settings-section">
+                <h3>March Speed</h3>
+                <div class="speed-display">
+                    <input type="range" id="march-speed" min="24" max="60" step="2" value="60">
+                    <span class="speed-value" id="march-speed-value">60</span>
+                </div>
+                <span class="helper-text">Lower = faster march</span>
+            </section>
+
+            <section class="settings-section">
+                <h3>Alien Colors (Pattern A &amp; B)</h3>
+                <div class="palette-group">
+                    <label>Squid (Row 0)</label>
+                    <div class="color-swatches" id="palette-squid" data-alien="squid"></div>
+                </div>
+                <div class="palette-group">
+                    <label>Crab (Rows 1-2)</label>
+                    <div class="color-swatches" id="palette-crab" data-alien="crab"></div>
+                </div>
+                <div class="palette-group">
+                    <label>Octopus (Rows 3-4)</label>
+                    <div class="color-swatches" id="palette-octopus" data-alien="octopus"></div>
+                </div>
+            </section>
+
+            <section class="settings-section pattern-a-info">
+                <strong>Pattern A</strong> (full 9x5 grid)<br>
+                All aliens alive. Uses entrance animation and colors above.
+                Bosses are placed per Pattern B only.
+            </section>
+        </aside>
+
+        <!-- Right Panel: Grid + Bosses + Constraints -->
+        <div class="grid-panel">
+            <div class="grid-wrapper">
+                <div class="grid-header">
+                    <h3>Pattern B Formation</h3>
+                    <span class="helper-text" id="alive-count"></span>
+                </div>
+                <div class="grid-col-labels" id="grid-col-labels"></div>
+                <div id="grid-container"></div>
+            </div>
+
+            <div class="boss-section">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Boss Placement</h3>
+                    <span class="helper-text" id="boss-count-display"></span>
+                </div>
+                <div class="boss-toolbar" id="boss-toolbar">
+                    <button class="boss-tool active" data-tool="toggle">Toggle Cell</button>
+                    <button class="boss-tool" data-tool="skull">Place Skull</button>
+                    <button class="boss-tool" data-tool="bomb">Place Bomb</button>
+                    <button class="boss-tool" data-tool="remove-boss">Remove Boss</button>
+                </div>
+                <div class="boss-list" id="boss-list"></div>
+            </div>
+
+            <div class="constraint-dashboard" id="constraints">
+                <h3>Constraints</h3>
+                <div id="constraint-items"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Import Modal -->
+    <div id="modal-import" class="modal hidden">
+        <div class="modal-content">
+            <h3>Import IntyBASIC Data</h3>
+            <p style="font-size: 12px; color: #999; margin-bottom: 10px;">
+                Paste PatternBData, WaveEntranceData, WavePalette, and LoadPatternB boss code.
+            </p>
+            <textarea id="import-text" rows="20" placeholder="Paste IntyBASIC DATA statements here..."></textarea>
+            <div class="modal-actions">
+                <button id="btn-do-import" class="btn btn-primary">Import</button>
+                <button class="btn btn-secondary modal-close">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="modal-export" class="modal hidden">
+        <div class="modal-content">
+            <h3>Export IntyBASIC Data</h3>
+            <textarea id="export-text" rows="30" readonly></textarea>
+            <div class="modal-actions">
+                <button id="btn-copy-export" class="btn btn-primary">Copy to Clipboard</button>
+                <button class="btn btn-secondary modal-close">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="json-file-input" accept=".json" style="display:none">
+
+    <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
