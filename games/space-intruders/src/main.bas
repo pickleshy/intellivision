@@ -213,19 +213,6 @@ CONST BOMB_SCORE   = 50         ' Score for bomb alien itself
 CONST MAX_BOSSES   = 4          ' Maximum simultaneous special aliens
 CONST SKULL_TYPE   = 0          ' BossType: multi-hit skull boss
 CONST BOMB_TYPE    = 1          ' BossType: single-hit bomb alien (chain explodes)
-CONST GIANT_TYPE   = 2          ' BossType: 4×4 giant boss (every 8th wave)
-CONST GIANT_SCORE  = 500        ' Score for killing giant boss
-
-' Giant boss GRAM cards (reuse skull/bomb slots on boss waves)
-CONST GRAM_GIANT_HL = 9         ' Head left  (reuses GRAM_BAND1)
-CONST GRAM_GIANT_HR = 10        ' Head right (reuses GRAM_BAND2)
-CONST GRAM_GIANT_BL = 11        ' Body left  (reuses GRAM_BAND1_F1)
-CONST GRAM_GIANT_BR = 12        ' Body right (reuses GRAM_BAND2_F1)
-CONST GRAM_GIANT_ML = 54        ' Mid left   (reuses GRAM_BOMB1)
-CONST GRAM_GIANT_MR = 55        ' Mid right  (reuses GRAM_BOMB2)
-CONST GRAM_GIANT_TL = 56        ' Tentacle L (reuses GRAM_BOMB1_F1)
-CONST GRAM_GIANT_TR = 57        ' Tentacle R (reuses GRAM_BOMB2_F1)
-
 ' Game constants
 CONST STARTING_LIVES = 4          ' 4 ships total (current + 3 extras)
 
@@ -252,15 +239,47 @@ CONST FLAG_DUAL      = 8192     ' Bit 13: Quad laser active
 CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
 CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this wave
 
-' --------------------------------------------
-' Variables
-' --------------------------------------------
+' ============================================================
+' VARIABLES
+' ============================================================
+
+' -- Arrays --
 DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, needs 16-bit)
-' FlyPathX/Y moved to ROM DATA tables (see Segment 1) to save 128 8-bit vars
-DIM FlyColors(6)               ' Color cycle (6 entries, indices 0-5)
+DIM FlyColors(6)               ' Saucer color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
+DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
+DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
+
+' -- Core State --
 #GameFlags  = 0                 ' Bit-packed booleans (see FLAG_* constants)
+#Score      = 0                 ' Player score
+#HighScore  = 0                 ' Session high score (persists until ROM reset)
+#NextLife   = 1000              ' Score threshold for next extra life
+Level       = 1                 ' Current wave/level
+Lives       = STARTING_LIVES    ' Player lives remaining
+GameOver    = 0                 ' 0=playing, 3-6=game over phases
+
+' -- Player & Input --
 PlayerX     = 80                ' Player X position (center)
+DeathTimer  = 0                 ' Countdown during death animation
+Invincible  = 0                 ' Invincibility timer after respawn
+Key1Held    = 0                 ' Debounce flag for keypad 1
+CheatCode   = 0                 ' Packed cheat entry: bits 0-2=held timer, bit 3=got '3'
+ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
+
+' -- Bullet State --
+BulletX     = 0                 ' Bullet X position
+BulletY     = 0                 ' Bullet Y position
+BulletColor = 0                 ' Bullet color phase (0-2 for color cycling)
+BeamHits    = 0                 ' Beam pierce budget (2 = fresh shot, 0 = spent)
+BeamTimer   = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
+ABulletX    = 0                 ' Alien bullet X position
+ABulletY    = 0                 ' Alien bullet Y position
+ABulFrame   = 0                 ' Bit 0: anim frame (0/1), Bit 1: type (0=zigzag, 2=beam)
+ShootTimer  = 0                 ' Countdown to next alien shot
+ShootCol    = 0                 ' Column to shoot from
+
+' -- Alien Grid & March --
 AnimFrame   = 0                 ' Animation frame (0 or 1)
 ShimmerCount = 0                ' Frame counter for shimmer updates
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
@@ -268,30 +287,18 @@ AlienOffsetY = 0                ' Alien grid Y offset (drops down)
 LastClearedY = 0                ' Last AlienOffsetY that had rows cleared above it
 AlienDir    = 1                 ' Movement direction (1=right, 255=left using unsigned)
 MarchCount  = 0                 ' Frame counter for march timing
-BulletX     = 0                 ' Bullet X position
-BulletY     = 0                 ' Bullet Y position
-' BulletActive packed into #GameFlags (FLAG_BULLET)
-BulletColor = 0                 ' Bullet color phase (0-2 for color cycling)
-' AlienColor eliminated — uses AlienColor as temp in DrawBullet/MegaBeam
-ABulletX    = 0                 ' Alien bullet X position
-ABulletY    = 0                 ' Alien bullet Y position
-' ABulletActive packed into #GameFlags (FLAG_ABULLET)
-ABulFrame   = 0                 ' Bit 0: anim frame (0/1), Bit 1: type (0=zigzag, 2=beam)
-ShootTimer  = 0                 ' Countdown to next alien shot
-ShootCol    = 0                 ' Column to shoot from
-#Score      = 0                 ' Player score
-' PlayerHit packed into #GameFlags (FLAG_PLAYERHIT)
-DeathTimer  = 0                 ' Countdown during death animation
-Invincible  = 0                 ' Invincibility timer after respawn
-Lives       = STARTING_LIVES    ' Player lives remaining
-Level       = 1                 ' Current wave/level
-GameOver    = 0                 ' 1 = game over state
 CurrentMarchSpeed = 160         ' Current march speed (decreases per wave)
-MusicGear   = 0                 ' Current music gear (0=slow,1=mid,2=fast,3=panic)
 BaseMarchSpeed = 60             ' March speed at start of wave (before descent accel)
+MusicGear   = 0                 ' Current music gear (0=slow,1=mid,2=fast,3=panic)
 #AliensAlive = 0                ' Count of remaining aliens
-HitCol      = 0                 ' Collision check - column
-HitRow      = 0                 ' Collision check - row
+WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
+WaveRevealRow = ALIEN_ROWS - 1  ' Row reveal: top-down=rows revealed, fly-down=rows hidden above
+RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
+
+' -- Collision & Drawing Temps --
+HitCol      = 0                 ' Multi-use: collision col, beam col, BACKTAB col, boss color, skip flag, wingman X
+HitRow      = 0                 ' Multi-use: collision row, alive-row sentinel, leftmost-col sentinel, orbit temp
+NeedRedraw  = 0                 ' DrawAliens dirty flag / reveal-complete gate
 AlienGridRow = 0                ' Which row in alien grid
 AlienGridCol = 0                ' Which column in alien grid
 LoopVar     = 0                 ' General loop variable
@@ -302,16 +309,40 @@ AlienColor  = 0                 ' Current alien color
 #ScreenPos  = 0                 ' Screen position (16-bit for multiplication)
 #Mask       = 0                 ' Bitmask for checking alive aliens
 #Card       = 0                 ' Card value for PRINT
-TitleColor  = 0                 ' Color index for title sprite shimmer
-TitleFrame  = 0                 ' Animation frame for title alien
-ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
-TitleMarchX = 0                 ' Title screen alien X offset
-TitleMarchDir = 1               ' Title march direction (1=right, 0=left)
-TitleMarchCount = 0             ' Title march timing counter
-TitleJitter = 0                 ' Title screen jitter phase (0-7)
 WavePhase   = 0                 ' Color wave phase for big alien (0-3)
+
+' -- Explosion & Chain Combo --
 ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
 #ExplosionPos  = 0              ' Explosion BACKTAB position (screen address)
+ChainCount  = 0                 ' Consecutive successful shots (chain combo)
+ChainMax    = 0                 ' Best chain this game
+ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
+ChainTimer  = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
+#ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
+#ChainFreq2 = 0                ' Chain SFX channel C frequency (sub rumble)
+#ChainVol   = 0                ' Chain SFX shared volume
+BombExpTimer = 0                ' Chain explosion countdown (0=inactive, 20=active)
+BombExpRow   = 0                ' Grid row of exploded bomb
+BombExpCol   = 0                ' Left grid column of exploded bomb
+
+' -- Boss System --
+DIM BossCol(MAX_BOSSES)            ' Left column of each boss (0-7)
+DIM BossRow(MAX_BOSSES)            ' Grid row of each boss (0-4)
+DIM BossHP(MAX_BOSSES)             ' HP per boss (0=dead/unused, 1-3=alive)
+DIM BossColor(MAX_BOSSES)          ' Display color per boss
+DIM BossType(MAX_BOSSES)           ' 0=skull (multi-hit), 1=bomb (chain explosion)
+BossCount      = 0                 ' Number of boss slots in use (0-4)
+FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
+RowBoss1       = 255               ' Cached: 1st boss index on current row (255=none)
+RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=none)
+DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
+OrbitStep      = 255               ' Orbiter path index (0-9 = active, 255 = inactive)
+OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
+WaveColor0     = 6                 ' Squid color (row 0) — default yellow
+WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
+WaveColor2     = 5                 ' Octopus color (rows 3-4) — default green
+
+' -- Saucer & Flight Engine --
 FlyX        = 0                 ' Flying sprite X position (from path table)
 FlyY        = 0                 ' Flying sprite Y position (from path table)
 #FlyPhase    = 0                 ' Path position index (16-bit for >255 waypoints)
@@ -322,67 +353,17 @@ FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
 SaucerCard  = GRAM_SAUCER       ' Current saucer GRAM card (animation frame)
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
-' FlyAngry packed into #GameFlags (FLAG_ANGRY)
 FlyCenterX  = 0                 ' Saucer swirl circle center X
 FlyCenterY  = 0                 ' Saucer swirl circle center Y
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
-SlidePos    = 0                 ' PRESS/FIRE slide-in position (0-5 sliding, 6+ = done)
-' Title animation state (Y-axis rotation cascade)
-' Uses dynamic frame calculation instead of array (saves 15 8-bit vars)
-TitleAnimState = 0              ' 0=reveal, 1=normal, 2=vanish, 3=done
-RevealCol   = 0                 ' Current letter revealing (0-14)
-VanishCol   = 255               ' Current letter vanishing (255=not started)
-' Starfield variables
-DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
-DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
-StarCount   = 0                 ' Number of active stars
-StarTimer   = 0                 ' Frame counter for scroll updates
-StarTick    = 0                 ' Tick counter (for slow layer)
-SilhOffset  = 0                 ' Silhouette scroll position (0 to SILH_MAP_LEN-1)
-BeamHits   = 0                 ' Beam pierce budget (2 = fresh shot, 0 = spent)
-BeamTimer  = 0                 ' Wide beam countdown (300 frames = 5 sec, 0 = normal)
-ChainTimer = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
-#ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
-#ChainFreq2 = 0                ' Chain SFX channel C frequency (sub rumble)
-#ChainVol  = 0                 ' Chain SFX shared volume
-' Power-up drop variables (reuse title-screen vars during gameplay)
-' TitleFrame reuses TitleFrame (title-only)
-' TitleMarchDir reuses TitleMarchDir (title-only)
-' SlidePos reuses SlidePos (title-only)
-PowerUpY    = 0                 ' Power-up capsule Y position (separate from saucer FlyY)
-#PowerTimer = 0                 ' Landing timeout (counts down from 300)
-' Rapid fire variables (reuse title-screen vars during gameplay)
-' PowerUpType reuses TitleColor (title-only): 0=beam, 1=rapid fire
-' FireCooldown reuses TitleJitter (title-only): frames until next shot allowed
-RapidTimer = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
+#FlyPathLen  = 0                 ' Current pattern waypoint count
+FlyStepRate = 0                 ' Frames between waypoint advances
+FlyMaxLoops = 0                 ' 0=infinite, N=stop after N loops
+FlyTransSpd = 0                 ' Pixels per frame during transition
 #PathXAddr  = 0                 ' ROM address of FlyPathXData (set at title init)
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
-' Sound effect variables
-SfxVolume   = 0                 ' Current decay volume (0 = silent)
-SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=quad
-#SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
-' Quad laser variables
-' DualTimer packed into #GameFlags (FLAG_DUAL)
-WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
-#NextLife   = 1000              ' Score threshold for next extra life
-#MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
-MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
-MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
-ShieldHits    = 0               ' Shield charges (0=none, 1=damaged, 2=full)
-' AutoFire packed into #GameFlags (FLAG_AUTOFIRE)
-Key1Held    = 0                 ' Debounce flag for keypad 1
-' DebugMode packed into #GameFlags (FLAG_DEBUG)
-CheatCode   = 0                 ' Packed cheat entry: bits 0-2=held timer, bit 3=got '3'
-' SubWave packed into #GameFlags (FLAG_SUBWAVE)
-' RevealMode packed into #GameFlags (FLAG_REVEAL for pincer, FLAG_TOPDOWN for top-down)
-RightRevealCol = ALIEN_COLS - 1 ' Right-side reveal col (counts down in dual mode)
-WaveRevealRow = ALIEN_ROWS - 1  ' Row reveal: top-down=rows revealed, fly-down=rows hidden above
-#HighScore  = 0                 ' Session high score (persists until ROM reset)
-ChainCount  = 0                 ' Consecutive successful shots (chain combo)
-ChainMax    = 0                 ' Best chain this game
-' ShotLanded packed into #GameFlags (FLAG_SHOTLAND)
-ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
-' Rogue alien variables
+
+' -- Rogue Alien --
 RogueState     = 0                 ' 0=idle, 1=shake, 2=dive
 RogueTimer     = 0                 ' Cooldown / countdown timer
 RogueRow       = 0                 ' Grid row (0-4)
@@ -394,51 +375,50 @@ RogueColor     = 0                 ' Color for alien type
 RogueDivePhase = 0                 ' Circle step index (0-31) or 255=exit
 RogueCenterX   = 0                 ' Circle center X during dive
 RogueCenterY   = 0                 ' Circle center Y during dive
-' Capture wingman variables
-' CaptureActive packed into #GameFlags (FLAG_CAPTURE)
+
+' -- Capture Wingman --
 CaptureColor   = 0                 ' Color of captured alien type
 CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
-' Keypad 0 debounce packed into #GameFlags (FLAG_KEY0HELD)
-' CapBulletActive packed into #GameFlags (FLAG_CAPBULLET)
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
-' Boss alien state (array-based, up to MAX_BOSSES simultaneous)
-DIM BossCol(MAX_BOSSES)            ' Left column of each boss (0-7)
-DIM BossRow(MAX_BOSSES)            ' Grid row of each boss (0-4)
-DIM BossHP(MAX_BOSSES)             ' HP per boss (0=dead/unused, 1-3=alive)
-DIM BossColor(MAX_BOSSES)          ' Display color per boss
-DIM BossType(MAX_BOSSES)           ' 0=skull (multi-hit), 1=bomb (chain explosion)
-BossCount      = 0                 ' Number of boss slots in use (0-4)
-FoundBoss      = 0                 ' Temp: result of boss lookup (0-3 or 255=none)
-RowBoss1       = 255               ' Cached: 1st boss index on current row (255=none)
-RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=none)
-DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
-' Column bitmask lookup table is in ROM (see ColMaskData near end of file)
-' Chain explosion state (bomb alien)
-BombExpTimer   = 0                 ' Chain explosion countdown (0=inactive, 20=active)
-BombExpRow     = 0                 ' Grid row of exploded bomb
-BombExpCol     = 0                 ' Left grid column of exploded bomb
-' Orbiter alien (circles bomb boss on BACKTAB)
-OrbitStep      = 255               ' Orbit path index (0-9 = active, 255 = inactive)
-OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
-' Wave color palette (set at start of each wave from DATA table)
-WaveColor0     = 6                 ' Squid color (row 0) — default yellow
-WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
-WaveColor2     = 5                 ' Octopus color (rows 3-4) — default green
 
-' Tutorial message state (first powerup hint)
-TutorialTimer  = 0                 ' 255=ready, 1-180=showing, 0=done
+' -- Power-Up System --
+' These vars double as title-screen animation state (see [title:] comments at init sites)
+PowerUpState = 0                ' 0=none, 1=falling, 2=landed / [title: anim frame counter]
+PowerUpType  = 0                ' 0=beam, 1=rapid, 2=quad, 3=mega, 4=shield / [title: shimmer counter]
+PowerUpX     = 1                ' Capsule X position / [title: march direction 1=right, 0=left]
+CapsuleFrame = 0                ' Capsule animation frame 0-7 / [title: slide-in position]
+CapsuleColor1 = 0               ' Capsule primary color / [title: march step counter]
+CapsuleColor2 = 0               ' Capsule secondary color / [title: grid left-edge column]
+FireCooldown = 0                ' Frames until next shot allowed / [title: bolt sweep position]
+PowerUpY    = 0                 ' Power-up capsule Y position (separate from saucer FlyY)
+#PowerTimer = 0                 ' Landing timeout (counts down from 300)
+RapidTimer  = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
+#MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
+MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
+MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
+ShieldHits  = 0                 ' Shield charges (0=none, 1=damaged, 2=full)
+TutorialTimer  = 0              ' First powerup hint: 255=ready, 1-180=showing, 0=done
 
-' Flight engine variables
-#FlyPathLen  = 0                 ' Current pattern waypoint count
-FlyStepRate = 0                 ' Frames between waypoint advances
-FlyMaxLoops = 0                 ' 0=infinite, N=stop after N loops
-FlyTransSpd = 0                 ' Pixels per frame during transition
+' -- Sound Effects --
+SfxVolume   = 0                 ' Current decay volume (0 = silent)
+SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=quad
+#SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 
-' Game Over letter animation (Zod fly-by triggers rotation)
-GOAnimIdx    = 255               ' Currently animating letter (255=none, 0-7=letter)
-GOAnimFrame  = 0                 ' Animation frame (0=full, 1=60°, 2=edge, 3=done)
+' -- Starfield & Parallax --
+StarCount   = 0                 ' Number of active stars
+StarTimer   = 0                 ' Frame counter for scroll updates
+StarTick    = 0                 ' Tick counter (for slow layer)
+SilhOffset  = 0                 ' Silhouette scroll position (0 to SILH_MAP_LEN-1)
+
+' -- Title Screen & Game Over --
+TitleMarchX = 0                 ' Title screen alien X offset / bolt frame counter
+TitleAnimState = 0              ' 0=reveal, 1=normal, 2=vanish, 3=done
+RevealCol   = 0                 ' Current letter revealing (0-14)
+VanishCol   = 255               ' Current letter vanishing (255=not started)
+GOAnimIdx    = 255               ' Game over: animating letter (255=none, 0-7=letter)
+GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2=edge, 3=done)
 
 ' --------------------------------------------
 ' Main Program
@@ -635,10 +615,10 @@ TitleScreen:
     WAIT
     DEFINE GRAM_STAR2, 1, Star2Gfx   ' Card 38
 
-    TitleFrame = 0
-    TitleMarchDir = 1      ' 1=right, 0=left
-    TitleMarchCount = 0    ' Frame counter for march steps
-    TitleGridCol = 4       ' BACKTAB column of grid left edge
+    PowerUpState = 0      ' [title: animation frame counter]
+    PowerUpX = 1          ' [title: march direction 1=right, 0=left]
+    CapsuleColor1 = 0     ' [title: march step counter]
+    CapsuleColor2 = 4     ' [title: grid left-edge column]
 
     ' Display title text with initial animation frames (edge view)
     GOSUB DrawTitleAnimated
@@ -650,12 +630,12 @@ TitleScreen:
 
     ' "PRESS FIRE" slides in from edges — don't print here
     WavePhase = 0          ' Color cycle index for PRESS FIRE
-    TitleColor = 0         ' Frame counter for color change / slide timer
-    SlidePos = 0           ' Slide-in position (0=edges, 5=final, 6+=done)
-    TitleJitter = 0        ' Bolt position (0-14 = char, 15-19 = gap between sweeps)
+    PowerUpType = 0        ' [title: color shimmer / slide timer]
+    CapsuleFrame = 0       ' [title: slide-in position 0=edges, 5=final, 6+=done]
+    FireCooldown = 0       ' [title: bolt sweep position 0-14=char, 15-19=gap]
     TitleMarchX = 0        ' Bolt frame counter
 
-    ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at TitleGridCol)
+    ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at CapsuleColor2)
     GOSUB DrawAlienGrid
 
     ' Initialize Zod via flight engine
@@ -807,19 +787,19 @@ TitleLoop:
     END IF
 
     ' March animation - move grid 1 card every 32 frames
-    TitleMarchCount = TitleMarchCount + 1
-    IF TitleMarchCount >= 32 THEN
-        TitleMarchCount = 0
+    CapsuleColor1 = CapsuleColor1 + 1
+    IF CapsuleColor1 >= 32 THEN
+        CapsuleColor1 = 0
 
-        IF TitleMarchDir = 1 THEN
-            TitleGridCol = TitleGridCol + 1
-            IF TitleGridCol >= 10 THEN
-                TitleMarchDir = 0  ' Reverse to left
+        IF PowerUpX = 1 THEN
+            CapsuleColor2 = CapsuleColor2 + 1
+            IF CapsuleColor2 >= 10 THEN
+                PowerUpX = 0  ' Reverse to left
             END IF
         ELSE
-            TitleGridCol = TitleGridCol - 1
-            IF TitleGridCol <= 1 THEN
-                TitleMarchDir = 1  ' Reverse to right
+            CapsuleColor2 = CapsuleColor2 - 1
+            IF CapsuleColor2 <= 1 THEN
+                PowerUpX = 1  ' Reverse to right
             END IF
         END IF
 
@@ -833,31 +813,31 @@ TitleLoop:
     IF TitleMarchX >= 6 THEN
         TitleMarchX = 0
         ' Restore current bolt position to green and clear sparks (if visible)
-        IF TitleJitter < 15 THEN
-            #Card = PEEK($216 + TitleJitter)
-            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0003
-            PRINT AT 2 + TitleJitter, 0    ' Clear spark above
-            PRINT AT 42 + TitleJitter, 0   ' Clear spark below
+        IF FireCooldown < 15 THEN
+            #Card = PEEK($216 + FireCooldown)
+            PRINT AT 22 + FireCooldown, (#Card AND $EFF8) OR $0003
+            PRINT AT 2 + FireCooldown, 0    ' Clear spark above
+            PRINT AT 42 + FireCooldown, 0   ' Clear spark below
         END IF
         ' Advance bolt position
-        TitleJitter = TitleJitter + 1
-        IF TitleJitter >= 20 THEN TitleJitter = 0
+        FireCooldown = FireCooldown + 1
+        IF FireCooldown >= 20 THEN FireCooldown = 0
         ' Set new bolt position to white and place sparks (if visible)
-        IF TitleJitter < 15 THEN
-            #Card = PEEK($216 + TitleJitter)
-            PRINT AT 22 + TitleJitter, (#Card AND $EFF8) OR $0007
+        IF FireCooldown < 15 THEN
+            #Card = PEEK($216 + FireCooldown)
+            PRINT AT 22 + FireCooldown, (#Card AND $EFF8) OR $0007
             ' Grey sparks: color 8 on GRAM = low bits 0 + bit 12 → card*8 + $1800
-            PRINT AT 2 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
-            PRINT AT 42 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
+            PRINT AT 2 + FireCooldown, GRAM_SPARK_UP * 8 + $1800
+            PRINT AT 42 + FireCooldown, GRAM_SPARK_DN * 8 + $1800
         END IF
     END IF
 
     ' Spark 2-frame animation: frame 1 (0-2) → frame 2 (3-5) within each bolt step
-    IF TitleJitter < 15 THEN
+    IF FireCooldown < 15 THEN
         IF TitleMarchX >= 3 THEN
             ' Frame 2: trailing dot position
-            PRINT AT 2 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
-            PRINT AT 42 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
+            PRINT AT 2 + FireCooldown, GRAM_SPARK_UP2 * 8 + $1800
+            PRINT AT 42 + FireCooldown, GRAM_SPARK_DN2 * 8 + $1800
         END IF
     END IF
 
@@ -884,9 +864,9 @@ TitleLoop:
     ' When Zod exits (state 4): rapid flash then disappear
     IF FlyState = 4 THEN
         ' Toggle visible/invisible every 2 frames for rapid blink
-        TitleColor = TitleColor + 1
-        IF TitleColor >= 4 THEN TitleColor = 0
-        IF TitleColor < 2 THEN
+        PowerUpType = PowerUpType + 1
+        IF PowerUpType >= 4 THEN PowerUpType = 0
+        IF PowerUpType < 2 THEN
             ' Visible frame (grey = dim flash)
             PRINT AT 205, GRAM_FONT_P * 8 + $1800
             PRINT AT 206, GRAM_FONT_R * 8 + $1800
@@ -909,48 +889,48 @@ TitleLoop:
 
     ' When Zod is offscreen (state 5): clear text and reset for next cycle
     IF FlyState = 5 THEN
-        IF SlidePos > 0 THEN
+        IF CapsuleFrame > 0 THEN
             FOR LoopVar = 200 TO 219
                 PRINT AT LoopVar, 0
             NEXT LoopVar
-            SlidePos = 0
-            TitleColor = 0
+            CapsuleFrame = 0
+            PowerUpType = 0
             WavePhase = 0
         END IF
         GOTO SkipPressfire
     END IF
 
-    IF SlidePos <= 5 THEN
+    IF CapsuleFrame <= 5 THEN
         ' Slide-in phase: PRESS from left, FIRE from right
-        TitleColor = TitleColor + 1
-        IF TitleColor >= 8 THEN
-            TitleColor = 0
+        PowerUpType = PowerUpType + 1
+        IF PowerUpType >= 8 THEN
+            PowerUpType = 0
             ' Clear row 10
             FOR LoopVar = 200 TO 219
                 PRINT AT LoopVar, 0
             NEXT LoopVar
             ' "PRESS" slides from col 0 to col 5 (white, GRAM)
-            #Card = 200 + SlidePos
+            #Card = 200 + CapsuleFrame
             PRINT AT #Card, GRAM_FONT_P * 8 + COL_WHITE + $0800
             PRINT AT #Card + 1, GRAM_FONT_R * 8 + COL_WHITE + $0800
             PRINT AT #Card + 2, GRAM_FONT_E * 8 + COL_WHITE + $0800
             PRINT AT #Card + 3, GRAM_FONT_S * 8 + COL_WHITE + $0800
             PRINT AT #Card + 4, GRAM_FONT_S * 8 + COL_WHITE + $0800
             ' "FIRE" slides from col 16 to col 11
-            #Card = 216 - SlidePos
+            #Card = 216 - CapsuleFrame
             PRINT AT #Card, GRAM_FONT_F * 8 + COL_WHITE + $0800
             PRINT AT #Card + 1, GRAM_FONT_I * 8 + COL_WHITE + $0800
             PRINT AT #Card + 2, GRAM_FONT_R * 8 + COL_WHITE + $0800
             PRINT AT #Card + 3, GRAM_FONT_E * 8 + COL_WHITE + $0800
-            SlidePos = SlidePos + 1
-            ' Trigger impact shake when words connect (SlidePos just became 6)
-            IF SlidePos = 6 THEN ShakeTimer = 8
+            CapsuleFrame = CapsuleFrame + 1
+            ' Trigger impact shake when words connect (CapsuleFrame just became 6)
+            IF CapsuleFrame = 6 THEN ShakeTimer = 8
         END IF
     ELSE
         ' Shimmer - cycle Grey/White every 12 frames
-        TitleColor = TitleColor + 1
-        IF TitleColor >= 4 THEN
-            TitleColor = 0
+        PowerUpType = PowerUpType + 1
+        IF PowerUpType >= 4 THEN
+            PowerUpType = 0
             WavePhase = WavePhase + 1
             IF WavePhase >= 4 THEN WavePhase = 0
             ' WaveColors: 0=grey (use $1800), 7=white (use $0800+7)
@@ -995,8 +975,8 @@ SkipPressfire:
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 16 THEN
         ShimmerCount = 0
-        TitleFrame = 1 - TitleFrame
-        IF TitleFrame = 0 THEN
+        PowerUpState = 1 - PowerUpState
+        IF PowerUpState = 0 THEN
             DEFINE GRAM_BAND1, 1, Band1Gfx
             WAIT
             DEFINE GRAM_BAND2, 1, Band2Gfx
@@ -1063,7 +1043,10 @@ SkipPressfire:
 
     GOTO TitleLoop
 
-    SEGMENT 1   ' All procedures in Segment 1 (Seg 0 reserved for main code + Intellivoice runtime)
+    ' ============================================================
+    ' SEGMENT 1 — UTILITY & CORE GAMEPLAY PROCEDURES
+    ' ============================================================
+    SEGMENT 1
 
 ' ============================================
 ' UTILITY PROCEDURES (shared code consolidation)
@@ -1104,7 +1087,92 @@ ClearRogueOnly: PROCEDURE
     RETURN
 END
 
-    SEGMENT 3   ' Title animation procedures (Seg 1 near capacity)
+' --- BumpChain: Increment chain combo, update max, reset timeout ---
+BumpChain: PROCEDURE
+    ChainCount = ChainCount + 1
+    IF ChainCount > ChainMax THEN ChainMax = ChainCount
+    IF ChainCount > 50 THEN ChainCount = 50
+    ChainTimeout = 90
+    RETURN
+END
+
+' --- ClearPrevExplosion: Wipe old explosion tile before placing new one ---
+ClearPrevExplosion: PROCEDURE
+    IF ExplosionTimer > 0 THEN
+        IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+    END IF
+    RETURN
+END
+
+' --- ShowChainExplosion: Display explosion with chain-color logic ---
+' Expects: #ExplosionPos already set to desired BACKTAB position
+ShowChainExplosion: PROCEDURE
+    IF #ExplosionPos < 220 THEN
+        IF ChainCount >= 2 THEN
+            ExplosionTimer = 16
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
+        ELSE
+            ExplosionTimer = 15
+            PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+        END IF
+    END IF
+    RETURN
+END
+
+' --- SkullBossGridClear: Remove skull boss from grid (guarded XOR) ---
+' Input: FoundBoss (global). Clobbers: #Mask
+SkullBossGridClear: PROCEDURE
+    #Mask = ColMaskData(BossCol(FoundBoss))
+    IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+        #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+    END IF
+    #Mask = ColMaskData(BossCol(FoundBoss) + 1)
+    IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
+        #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
+    END IF
+    RETURN
+END
+
+' --- SkullBossDeath: Full skull boss death (grid + BACKTAB + score + explosion + SFX) ---
+' Input: FoundBoss (global). Calls: SkullBossGridClear
+SkullBossDeath: PROCEDURE
+    GOSUB SkullBossGridClear
+    #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
+    IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
+    IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
+    #Score = #Score + BOSS_SCORE
+    ExplosionTimer = 20
+    IF #ExplosionPos < 220 THEN
+        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
+    END IF
+    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
+    SOUND 2, 80, 15
+    RETURN
+END
+
+' --- FindBossAtCell: Look up boss at AlienGridRow/AlienGridCol ---
+' Input:  AlienGridRow, AlienGridCol (globals)
+' Output: FoundBoss (0..BossCount-1 if found, 255 if not)
+FindBossAtCell: PROCEDURE
+    FoundBoss = 255
+    IF BossCount > 0 THEN
+        FOR LoopVar = 0 TO BossCount - 1
+            IF BossHP(LoopVar) > 0 THEN
+                IF AlienGridRow = BossRow(LoopVar) THEN
+                    IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
+                        FoundBoss = LoopVar
+                    END IF
+                END IF
+            END IF
+        NEXT LoopVar
+    END IF
+    RETURN
+END
+
+    ' ============================================================
+    ' SEGMENT 3 — TITLE SCREEN ANIMATION
+    ' ============================================================
+    SEGMENT 3
 
 ' --- LoadAnimatedFont: Load 33 frames (3 per letter: full, 60°, edge) ---
 ' Loads frames 1, 3, 4 for each letter (skips frame 2 for smoother 3-step)
@@ -1238,7 +1306,10 @@ GOLetterGram:
 GOLetterStaticGram:
     DATA 37, 27, 38, 29, 40, 41, 29, 33
 
-    SEGMENT 1   ' Back to Segment 1 for remaining procedures
+    ' ============================================================
+    ' SEGMENT 1 (continued) — DRAWING & HUD PROCEDURES
+    ' ============================================================
+    SEGMENT 1
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
@@ -1251,7 +1322,7 @@ DrawAlienGrid: PROCEDURE
     #Mask = (GRAM_BAND2 * 8) + COL_BLUE + $0800
     ' Draw 3 rows of 3 aliens (each alien = 2 cards wide, 1 card gap between)
     FOR LoopVar = 0 TO 2
-        #ScreenPos = (5 + LoopVar) * 20 + TitleGridCol
+        #ScreenPos = (5 + LoopVar) * 20 + CapsuleColor2
         ' Alien 1
         PRINT AT #ScreenPos, #Card
         PRINT AT #ScreenPos + 1, #Mask
@@ -1460,10 +1531,10 @@ StartGame:
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     ShieldHits = 0  ' No shield
-    TitleFrame = 0  ' No power-up drop
+    PowerUpState = 0  ' No power-up drop
     ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=quad(2), 3=mega(1) out of 8
-    TitleColor = PowerUpWeights(RANDOM(8))
-    TitleJitter = 0 ' No fire cooldown
+    PowerUpType = PowerUpWeights(RANDOM(8))
+    FireCooldown = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
     ChainMax = 0    ' Reset best chain for new game
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
@@ -1541,40 +1612,40 @@ GameLoop:
     IF GameOver >= 5 THEN
         ' White bolt sweep across "GAME OVER" text at row 2 (pos 45)
         ' TitleMarchX = frame counter, advance bolt every 6 frames
-        ' TitleJitter = bolt position (0-8 on text, 9-13 gap between sweeps)
+        ' FireCooldown = bolt position (0-8 on text, 9-13 gap between sweeps)
         TitleMarchX = TitleMarchX + 1
         IF TitleMarchX >= 6 THEN
             TitleMarchX = 0
             ' Restore current bolt position to tan and clear sparks
-            IF TitleJitter < 9 THEN
-                #Card = PEEK($22D + TitleJitter)
-                PRINT AT 45 + TitleJitter, (#Card AND $EFF8) OR COL_TAN
-                PRINT AT 25 + TitleJitter, 0     ' Clear spark above (row 1)
-                PRINT AT 65 + TitleJitter, 0     ' Clear spark below (row 3)
+            IF FireCooldown < 9 THEN
+                #Card = PEEK($22D + FireCooldown)
+                PRINT AT 45 + FireCooldown, (#Card AND $EFF8) OR COL_TAN
+                PRINT AT 25 + FireCooldown, 0     ' Clear spark above (row 1)
+                PRINT AT 65 + FireCooldown, 0     ' Clear spark below (row 3)
             END IF
             ' Advance bolt position
-            TitleJitter = TitleJitter + 1
-            IF TitleJitter >= 14 THEN TitleJitter = 0
+            FireCooldown = FireCooldown + 1
+            IF FireCooldown >= 14 THEN FireCooldown = 0
             ' Set new bolt position to white with sparks
-            IF TitleJitter < 9 THEN
-                #Card = PEEK($22D + TitleJitter)
-                PRINT AT 45 + TitleJitter, (#Card AND $EFF8) OR COL_WHITE
-                PRINT AT 25 + TitleJitter, GRAM_SPARK_UP * 8 + $1800
-                PRINT AT 65 + TitleJitter, GRAM_SPARK_DN * 8 + $1800
+            IF FireCooldown < 9 THEN
+                #Card = PEEK($22D + FireCooldown)
+                PRINT AT 45 + FireCooldown, (#Card AND $EFF8) OR COL_WHITE
+                PRINT AT 25 + FireCooldown, GRAM_SPARK_UP * 8 + $1800
+                PRINT AT 65 + FireCooldown, GRAM_SPARK_DN * 8 + $1800
             END IF
         END IF
         ' Spark 2-frame animation: switch to trailing frame at frame 3
-        IF TitleJitter < 9 THEN
+        IF FireCooldown < 9 THEN
             IF TitleMarchX >= 3 THEN
-                PRINT AT 25 + TitleJitter, GRAM_SPARK_UP2 * 8 + $1800
-                PRINT AT 65 + TitleJitter, GRAM_SPARK_DN2 * 8 + $1800
+                PRINT AT 25 + FireCooldown, GRAM_SPARK_UP2 * 8 + $1800
+                PRINT AT 65 + FireCooldown, GRAM_SPARK_DN2 * 8 + $1800
             END IF
         END IF
 
         ' "PRESS FIRE" shimmer: alternate white/tan every 4 frames
-        TitleColor = TitleColor + 1
-        IF TitleColor >= 4 THEN
-            TitleColor = 0
+        PowerUpType = PowerUpType + 1
+        IF PowerUpType >= 4 THEN
+            PowerUpType = 0
             WavePhase = WavePhase + 1
             IF WavePhase >= 4 THEN WavePhase = 0
             IF WaveColors(WavePhase) = 0 THEN
@@ -1633,13 +1704,12 @@ GameLoop:
     END IF
 
     ' Animate alien walk frames independently (every 16 frames)
-    ' Reuse HitCol as dirty flag (avoids new variable, gets reset later anyway)
-    HitCol = 0
+    NeedRedraw = 0
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 16 THEN
         ShimmerCount = 0
         AnimFrame = AnimFrame XOR 1
-        HitCol = 1  ' Animation changed, need redraw
+        NeedRedraw = 1  ' Animation changed, need redraw
     END IF
 
     ' Advance wave reveal
@@ -1648,7 +1718,7 @@ GameLoop:
         ' WaveRevealRow = rows still hidden above (counts DOWN to 0)
         IF WaveRevealRow > 0 THEN
             WaveRevealRow = WaveRevealRow - 1
-            HitCol = 1  ' Descent continues, redraw needed
+            NeedRedraw = 1  ' Descent continues, redraw needed
             IF WaveRevealRow = 0 THEN
                 ' Descent complete, clear flag and wipe ghost trails
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_FLYDOWN)
@@ -1671,7 +1741,7 @@ GameLoop:
                 MarchCount = 0
                 WaveRevealRow = WaveRevealRow + 1
             END IF
-            HitCol = 1  ' Warp animation needs redraw every frame
+            NeedRedraw = 1  ' Warp animation needs redraw every frame
         END IF
     ELSEIF (#GameFlags AND FLAG_REVEAL) = 0 THEN
         ' Standard left-to-right reveal with warp-in animation
@@ -1682,7 +1752,7 @@ GameLoop:
                 MarchCount = 0
                 WaveRevealCol = WaveRevealCol + 1
             END IF
-            HitCol = 1  ' Warp animation needs redraw every frame
+            NeedRedraw = 1  ' Warp animation needs redraw every frame
         END IF
     ELSE
         ' Dual-slide mode (Pattern B) - halves fly in from screen edges
@@ -1703,22 +1773,22 @@ GameLoop:
                 END IF
             NEXT ClearRow
         END IF
-        HitCol = 1  ' Pattern B always redraws during slide-in
+        NeedRedraw = 1  ' Pattern B always redraws during slide-in
     END IF
 
     ' Single DrawAliens call per frame (if needed)
-    IF HitCol THEN GOSUB DrawAliens
+    IF NeedRedraw THEN GOSUB DrawAliens
     ' Orbiter draws on top of grid (after DrawAliens clears empty cells)
     IF OrbitStep < 10 OR OrbitStep2 < 10 THEN GOSUB UpdateOrbiter
 
     ' Check if reveal is complete (all entrance animations done)
-    HitCol = 0
+    NeedRedraw = 0
     IF WaveRevealCol >= ALIEN_COLS - 1 THEN
-        IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN HitCol = 1
+        IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN NeedRedraw = 1
     END IF
 
     ' Update alien march (only after reveal is complete, and not during death)
-    IF HitCol THEN
+    IF NeedRedraw THEN
     IF DeathTimer = 0 THEN
     MarchCount = MarchCount + 1
     IF MarchCount >= CurrentMarchSpeed THEN
@@ -1755,7 +1825,7 @@ GameLoop:
                     SPRITE SPR_ABULLET, 0, 0, 0
                     SPRITE SPR_FLYER, 0, 0, 0
                     SPRITE SPR_POWERUP, 0, 0, 0
-                    TitleFrame = 0  ' Cancel any falling/landed capsule
+                    PowerUpState = 0  ' Cancel any falling/landed capsule
                     IF Lives = 0 THEN
                         ' No lives left — game over
                         GameOver = 3
@@ -1953,26 +2023,13 @@ ChainDone:
                             SPRITE SPR_FLYER, 0, 0, 0
                             #Score = #Score + 50
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            ChainCount = ChainCount + 1
-                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                            IF ChainCount > 50 THEN ChainCount = 50
-                            ChainTimeout = 90
+                            GOSUB BumpChain
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
                             SOUND 2, 180, 14
                             ' Show explosion at rogue position
-                            IF ExplosionTimer > 0 THEN
-                                IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                            END IF
+                            GOSUB ClearPrevExplosion
                             #ExplosionPos = (RogueY - 8) / 8 * 20 + (RogueX - 8) / 8
-                            IF #ExplosionPos < 220 THEN
-                                IF ChainCount >= 2 THEN
-                                    ExplosionTimer = 16
-                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
-                                ELSE
-                                    ExplosionTimer = 15
-                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
-                                END IF
-                            END IF
+                            GOSUB ShowChainExplosion
                         END IF
                     END IF
                 END IF
@@ -1995,7 +2052,7 @@ ChainDone:
                 ' Clear wingman and any active capsule (dies with player)
                 #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                 SPRITE SPR_POWERUP, 0, 0, 0
-                TitleFrame = 0  ' Cancel any falling/landed capsule
+                PowerUpState = 0  ' Cancel any falling/landed capsule
                 ' Rogue: if diving, let it complete escape animation; otherwise clear it
                 IF RogueState <> ROGUE_DIVE THEN
                     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
@@ -2154,10 +2211,10 @@ ChainDone:
                     VOICE PLAY game_over_phrase
                 END IF
                 ' Initialize bolt sweep effect
-                TitleJitter = 0
+                FireCooldown = 0   ' [game-over: bolt sweep position 0-8=text, 9-13=gap]
                 TitleMarchX = 0
                 WavePhase = 0
-                TitleColor = 0
+                PowerUpType = 0    ' [game-over: PRESS FIRE shimmer counter]
                 ' Initialize Zod via flight engine (sweep in from right)
                 FlyX = 168 : FlyY = 1
                 FlyFrame = 0 : FlyColor = COL_WHITE
@@ -2190,8 +2247,8 @@ ChainDone:
     ' Tick down power-up timers
     ' Beam, Rapid, Dual persist until death (no countdown)
     ' Only MegaTimer counts down (5-second window)
-    IF TitleJitter > 0 THEN
-        TitleJitter = TitleJitter - 1
+    IF FireCooldown > 0 THEN
+        FireCooldown = FireCooldown - 1
     END IF
     IF #MegaTimer > 0 THEN
         #MegaTimer = #MegaTimer - 1
@@ -2430,7 +2487,7 @@ MovePlayer: PROCEDURE
         ELSE
             ' Normal/beam/rapid: single center shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
-                IF TitleJitter = 0 THEN
+                IF FireCooldown = 0 THEN
                     ' Beam drawn at BulletX-3, normal drawn at BulletX
                     IF BeamTimer > 0 THEN
                         BulletX = PlayerX + 3  ' Beam: offset for -3 draw adjustment
@@ -2458,7 +2515,7 @@ MovePlayer: PROCEDURE
                         SOUND 2, 150, 14
                     END IF
                     IF RapidTimer > 0 THEN
-                        TitleJitter = RAPID_COOLDOWN
+                        FireCooldown = RAPID_COOLDOWN
                     END IF
                 END IF
             END IF
@@ -2698,19 +2755,14 @@ END
 OrbiterHitEffect: PROCEDURE
     #ScreenPos = HitRow * 20 + HitCol
     IF #ScreenPos < 220 THEN
-        IF ExplosionTimer > 0 THEN
-            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-        END IF
+        GOSUB ClearPrevExplosion
         #ExplosionPos = #ScreenPos
         ExplosionTimer = 15
         PRINT AT #ScreenPos, GRAM_EXPLOSION * 8 + 4 + $1800
     END IF
     #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
     #GameFlags = #GameFlags OR FLAG_SHOTLAND
-    ChainCount = ChainCount + 1
-    IF ChainCount > ChainMax THEN ChainMax = ChainCount
-    IF ChainCount > 50 THEN ChainCount = 50
-    ChainTimeout = 90
+    GOSUB BumpChain
     #Score = #Score + 25
     SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
     SOUND 2, 200, 12
@@ -2820,7 +2872,10 @@ BombExplode: PROCEDURE
     RETURN
 END
 
-    SEGMENT 2   ' Move CheckOneColumn+ to Segment 2 (Seg 1 full after Phase B)
+    ' ============================================================
+    ' SEGMENT 2 — COLLISION LOGIC & ALIEN DRAWING
+    ' ============================================================
+    SEGMENT 2
 
 ' --------------------------------------------
 ' CheckOneColumn - Check single column for alien hit
@@ -2838,27 +2893,8 @@ CheckOneColumn: PROCEDURE
             #Mask = ColMaskData(AlienGridCol)
 
             IF #AlienRow(AlienGridRow) AND #Mask THEN
-                ' Multi-boss intercept (inlined FindBoss for speed)
-                FoundBoss = 255
-                IF BossCount > 0 THEN
-                    FOR LoopVar = 0 TO BossCount - 1
-                        IF BossHP(LoopVar) > 0 THEN
-                            IF BossType(LoopVar) = GIANT_TYPE THEN
-                                IF AlienGridRow >= BossRow(LoopVar) AND AlienGridRow <= BossRow(LoopVar) + 3 THEN
-                                    IF AlienGridCol >= BossCol(LoopVar) AND AlienGridCol <= BossCol(LoopVar) + 3 THEN
-                                        FoundBoss = LoopVar
-                                    END IF
-                                END IF
-                            ELSE
-                                IF AlienGridRow = BossRow(LoopVar) THEN
-                                    IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
-                                        FoundBoss = LoopVar
-                                    END IF
-                                END IF
-                            END IF
-                        END IF
-                    NEXT LoopVar
-                END IF
+                ' Multi-boss intercept
+                GOSUB FindBossAtCell
                 IF FoundBoss < 255 THEN
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                     ' Beam: apply second hit to same boss if budget remains
@@ -2883,59 +2919,23 @@ CheckOneColumn: PROCEDURE
                         RETURN
                     ELSE
                         ' Boss dead! Check type
-                        IF BossType(FoundBoss) = GIANT_TYPE THEN
-                            GOSUB GiantBossDeath
-                            IF BeamTimer = 0 OR BeamHits = 0 THEN
-                                #GameFlags = #GameFlags AND $FFFE
-                            END IF
-                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            ChainCount = ChainCount + 1
-                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                            IF ChainCount > 50 THEN ChainCount = 50
-                            ChainTimeout = 90
-                            RETURN
-                        ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+                        IF BossType(FoundBoss) = BOMB_TYPE THEN
                             ' Bomb alien — chain explosion!
                             IF BeamTimer = 0 OR BeamHits = 0 THEN
                                 #GameFlags = #GameFlags AND $FFFE
                             END IF
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            ChainCount = ChainCount + 1  ' Bomb kill counts!
-                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                            IF ChainCount > 50 THEN ChainCount = 50
-                            ChainTimeout = 90
+                            GOSUB BumpChain
                             GOSUB BombExplode
                             RETURN
                         ELSE
-                            ' Skull boss dead! Clear BOTH columns (guarded to prevent resurrection)
-                            #Mask = ColMaskData(BossCol(FoundBoss))
-                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                            END IF
-                            #Mask = ColMaskData(BossCol(FoundBoss) + 1)
-                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                            END IF
-                            ' Clear both BACKTAB tiles
-                            #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
-                            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                            IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
-                            ' Big score + explosion
-                            #Score = #Score + BOSS_SCORE
+                            ' Skull boss dead!
                             IF BeamTimer = 0 OR BeamHits = 0 THEN
                                 #GameFlags = #GameFlags AND $FFFE
                             END IF
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            ChainCount = ChainCount + 1  ' Skull boss kill counts!
-                            IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                            IF ChainCount > 50 THEN ChainCount = 50
-                            ChainTimeout = 90
-                            ExplosionTimer = 20
-                            IF #ExplosionPos < 220 THEN
-                                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
-                            END IF
-                            SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
-                            SOUND 2, 80, 15
+                            GOSUB BumpChain
+                            GOSUB SkullBossDeath
                             RETURN
                         END IF
                     END IF
@@ -2954,10 +2954,7 @@ CheckOneColumn: PROCEDURE
 
                 ' Chain combo scoring: 10, 20, 30, 40, 50 (bonus capped at 50)
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                ChainCount = ChainCount + 1
-                IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                IF ChainCount > 50 THEN ChainCount = 50
-                ChainTimeout = 90
+                GOSUB BumpChain
                 ' Bonus caps at 50 points (chain 5+), but chain counter keeps growing for display
                 IF ChainCount <= 5 THEN
                     #Score = #Score + ChainCount * 10
@@ -2970,20 +2967,10 @@ CheckOneColumn: PROCEDURE
                 SOUND 2, 200, 12  ' Immediate tone hit on channel 3
 
                 ' Clear previous explosion tile if still active
-                IF ExplosionTimer > 0 THEN
-                    IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                END IF
+                GOSUB ClearPrevExplosion
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
-                IF #ExplosionPos < 220 THEN
-                    IF ChainCount >= 2 THEN
-                        ExplosionTimer = 16
-                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
-                    ELSE
-                        ExplosionTimer = 15
-                        PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
-                    END IF
-                END IF
+                GOSUB ShowChainExplosion
             END IF
         END IF
     END IF
@@ -3656,17 +3643,9 @@ MegaBeamKill: PROCEDURE
                             IF BossCount > 0 THEN
                                 FOR Row = 0 TO BossCount - 1
                                     IF BossHP(Row) > 0 THEN
-                                        IF BossType(Row) = GIANT_TYPE THEN
-                                            IF AlienGridRow >= BossRow(Row) AND AlienGridRow <= BossRow(Row) + 3 THEN
-                                                IF AlienGridCol >= BossCol(Row) AND AlienGridCol <= BossCol(Row) + 3 THEN
-                                                    FoundBoss = Row
-                                                END IF
-                                            END IF
-                                        ELSE
-                                            IF AlienGridRow = BossRow(Row) THEN
-                                                IF AlienGridCol = BossCol(Row) OR AlienGridCol = BossCol(Row) + 1 THEN
-                                                    FoundBoss = Row
-                                                END IF
+                                        IF AlienGridRow = BossRow(Row) THEN
+                                            IF AlienGridCol = BossCol(Row) OR AlienGridCol = BossCol(Row) + 1 THEN
+                                                FoundBoss = Row
                                             END IF
                                         END IF
                                     END IF
@@ -3681,21 +3660,12 @@ MegaBeamKill: PROCEDURE
                                         GOSUB UpdateBossColor
                                     ELSE
                                         ' Boss dead! Check type
-                                        IF BossType(FoundBoss) = GIANT_TYPE THEN
-                                            GOSUB GiantBossDeath
-                                        ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+                                        IF BossType(FoundBoss) = BOMB_TYPE THEN
                                             ' Bomb alien — chain explosion!
                                             GOSUB BombExplode
                                         ELSE
-                                            ' Skull boss dead! Clear both columns (guarded)
-                                            #Mask = ColMaskData(BossCol(FoundBoss))
-                                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                                            END IF
-                                            #Mask = ColMaskData(BossCol(FoundBoss) + 1)
-                                            IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                                                #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                                            END IF
+                                            ' Skull boss dead!
+                                            GOSUB SkullBossGridClear
                                             #Score = #Score + BOSS_SCORE
                                         END IF
                                         ' Restore #Mask for current column iteration
@@ -3705,10 +3675,7 @@ MegaBeamKill: PROCEDURE
                             ELSE
                                 ' Normal alien kill
                                 #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
-                                ChainCount = ChainCount + 1
-                                IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                                IF ChainCount > 50 THEN ChainCount = 50
-                                ChainTimeout = 90
+                                GOSUB BumpChain
                                 IF ChainCount > 5 THEN
                                     #Score = #Score + 50
                                 ELSE
@@ -3716,13 +3683,7 @@ MegaBeamKill: PROCEDURE
                                 END IF
                             END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
-                            IF #ExplosionPos < 220 THEN
-                                IF ChainCount >= 2 THEN
-                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_WHITE + $0800
-                                ELSE
-                                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
-                                END IF
-                            END IF
+                            GOSUB ShowChainExplosion
                         END IF
                     NEXT LoopVar
                     IF ChainCount >= 2 THEN ExplosionTimer = 16 ELSE ExplosionTimer = 15
@@ -3742,14 +3703,12 @@ MegaBeamKill: PROCEDURE
                 SOUND 2, 150, 15
                 #Score = #Score + 100
                 ' Drop power-up from saucer position
-                TitleFrame = 1
-                TitleMarchDir = FlyX
+                PowerUpState = 1
+                PowerUpX = FlyX
                 PowerUpY = FlyY
-                SlidePos = 0
+                CapsuleFrame = 0
                 ' Clear previous explosion tile if still active
-                IF ExplosionTimer > 0 THEN
-                    IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                END IF
+                GOSUB ClearPrevExplosion
                 #ExplosionPos = FlyX / 8
                 ExplosionTimer = 15
                 PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
@@ -3768,10 +3727,7 @@ MegaBeamKill: PROCEDURE
                 SPRITE SPR_FLYER, 0, 0, 0
                 #Score = #Score + 50
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                ChainCount = ChainCount + 1
-                IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                IF ChainCount > 50 THEN ChainCount = 50
-                ChainTimeout = 90
+                GOSUB BumpChain
                 SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
                 SOUND 2, 180, 14
             END IF
@@ -3805,44 +3761,44 @@ END
 ' UpdatePowerUp - Handle falling/landed power-up capsule
 ' --------------------------------------------
 UpdatePowerUp: PROCEDURE
-    IF TitleFrame = 0 THEN RETURN
+    IF PowerUpState = 0 THEN RETURN
 
     ' Set capsule flash colors based on power-up type
-    ' Reuse TitleGridCol/TitleMarchCount as temp color vars
-    IF TitleColor = 0 THEN
-        TitleGridCol = COL_BLUE      ' Beam: blue/white
-        TitleMarchCount = COL_WHITE
-    ELSEIF TitleColor = 1 THEN
-        TitleGridCol = COL_YELLOW    ' Rapid: yellow/green
-        TitleMarchCount = COL_GREEN
-    ELSEIF TitleColor = 2 THEN
-        TitleGridCol = COL_WHITE     ' Dual: white/tan
-        TitleMarchCount = COL_TAN
-    ELSEIF TitleColor = 3 THEN
-        TitleGridCol = COL_RED       ' Mega: red/tan
-        TitleMarchCount = COL_TAN
+    ' Reuse CapsuleColor2/CapsuleColor1 as temp color vars
+    IF PowerUpType = 0 THEN
+        CapsuleColor2 = COL_BLUE      ' Beam: blue/white
+        CapsuleColor1 = COL_WHITE
+    ELSEIF PowerUpType = 1 THEN
+        CapsuleColor2 = COL_YELLOW    ' Rapid: yellow/green
+        CapsuleColor1 = COL_GREEN
+    ELSEIF PowerUpType = 2 THEN
+        CapsuleColor2 = COL_WHITE     ' Dual: white/tan
+        CapsuleColor1 = COL_TAN
+    ELSEIF PowerUpType = 3 THEN
+        CapsuleColor2 = COL_RED       ' Mega: red/tan
+        CapsuleColor1 = COL_TAN
     ELSE
-        TitleGridCol = COL_CYAN      ' Shield: cyan/blue
-        TitleMarchCount = COL_BLUE
+        CapsuleColor2 = COL_CYAN      ' Shield: cyan/blue
+        CapsuleColor1 = COL_BLUE
     END IF
 
-    IF TitleFrame = 1 THEN
+    IF PowerUpState = 1 THEN
         ' Falling: move down 2px per frame
         PowerUpY = PowerUpY + 2
         IF PowerUpY >= PLAYER_Y THEN
             ' Landed at player level
             PowerUpY = PLAYER_Y
-            TitleFrame = 2
+            PowerUpState = 2
             #PowerTimer = 300   ' 5 seconds to pick up
-            SlidePos = 0
+            CapsuleFrame = 0
         END IF
         ' Draw falling capsule (animated frame + color flash)
-        SlidePos = SlidePos + 1
-        IF SlidePos >= 8 THEN SlidePos = 0
-        IF SlidePos < 4 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
+        CapsuleFrame = CapsuleFrame + 1
+        IF CapsuleFrame >= 8 THEN CapsuleFrame = 0
+        IF CapsuleFrame < 4 THEN
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PowerUpY, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor2 + $0800
         ELSE
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PowerUpY, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PowerUpY, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor1 + $0800
         END IF
         RETURN
     END IF
@@ -3852,22 +3808,22 @@ UpdatePowerUp: PROCEDURE
 
     ' Check pickup: player X overlaps power-up X (within ±12px)
     IF DeathTimer = 0 THEN
-        IF PlayerX >= TitleMarchDir - 12 THEN
-            IF PlayerX <= TitleMarchDir + 12 THEN
+        IF PlayerX >= PowerUpX - 12 THEN
+            IF PlayerX <= PowerUpX + 12 THEN
                 ' Picked up! Activate power-up based on type
-                IF TitleColor = 0 THEN
+                IF PowerUpType = 0 THEN
                     BeamTimer = 1
                     RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
-                ELSEIF TitleColor = 1 THEN
+                ELSEIF PowerUpType = 1 THEN
                     RapidTimer = 1
                     BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
-                ELSEIF TitleColor = 2 THEN
+                ELSEIF PowerUpType = 2 THEN
                     #GameFlags = #GameFlags OR FLAG_DUAL
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
-                ELSEIF TitleColor = 3 THEN
+                ELSEIF PowerUpType = 3 THEN
                     #MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
@@ -3876,7 +3832,7 @@ UpdatePowerUp: PROCEDURE
                     ShieldHits = 2
                     IF VOICE.AVAILABLE THEN VOICE PLAY shield_phrase
                 END IF
-                TitleFrame = 0
+                PowerUpState = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
                 ' Clear tutorial message if showing
                 IF TutorialTimer > 0 THEN
@@ -3886,7 +3842,7 @@ UpdatePowerUp: PROCEDURE
                     END IF
                 END IF
                 ' Weighted random next power-up type
-                TitleColor = PowerUpWeights(RANDOM(8))
+                PowerUpType = PowerUpWeights(RANDOM(8))
                 RETURN
             END IF
         END IF
@@ -3894,7 +3850,7 @@ UpdatePowerUp: PROCEDURE
 
     ' Check timeout
     IF #PowerTimer = 0 THEN
-        TitleFrame = 0
+        PowerUpState = 0
         SPRITE SPR_POWERUP, 0, 0, 0
         ' Clear tutorial message if showing
         IF TutorialTimer > 0 THEN
@@ -3907,25 +3863,25 @@ UpdatePowerUp: PROCEDURE
     END IF
 
     ' Draw landed capsule with flash effect + animated frame
-    SlidePos = SlidePos + 1
-    IF SlidePos >= 8 THEN SlidePos = 0
+    CapsuleFrame = CapsuleFrame + 1
+    IF CapsuleFrame >= 8 THEN CapsuleFrame = 0
     IF #PowerTimer < 100 THEN
         ' Rapid flash in last ~1.7 seconds (every 2 frames)
-        IF SlidePos < 2 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
-        ELSEIF SlidePos < 4 THEN
+        IF CapsuleFrame < 2 THEN
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PLAYER_Y, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor2 + $0800
+        ELSEIF CapsuleFrame < 4 THEN
             SPRITE SPR_POWERUP, 0, 0, 0  ' Invisible
-        ELSEIF SlidePos < 6 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
+        ELSEIF CapsuleFrame < 6 THEN
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PLAYER_Y, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor1 + $0800
         ELSE
             SPRITE SPR_POWERUP, 0, 0, 0  ' Invisible
         END IF
     ELSE
         ' Normal flash (animated frame + color cycle)
-        IF SlidePos < 4 THEN
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleGridCol + $0800
+        IF CapsuleFrame < 4 THEN
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PLAYER_Y, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor2 + $0800
         ELSE
-            SPRITE SPR_POWERUP, TitleMarchDir + $0200, PLAYER_Y, (GRAM_CAP_F1 + SlidePos / 2) * 8 + TitleMarchCount + $0800
+            SPRITE SPR_POWERUP, PowerUpX + $0200, PLAYER_Y, (GRAM_CAP_F1 + CapsuleFrame / 2) * 8 + CapsuleColor1 + $0800
         END IF
     END IF
     RETURN
@@ -3938,26 +3894,7 @@ END
 ' Uses: HitCol (temp for bomb flash color)
 ' --------------------------------------------
 ComputeBossCard: PROCEDURE
-    IF BossType(FoundBoss) = GIANT_TYPE THEN
-        ' Giant boss: look up card from 4×4 layout table
-        ' Row and Col are set by DrawAliens outer/inner loops
-        HitRow = (Row - BossRow(FoundBoss)) * 4 + (Col - BossCol(FoundBoss))
-        HitRow = GiantCardLayout(HitRow)
-        IF HitRow = 255 THEN
-            #Card = 0   ' Blank corner — render as empty
-        ELSE
-            ' Build GRAM card with boss color + flash at low HP
-            HitCol = BossColor(FoundBoss)
-            IF BossHP(FoundBoss) <= 2 THEN
-                IF ShimmerCount AND 4 THEN HitCol = COL_WHITE ELSE HitCol = COL_RED
-            END IF
-            IF HitCol >= 8 THEN
-                #Card = HitRow * 8 + (HitCol AND 7) + $1800
-            ELSE
-                #Card = HitRow * 8 + HitCol + $0800
-            END IF
-        END IF
-    ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+    IF BossType(FoundBoss) = BOMB_TYPE THEN
         ' Bomb alien: use BossColor, flash red/white at HP=1
         HitCol = BossColor(FoundBoss)
         IF BossHP(FoundBoss) = 1 THEN
@@ -4064,14 +4001,8 @@ DrawAliens: PROCEDURE
         IF BossCount > 0 THEN
             FOR LoopVar = 0 TO BossCount - 1
                 IF BossHP(LoopVar) > 0 THEN
-                    IF BossType(LoopVar) = GIANT_TYPE THEN
-                        IF Row >= BossRow(LoopVar) AND Row <= BossRow(LoopVar) + 3 THEN
-                            IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
-                        END IF
-                    ELSE
-                        IF Row = BossRow(LoopVar) THEN
-                            IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
-                        END IF
+                    IF Row = BossRow(LoopVar) THEN
+                        IF RowBoss1 = 255 THEN RowBoss1 = LoopVar ELSE RowBoss2 = LoopVar
                     END IF
                 END IF
             NEXT LoopVar
@@ -4097,17 +4028,9 @@ DrawAliens: PROCEDURE
                     ' Check for boss in dual-reveal mode (inline)
                     FoundBoss = 255
                     IF RowBoss1 < 255 THEN
-                        IF BossType(RowBoss1) = GIANT_TYPE THEN
-                            IF Col >= BossCol(RowBoss1) AND Col <= BossCol(RowBoss1) + 3 THEN FoundBoss = RowBoss1
-                        ELSE
-                            IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
-                        END IF
+                        IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
                         IF FoundBoss = 255 AND RowBoss2 < 255 THEN
-                            IF BossType(RowBoss2) = GIANT_TYPE THEN
-                                IF Col >= BossCol(RowBoss2) AND Col <= BossCol(RowBoss2) + 3 THEN FoundBoss = RowBoss2
-                            ELSE
-                                IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
-                            END IF
+                            IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
                         END IF
                     END IF
                     IF FoundBoss < 255 THEN GOSUB ComputeBossCard
@@ -4141,17 +4064,9 @@ DrawAliens: PROCEDURE
                         ' Check if this cell is a boss (inline)
                         FoundBoss = 255
                         IF RowBoss1 < 255 THEN
-                            IF BossType(RowBoss1) = GIANT_TYPE THEN
-                                IF Col >= BossCol(RowBoss1) AND Col <= BossCol(RowBoss1) + 3 THEN FoundBoss = RowBoss1
-                            ELSE
-                                IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
-                            END IF
+                            IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
                             IF FoundBoss = 255 AND RowBoss2 < 255 THEN
-                                IF BossType(RowBoss2) = GIANT_TYPE THEN
-                                    IF Col >= BossCol(RowBoss2) AND Col <= BossCol(RowBoss2) + 3 THEN FoundBoss = RowBoss2
-                                ELSE
-                                    IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
-                                END IF
+                                IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
                             END IF
                         END IF
                         IF FoundBoss < 255 THEN
@@ -4220,7 +4135,7 @@ LoadPatternB: PROCEDURE
     SPRITE SPR_SAUCER2, 0, 0, 0
     FlyState = 0
     #FlyPhase = 0
-    TitleFrame = 0
+    PowerUpState = 0
     ' Hide capsule sprite if no wingman using it
     IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
 
@@ -4240,17 +4155,6 @@ LoadPatternB: PROCEDURE
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = PatternBData(Col + LoopVar)
     NEXT LoopVar
-
-    ' Restore skull/bomb GRAM if previous wave had giant boss
-    IF BossType(0) = GIANT_TYPE AND BossCount > 0 THEN
-        DEFINE GRAM_BAND1, 1, Band1Gfx : WAIT
-        DEFINE GRAM_BAND2, 1, Band2Gfx : WAIT
-        DEFINE GRAM_BAND1_F1, 1, Band1F1Gfx : WAIT
-        DEFINE GRAM_BAND2_F1, 1, Band2F1Gfx : WAIT
-        DEFINE GRAM_BOMB1, 2, SquidLeftF1Gfx : WAIT
-        DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx : WAIT
-        DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx : WAIT
-    END IF
 
     ' Clear all boss slots
     FOR LoopVar = 0 TO MAX_BOSSES - 1
@@ -4312,17 +4216,12 @@ LoadPatternB: PROCEDURE
         BossCol(0) = 4 : BossRow(0) = 2
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
     ELSEIF LoopVar = 7 THEN
-        ' Wave 8: GIANT BOSS — first encounter
-        ' Override grid: escorts around boss area (boss cells added by force-set)
-        #AlienRow(0) = $103 : #AlienRow(1) = $103
-        #AlienRow(2) = $103 : #AlienRow(3) = $103
-        #AlienRow(4) = $1FF
-        BossCount = 1
-        BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = 8 : BossColor(0) = 9 : BossType(0) = GIANT_TYPE
-        ' Load giant boss GRAM (redefine skull + bomb slots)
-        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
-        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
+        ' Wave 8: 2 skull bosses
+        BossCount = 2
+        BossCol(0) = 1 : BossRow(0) = 1
+        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 6 : BossRow(1) = 3
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ' ── Waves 9-16 ──
     ' Wave 9 (LoopVar=8): no bosses
     ELSEIF LoopVar = 9 THEN
@@ -4357,15 +4256,12 @@ LoadPatternB: PROCEDURE
         BossCol(0) = 3 : BossRow(0) = 0
         BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
     ELSEIF LoopVar = 15 THEN
-        ' Wave 16: GIANT BOSS — harder
-        #AlienRow(0) = $103 : #AlienRow(1) = $103
-        #AlienRow(2) = $103 : #AlienRow(3) = $103
-        #AlienRow(4) = $1FF
-        BossCount = 1
-        BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = 12 : BossColor(0) = 10 : BossType(0) = GIANT_TYPE
-        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
-        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
+        ' Wave 16: 1 bomb + 1 skull
+        BossCount = 2
+        BossCol(0) = 3 : BossRow(0) = 1
+        BossHP(0) = 4 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        BossCol(1) = 6 : BossRow(1) = 3
+        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ' ── Waves 17-24: Harder ──
     ELSEIF LoopVar = 16 THEN
         ' Wave 17: 3 skulls
@@ -4423,15 +4319,14 @@ LoadPatternB: PROCEDURE
         OrbitStep = 0
     ' Wave 23 (LoopVar=22): no bosses (breather)
     ELSEIF LoopVar = 23 THEN
-        ' Wave 24: GIANT BOSS — menacing
-        #AlienRow(0) = $103 : #AlienRow(1) = $103
-        #AlienRow(2) = $103 : #AlienRow(3) = $103
-        #AlienRow(4) = $1FF
-        BossCount = 1
-        BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = 16 : BossColor(0) = 12 : BossType(0) = GIANT_TYPE
-        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
-        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
+        ' Wave 24: 2 bombs w/ orbiters
+        BossCount = 2
+        BossCol(0) = 2 : BossRow(0) = 1
+        BossHP(0) = 5 : BossColor(0) = 12 : BossType(0) = BOMB_TYPE
+        OrbitStep = 0
+        BossCol(1) = 6 : BossRow(1) = 3
+        BossHP(1) = 5 : BossColor(1) = 12 : BossType(1) = BOMB_TYPE
+        OrbitStep2 = 5
     ' ── Waves 25-32: Endgame gauntlet ──
     ELSEIF LoopVar = 24 THEN
         ' Wave 25: 4 bosses — 1 bomb w/ orbiter + 3 skulls
@@ -4502,15 +4397,14 @@ LoadPatternB: PROCEDURE
         OrbitStep = 0
         OrbitStep2 = 5
     ELSEIF LoopVar = 31 THEN
-        ' Wave 32: GIANT BOSS — final boss
-        #AlienRow(0) = $103 : #AlienRow(1) = $103
-        #AlienRow(2) = $103 : #AlienRow(3) = $103
-        #AlienRow(4) = $1FF
-        BossCount = 1
-        BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = 20 : BossColor(0) = 15 : BossType(0) = GIANT_TYPE
-        DEFINE GRAM_BAND1, 4, GiantBossGfxTop : WAIT
-        DEFINE GRAM_BOMB1, 4, GiantBossGfxBot : WAIT
+        ' Wave 32: 3 skull bosses
+        BossCount = 3
+        BossCol(0) = 1 : BossRow(0) = 0
+        BossHP(0) = 4 : BossColor(0) = 15 : BossType(0) = SKULL_TYPE
+        BossCol(1) = 4 : BossRow(1) = 2
+        BossHP(1) = 4 : BossColor(1) = 15 : BossType(1) = SKULL_TYPE
+        BossCol(2) = 7 : BossRow(2) = 4
+        BossHP(2) = 4 : BossColor(2) = 15 : BossType(2) = SKULL_TYPE
     END IF
 
     ' ── END Boss Placement ──
@@ -4519,24 +4413,9 @@ LoadPatternB: PROCEDURE
     ' Without this, XOR on death resurrects dead cells → "ghost alien" bug
     IF BossCount > 0 THEN
         FOR LoopVar = 0 TO BossCount - 1
-            IF BossType(LoopVar) = GIANT_TYPE THEN
-                ' Giant boss: set all filled cells in 4×4 layout
-                FOR Row = 0 TO 3
-                    IF BossRow(LoopVar) + Row < ALIEN_ROWS THEN
-                        FOR Col = 0 TO 3
-                            IF GiantCardLayout(Row * 4 + Col) < 255 THEN
-                                IF BossCol(LoopVar) + Col < ALIEN_COLS THEN
-                                    #AlienRow(BossRow(LoopVar) + Row) = #AlienRow(BossRow(LoopVar) + Row) OR ColMaskData(BossCol(LoopVar) + Col)
-                                END IF
-                            END IF
-                        NEXT Col
-                    END IF
-                NEXT Row
-            ELSE
-                ' Skull/bomb: set 2-wide columns
-                #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar))
-                #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar) + 1)
-            END IF
+            ' Skull/bomb: set 2-wide columns
+            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar))
+            #AlienRow(BossRow(LoopVar)) = #AlienRow(BossRow(LoopVar)) OR ColMaskData(BossCol(LoopVar) + 1)
         NEXT LoopVar
     END IF
 
@@ -4663,7 +4542,7 @@ ReloadHorde: PROCEDURE
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
-    TitleFrame = 0
+    PowerUpState = 0
     ' Reset alien grid to full
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = $1FF
@@ -4686,7 +4565,7 @@ ReloadHorde: PROCEDURE
     WaveRevealCol = ALIEN_COLS - 1
     WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
     RightRevealCol = ALIEN_COLS - 1
-    HitCol = 0  ' Reset reveal-complete gate
+    NeedRedraw = 0  ' Reset reveal-complete gate
     ' Announcement: "INCOMING HORDE!" — rapid flash + Intellivoice
     IF VOICE.AVAILABLE THEN
         VOICE PLAY reinforce_phrase
@@ -4775,10 +4654,10 @@ StartNewWave: PROCEDURE
     SPRITE SPR_SAUCER2, 0, 0, 0
     FlyState = 0
     #FlyPhase = 0
-    TitleFrame = 0
+    PowerUpState = 0
     ' Hide capsule sprite if no wingman using it
     IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
-    TitleJitter = 0
+    FireCooldown = 0
     WaveRevealRow = 0
     #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL
     LoopVar = Level - 1
@@ -5006,7 +4885,7 @@ reinforce_phrase:
     VOICE IH, NN1, KK2, AX, MM, IH, NN1, PA2, HH1, OR, DD1, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
-' Index by TitleColor (0=beam, 1=rapid, 2=dual, 3=mega, 4=shield)
+' Index by PowerUpType (0=beam, 1=rapid, 2=dual, 3=mega, 4=shield)
 SaucerColor1:
     DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_RED, COL_CYAN
 SaucerColor2:
@@ -5017,7 +4896,10 @@ SaucerColor2:
 PowerUpWeights:
     DATA 0, 0, 1, 1, 2, 2, 3, 4
 
-    SEGMENT 4   ' Move procedures to Segment 4 (Seg 2 near capacity after giant boss)
+    ' ============================================================
+    ' SEGMENT 4 — AI SYSTEMS (CAPTURE, ROGUE, SAUCER)
+    ' ============================================================
+    SEGMENT 4
 
 ' --------------------------------------------
 ' UpdateCapture - Orbit captured wingman around player ship
@@ -5040,7 +4922,7 @@ UpdateCapture: PROCEDURE
 
     ' Render wingman (skip if power-up capsule is using the sprite)
     ' Uses Mooninite-style graphics (GRAM_WINGMAN_F1/F2) in captured alien's color
-    IF TitleFrame = 0 THEN
+    IF PowerUpState = 0 THEN
         IF AnimFrame = 0 THEN
             SPRITE SPR_POWERUP, HitCol + SPR_VISIBLE, HitRow, GRAM_WINGMAN_F1 * 8 + CaptureColor + $0800
         ELSE
@@ -5129,10 +5011,7 @@ UpdateCapture: PROCEDURE
                                     #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
                                     #Score = #Score + 50
                                     #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                                    ChainCount = ChainCount + 1
-                                    IF ChainCount > ChainMax THEN ChainMax = ChainCount
-                                    IF ChainCount > 50 THEN ChainCount = 50
-                                    ChainTimeout = 90
+                                    GOSUB BumpChain
                                     SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
                                     SOUND 2, 180, 14
                                 END IF
@@ -5180,27 +5059,8 @@ CaptureHitscan: PROCEDURE
     ' Check if alien is alive at this position
     IF (#AlienRow(AlienGridRow) AND #Mask) = 0 THEN RETURN
 
-    ' Multi-boss intercept (inlined FindBoss for speed)
-    FoundBoss = 255
-    IF BossCount > 0 THEN
-        FOR LoopVar = 0 TO BossCount - 1
-            IF BossHP(LoopVar) > 0 THEN
-                IF BossType(LoopVar) = GIANT_TYPE THEN
-                    IF AlienGridRow >= BossRow(LoopVar) AND AlienGridRow <= BossRow(LoopVar) + 3 THEN
-                        IF AlienGridCol >= BossCol(LoopVar) AND AlienGridCol <= BossCol(LoopVar) + 3 THEN
-                            FoundBoss = LoopVar
-                        END IF
-                    END IF
-                ELSE
-                    IF AlienGridRow = BossRow(LoopVar) THEN
-                        IF AlienGridCol = BossCol(LoopVar) OR AlienGridCol = BossCol(LoopVar) + 1 THEN
-                            FoundBoss = LoopVar
-                        END IF
-                    END IF
-                END IF
-            END IF
-        NEXT LoopVar
-    END IF
+    ' Multi-boss intercept
+    GOSUB FindBossAtCell
     IF FoundBoss < 255 THEN
         BossHP(FoundBoss) = BossHP(FoundBoss) - 1
         #GameFlags = #GameFlags AND $FFF7
@@ -5212,33 +5072,13 @@ CaptureHitscan: PROCEDURE
             RETURN
         ELSE
             ' Boss dead! Check type
-            IF BossType(FoundBoss) = GIANT_TYPE THEN
-                GOSUB GiantBossDeath
-                RETURN
-            ELSEIF BossType(FoundBoss) = BOMB_TYPE THEN
+            IF BossType(FoundBoss) = BOMB_TYPE THEN
                 ' Bomb alien — chain explosion!
                 GOSUB BombExplode
                 RETURN
             ELSE
-                ' Skull boss dead! Clear BOTH columns (guarded to prevent resurrection)
-                #Mask = ColMaskData(BossCol(FoundBoss))
-                IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                    #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                END IF
-                #Mask = ColMaskData(BossCol(FoundBoss) + 1)
-                IF #AlienRow(BossRow(FoundBoss)) AND #Mask THEN
-                    #AlienRow(BossRow(FoundBoss)) = #AlienRow(BossRow(FoundBoss)) XOR #Mask
-                END IF
-                #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
-                IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-                IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
-                #Score = #Score + BOSS_SCORE
-                ExplosionTimer = 20
-                IF #ExplosionPos < 220 THEN
-                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
-                END IF
-                SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
-                SOUND 2, 80, 15
+                ' Skull boss dead!
+                GOSUB SkullBossDeath
                 RETURN
             END IF
         END IF
@@ -5261,9 +5101,7 @@ CaptureHitscan: PROCEDURE
 
     ' Brief explosion visual
     IF #ScreenPos < 220 THEN
-        IF ExplosionTimer > 0 THEN
-            IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-        END IF
+        GOSUB ClearPrevExplosion
         #ExplosionPos = #ScreenPos
         ExplosionTimer = 10
         PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_GREEN + $0800
@@ -5819,16 +5657,16 @@ SaucerAnimate: PROCEDURE
     IF #FlyPhase >= 24 THEN #FlyPhase = 0
     IF #FlyPhase < 6 THEN
         SaucerCard = GRAM_SAUCER                ' All windows dark
-        FlyColor = SaucerColor1(TitleColor)     ' Primary color
+        FlyColor = SaucerColor1(PowerUpType)     ' Primary color
     ELSEIF #FlyPhase < 12 THEN
         SaucerCard = GRAM_SAUCER_F2             ' Inner window lit
-        FlyColor = SaucerColor2(TitleColor)     ' Secondary color
+        FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
     ELSEIF #FlyPhase < 18 THEN
         SaucerCard = GRAM_SAUCER_F3             ' Outer window lit
-        FlyColor = SaucerColor1(TitleColor)     ' Primary color
+        FlyColor = SaucerColor1(PowerUpType)     ' Primary color
     ELSE
         SaucerCard = GRAM_SAUCER_F4             ' Both windows + engine glow
-        FlyColor = SaucerColor2(TitleColor)     ' Secondary color
+        FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
     END IF
 
     ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
@@ -5891,16 +5729,14 @@ SaucerHit: PROCEDURE
     ' Bonus points
     #Score = #Score + 100
     ' Drop power-up from saucer position
-    TitleFrame = 1       ' Falling
-    TitleMarchDir = FlyX        ' Drop from saucer X
+    PowerUpState = 1       ' Falling
+    PowerUpX = FlyX        ' Drop from saucer X
     PowerUpY = FlyY      ' Start falling from saucer Y
-    SlidePos = 0
+    CapsuleFrame = 0
     ' First powerup tutorial hint (flashing)
     IF TutorialTimer = 255 THEN TutorialTimer = 180
     ' Clear previous explosion tile if still active
-    IF ExplosionTimer > 0 THEN
-        IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
-    END IF
+    GOSUB ClearPrevExplosion
     ' Show explosion at saucer position using BACKTAB
     #ExplosionPos = FlyX / 8
     ExplosionTimer = 15
@@ -5909,71 +5745,19 @@ SaucerHit: PROCEDURE
 END
 
 UpdateBossColor: PROCEDURE
-    IF BossType(FoundBoss) = GIANT_TYPE THEN
-        IF BossHP(FoundBoss) <= 2 THEN
-            BossColor(FoundBoss) = COL_RED
-        ELSEIF BossHP(FoundBoss) <= 4 THEN
-            BossColor(FoundBoss) = 10  ' Orange
-        ELSEIF BossHP(FoundBoss) <= 6 THEN
-            BossColor(FoundBoss) = COL_YELLOW
-        END IF
-    ELSE
-        IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
-        IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
-    END IF
+    IF BossHP(FoundBoss) = 2 THEN BossColor(FoundBoss) = COL_YELLOW
+    IF BossHP(FoundBoss) = 1 THEN BossColor(FoundBoss) = COL_RED
     RETURN
 END
 
-GiantBossDeath: PROCEDURE
-    ' Clear all filled boss cells from grid (guarded XOR)
-    FOR Row = 0 TO 3
-        IF BossRow(FoundBoss) + Row < ALIEN_ROWS THEN
-            FOR Col = 0 TO 3
-                IF GiantCardLayout(Row * 4 + Col) < 255 THEN
-                    IF BossCol(FoundBoss) + Col < ALIEN_COLS THEN
-                        #Mask = ColMaskData(BossCol(FoundBoss) + Col)
-                        IF #AlienRow(BossRow(FoundBoss) + Row) AND #Mask THEN
-                            #AlienRow(BossRow(FoundBoss) + Row) = #AlienRow(BossRow(FoundBoss) + Row) XOR #Mask
-                        END IF
-                    END IF
-                END IF
-            NEXT Col
-        END IF
-    NEXT Row
-
-    ' Explosion animation across boss area
-    FOR Row = 0 TO 3
-        FOR Col = 0 TO 3
-            IF GiantCardLayout(Row * 4 + Col) < 255 THEN
-                #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss) + Row) * 20
-                #ExplosionPos = #ExplosionPos + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss) + Col
-                IF #ExplosionPos < 220 THEN
-                    PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
-                END IF
-            END IF
-        NEXT Col
-    NEXT Row
-
-    #Score = #Score + GIANT_SCORE
-    ExplosionTimer = 25
-    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 40
-    SOUND 2, 40, 15
-    RETURN
-END
-
-    SEGMENT 2   ' DATA tables remain in Segment 2
+    ' ============================================================
+    ' SEGMENT 2 (continued) — ROM DATA TABLES
+    ' ============================================================
+    SEGMENT 2
 
 ' Column bitmask lookup table: ColMaskData(n) = 2^n (0-9)
 ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
-
-' Giant boss 4×4 card layout: row*4+col → GRAM card (255 = blank corner)
-' Layout:  .HH.  /  BMMB  /  BMMB  /  .TT.
-GiantCardLayout:
-    DATA 255, 9, 10, 255            ' Row 0: .HeadL HeadR.
-    DATA 11, 54, 55, 12             ' Row 1: BodyL MidL MidR BodyR
-    DATA 11, 54, 55, 12             ' Row 2: BodyL MidL MidR BodyR (same)
-    DATA 255, 56, 57, 255           ' Row 3: .TentL TentR.
 
 ' ╔════════════════════════════════════════════════════════════╗
 ' ║  LEVEL DESIGN — 32-wave cycle (AND 31 wrapping)          ║
@@ -7120,87 +6904,6 @@ SquidRightF2Gfx:
     BITMAP "..X.X..."
     BITMAP "XX......"
 
-' --- GIANT BOSS (4×4 BACKTAB cards = 32×32 pixels) ---
-' Layout:  .HH.  /  BMMB  /  BMMB  /  .TT.
-' Loaded into skull slots (9-12) + bomb slots (54-57) on boss waves
-' Cards 9-12 loaded as one block, cards 54-57 as another block
-
-GiantBossGfxTop:
-    ' Card 9 — GRAM_GIANT_HL — Head left
-    BITMAP "........"
-    BITMAP "......XX"
-    BITMAP ".....XXX"
-    BITMAP "...XXXXX"
-    BITMAP "..XXXXXX"
-    BITMAP "..XXX..X"
-    BITMAP ".XXXXXXX"
-    BITMAP ".XXXXXXX"
-    ' Card 10 — GRAM_GIANT_HR — Head right
-    BITMAP "........"
-    BITMAP "XX......"
-    BITMAP "XXX....."
-    BITMAP "XXXXX..."
-    BITMAP "XXXXXX.."
-    BITMAP "X..XXX.."
-    BITMAP "XXXXXXX."
-    BITMAP "XXXXXXX."
-    ' Card 11 — GRAM_GIANT_BL — Body left
-    BITMAP "....XXXX"
-    BITMAP "...XXXXX"
-    BITMAP "..XXXXXX"
-    BITMAP ".XXXXXXX"
-    BITMAP ".XXXXXXX"
-    BITMAP ".XXXXXXX"
-    BITMAP "..XXXXXX"
-    BITMAP "...XXXXX"
-    ' Card 12 — GRAM_GIANT_BR — Body right
-    BITMAP "XXXX...."
-    BITMAP "XXXXX..."
-    BITMAP "XXXXXX.."
-    BITMAP "XXXXXXX."
-    BITMAP "XXXXXXX."
-    BITMAP "XXXXXXX."
-    BITMAP "XXXXXX.."
-    BITMAP "XXXXX..."
-
-GiantBossGfxBot:
-    ' Card 54 — GRAM_GIANT_ML — Mid left
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    ' Card 55 — GRAM_GIANT_MR — Mid right
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
-    ' Card 56 — GRAM_GIANT_TL — Tentacle left
-    BITMAP "......XX"
-    BITMAP ".....XXX"
-    BITMAP "....XXX."
-    BITMAP "..XXX..."
-    BITMAP ".XX....."
-    BITMAP "XX......"
-    BITMAP "X......."
-    BITMAP "........"
-    ' Card 57 — GRAM_GIANT_TR — Tentacle right
-    BITMAP "XX......"
-    BITMAP "XXX....."
-    BITMAP ".XXX...."
-    BITMAP "...XXX.."
-    BITMAP ".....XX."
-    BITMAP "......XX"
-    BITMAP ".......X"
-    BITMAP "........"
-
 ' --- COMPACT CHAIN TEXT (3 tiles, 5px tall) ---
 ' Tile 1: CH
 ChainCHGfx:
@@ -7615,7 +7318,10 @@ si_loop:
 ' PLAY SIMPLE: Channel 3 free for SFX via SOUND 2
 ' ============================================================
 
-    SEGMENT 3   ' Gameplay music in Segment 3 (Seg 2 near capacity)
+    ' ============================================================
+    ' SEGMENT 3 (continued) — MUSIC DATA
+    ' ============================================================
+    SEGMENT 3
 
 ' ------------------------------------------------------------
 ' Slow - "invaders far away"
