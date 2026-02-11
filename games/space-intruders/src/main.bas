@@ -68,14 +68,11 @@ CONST GRAM_FONT_V = 41          ' Game over screen only
 
 ' Gameplay HUD slots (reuse title font cards 25-36 after title screen)
 ' Powerup HUD indicator GRAM slots (reuse title font cards 25-32)
-CONST GRAM_PWR_BE = 25          ' BEAM tile 1: "BE"
-CONST GRAM_PWR_AM = 26          ' BEAM tile 2: "AM"
-CONST GRAM_PWR_RP = 27          ' RAPID tile 1: "RP"
-CONST GRAM_PWR_ID = 28          ' RAPID tile 2: "ID"
-CONST GRAM_PWR_QU = 29          ' QUAD tile 1: "QU"
-CONST GRAM_PWR_AD = 30          ' QUAD tile 2: "AD"
-CONST GRAM_PWR_ME = 31          ' MEGA tile 1: "ME"
-CONST GRAM_PWR_GA = 32          ' MEGA tile 2: "GA"
+CONST GRAM_PWR1 = 25            ' Powerup tile 1 (dynamic, DEFINE'd per type)
+CONST GRAM_PWR2 = 26            ' Powerup tile 2 (dynamic, DEFINE'd per type)
+CONST GRAM_PWR3 = 27            ' Powerup tile 3 (dynamic, RAPID only)
+CONST GRAM_CHAIN_DIG = 28       ' Chain digit display (dynamic, round-robin)
+CONST GRAM_LIVES_DIG = 29       ' Lives digit display (dynamic, round-robin)
 ' Shield and remaining HUD slots (title font cards 33-36)
 CONST GRAM_SHIELD = 33          ' Shield arc above player ship
 CONST GRAM_WARP1  = 34          ' Warp-in frame 1: single pixel (arriving)
@@ -105,9 +102,14 @@ CONST GRAM_BOMB2_F1 = 57        ' Bomb alien right half frame 2
 CONST GRAM_CHAIN_CH = 58        ' Compact "CH" for chain display
 CONST GRAM_CHAIN_AI = 59        ' Compact "AI" for chain display
 CONST GRAM_CHAIN_N  = 60        ' Compact "N" for chain display
-CONST GRAM_SCORE_SC = 61        ' Compact "SC" for score label
-CONST GRAM_SCORE_OR = 62        ' Compact "OR" for score label
-CONST GRAM_SCORE_E  = 63        ' Compact "E" for score label
+CONST GRAM_SCORE_SC = 61        ' Score digits D4,D3 (title: "SC" label)
+CONST GRAM_SCORE_OR = 62        ' Score digits D2,D1 (title: "OR" label)
+CONST GRAM_SCORE_E  = 63        ' Score digit D0 (title: "E" label)
+
+' Compact score library card assignments (must match GRAM_SCORE_* above)
+CONST SCORE_CARD0 = 61          ' Ten-thousands + thousands
+CONST SCORE_CARD1 = 62          ' Hundreds + tens
+CONST SCORE_CARD2 = 63          ' Ones + blank
 
 ' Wingman sprite (Mooninite-style) - uses free slots 13 and 18
 CONST GRAM_WINGMAN_F1 = 13      ' Wingman frame 1 (legs together)
@@ -1002,14 +1004,14 @@ SkipPressfire:
                 ' Flash border to confirm
                 IF #GameFlags AND FLAG_DEBUG THEN
                     BORDER COL_RED
-                    PRINT AT 219 COLOR COL_RED, "DEBUG"
+                    PRINT AT 215 COLOR COL_RED, "DEBUG"
                 ELSE
                     BORDER 0
+                    PRINT AT 215, 0
+                    PRINT AT 216, 0
+                    PRINT AT 217, 0
+                    PRINT AT 218, 0
                     PRINT AT 219, 0
-                    PRINT AT 220, 0
-                    PRINT AT 221, 0
-                    PRINT AT 222, 0
-                    PRINT AT 223, 0
                 END IF
             END IF
         END IF
@@ -1051,6 +1053,98 @@ SkipPressfire:
 ' ============================================
 ' UTILITY PROCEDURES (shared code consolidation)
 ' ============================================
+
+' --- UpdateScoreDisplay: Update 1 GRAM card per frame via DEFINE ALTERNATE ---
+' POKEs ISR's _gram2_* variables so the ISR copies data to GRAM during VBLANK.
+' 7-card round-robin: cards 34-36 (TinyFont "SC"/"OR"/"E:" label) +
+' cards 61-63 (packed digits D4D3/D2D1/D0) + card 28 (chain digit).
+' Chain label cards 58-60 are static (defined once at StartGame).
+' Chain digit card 28 uses PackedPairs for TinyFont digit rendering.
+' Lives digit card 29 uses PackedPairs for TinyFont digit rendering.
+' Full cycle = 8 frames. Reveal guard skips label cards during warp-in.
+' Label cards also write their BACKTAB entry (synced with GRAM update at VBLANK).
+UpdateScoreDisplay: PROCEDURE
+    ScoreCard = ScoreCard + 1
+    IF ScoreCard > 7 THEN ScoreCard = 0
+
+    ' Guard: skip label cards during warp-in reveal (cards 34-36 in use)
+    IF ScoreCard < 3 THEN
+        IF WaveRevealCol < ALIEN_COLS - 1 THEN
+            ScoreCard = 3
+        ELSEIF (#GameFlags AND FLAG_TOPDOWN) THEN
+            IF WaveRevealRow < ALIEN_ROWS - 1 THEN
+                ScoreCard = 3
+            END IF
+        END IF
+    END IF
+
+    IF ScoreCard = 0 THEN
+        ' Card 34: TinyFont "SC" label + BACKTAB at 220
+        POKE $0107, 34
+        #Mask = VARPTR TinyFontLabelData(0)
+        IF GameOver = 0 THEN PRINT AT 220, GRAM_WARP1 * 8 + COL_WHITE + $0800
+    ELSEIF ScoreCard = 1 THEN
+        ' Card 35: TinyFont "OR" label + BACKTAB at 221
+        POKE $0107, 35
+        #Mask = VARPTR TinyFontLabelData(0) + 4
+        IF GameOver = 0 THEN PRINT AT 221, GRAM_WARP2 * 8 + COL_WHITE + $0800
+    ELSEIF ScoreCard = 2 THEN
+        ' Card 36: TinyFont "E:" label + BACKTAB at 222
+        POKE $0107, 36
+        #Mask = VARPTR TinyFontLabelData(0) + 8
+        IF GameOver = 0 THEN PRINT AT 222, GRAM_WARP3 * 8 + COL_WHITE + $0800
+    ELSEIF ScoreCard = 3 THEN
+        ' Card 61: ten-thousands + thousands (pair index 0-65)
+        #Mask = #Score / 1000
+        POKE $0107, SCORE_CARD0
+    ELSEIF ScoreCard = 4 THEN
+        ' Card 62: hundreds + tens (pair index 0-99)
+        #Mask = #Score / 1000
+        #Mask = #Score - #Mask * 1000
+        #Mask = #Mask / 10
+        POKE $0107, SCORE_CARD1
+    ELSEIF ScoreCard = 5 THEN
+        ' Card 63: ones + blank (pair index 100-109)
+        #Mask = #Score / 10
+        #Mask = #Score - #Mask * 10
+        #Mask = #Mask + 100
+        POKE $0107, SCORE_CARD2
+    ELSEIF ScoreCard = 6 THEN
+        ' Card 28: chain digit (TinyFont via PackedPairs)
+        POKE $0107, GRAM_CHAIN_DIG
+        IF ChainCount >= 10 THEN
+            ' Two-digit: PackedPairs index = ChainCount directly (tens*10+ones)
+            #Mask = ChainCount
+        ELSE
+            ' Single digit or zero: PackedPairs index 100+ (digit + blank)
+            #Mask = ChainCount + 100
+        END IF
+    ELSE
+        ' Card 29: lives digit (TinyFont via PackedPairs)
+        POKE $0107, GRAM_LIVES_DIG
+        IF Lives > 10 THEN
+            #Mask = Lives - 1
+        ELSEIF Lives > 0 THEN
+            #Mask = Lives + 99
+        ELSE
+            #Mask = 100
+        END IF
+    END IF
+
+    ' Compute ROM address for PackedPairs entries (score + chain digits)
+    IF ScoreCard >= 3 THEN
+        #Mask = #Mask + #Mask  ' *2
+        #Mask = #Mask + #Mask  ' *4
+        #Mask = VARPTR PackedPairs(0) + #Mask
+    END IF
+
+    ' CRITICAL: Set _gram2_total BEFORE _gram2_bitmap (the trigger).
+    ' ISR gates on _gram2_bitmap != 0; if set first with _gram2_total still 0,
+    ' ISR's DECR+BNE loop wraps to 65535 iterations.
+    POKE $0108, 1           ' _gram2_total = 1 card (set before trigger)
+    POKE $0345, #Mask       ' _gram2_bitmap = source ROM address (TRIGGER — last)
+    RETURN
+END
 
 ' --- HideAllSprites: Hide all 8 hardware sprites ---
 HideAllSprites: PROCEDURE
@@ -1463,11 +1557,10 @@ StartGame:
     DEFINE GRAM_SILH_1Q, 4, SilhGfx           ' Cards 21-24: silhouette fill levels
     WAIT
 
-    ' Redefine title font GRAM cards (25-32) for powerup HUD indicators
-    ' 8 tiles: BEAM(BE,AM), RAPID(RP,ID), QUAD(QU,AD), MEGA(ME,GA)
-    DEFINE GRAM_PWR_BE, 4, PowerupBEGfx  ' Cards 25-28: BE, AM, RP, ID
-    WAIT
-    DEFINE GRAM_PWR_QU, 4, PowerupQUGfx  ' Cards 29-32: QU, AD, ME, GA
+    ' Redefine title font GRAM cards (25-27) for powerup HUD (TinyFont)
+    ' 3 generic cards: DEFINE'd per powerup type at pickup time
+    ' Default to BEAM ("BE" + "AM") so cards aren't garbage
+    DEFINE GRAM_PWR1, 2, PowerupBeamGfx  ' Cards 25-26: BE, AM
     WAIT
     DEFINE GRAM_SHIELD, 1, ShieldArcGfx  ' Card 33: Shield arc
     WAIT
@@ -1495,6 +1588,14 @@ StartGame:
     DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx  ' Card 56 (overwritten by title anim)
     WAIT
     DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx ' Card 57
+    WAIT
+    ' Initialize score digit display (skip label cards 0-2 during first wave reveal)
+    ScoreCard = 2    ' First call goes to 3 (digit card 61)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 3 (D4D3)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 4 (D2D1)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 5 (D0)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 6 (chain digit)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 7 (lives digit)
 
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
@@ -1811,7 +1912,6 @@ GameLoop:
                 ' Invasion! Lose a life and reset formation
                 IF DeathTimer = 0 AND Invincible = 0 THEN
                     Lives = Lives - 1
-                    GOSUB UpdateLivesHUD
                     ' Clear power-ups, bullets, rogue, wingman
                     BeamTimer = 0 : RapidTimer = 0
                     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
@@ -2043,7 +2143,6 @@ ChainDone:
             IF Invincible = 0 THEN
                 #GameFlags = #GameFlags AND $FFEF
                 Lives = Lives - 1
-                GOSUB UpdateLivesHUD
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
@@ -2179,11 +2278,11 @@ ChainDone:
                 PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
                 PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
                 PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
-                ' Score at row 5, centered using compact GRAM tiles
-                PRINT AT 106, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-                PRINT AT 107, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-                PRINT AT 108, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-                PRINT AT 110 COLOR COL_WHITE, <>#Score
+                ' Score at row 5, GROM label + packed digit cards
+                PRINT AT 104 COLOR COL_WHITE, "SCORE "
+                PRINT AT 110, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+                PRINT AT 111, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+                PRINT AT 112, GRAM_SCORE_E * 8 + COL_WHITE + $0800
                 ' High score at row 6 (centered under score)
                 IF #Score >= #HighScore THEN
                     PRINT AT 125 COLOR COL_YELLOW, "NEW HIGH!"
@@ -2254,22 +2353,19 @@ ChainDone:
         #MegaTimer = #MegaTimer - 1
     END IF
 
-    ' Update powerup HUD indicator (positions 233-234, yellow color)
-    IF BeamTimer > 0 THEN
-        PRINT AT 233, GRAM_PWR_BE * 8 + COL_YELLOW + $0800
-        PRINT AT 234, GRAM_PWR_AM * 8 + COL_YELLOW + $0800
-    ELSEIF RapidTimer > 0 THEN
-        PRINT AT 233, GRAM_PWR_RP * 8 + COL_YELLOW + $0800
-        PRINT AT 234, GRAM_PWR_ID * 8 + COL_YELLOW + $0800
-    ELSEIF #GameFlags AND FLAG_DUAL THEN
-        PRINT AT 233, GRAM_PWR_QU * 8 + COL_YELLOW + $0800
-        PRINT AT 234, GRAM_PWR_AD * 8 + COL_YELLOW + $0800
-    ELSEIF #MegaTimer > 0 THEN
-        PRINT AT 233, GRAM_PWR_ME * 8 + COL_YELLOW + $0800
-        PRINT AT 234, GRAM_PWR_GA * 8 + COL_YELLOW + $0800
+    ' Update powerup HUD indicator (positions 233-235, yellow TinyFont)
+    ' Cards 25-27 are DEFINE'd per powerup type at pickup time
+    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_DUAL) OR #MegaTimer > 0 THEN
+        PRINT AT 233, GRAM_PWR1 * 8 + COL_YELLOW + $0800
+        PRINT AT 234, GRAM_PWR2 * 8 + COL_YELLOW + $0800
+        IF RapidTimer > 0 THEN
+            PRINT AT 235, GRAM_PWR3 * 8 + COL_YELLOW + $0800
+        ELSE
+            PRINT AT 235, 0
+        END IF
     ELSE
         ' No powerup active - clear indicator
-        PRINT AT 233, 0 : PRINT AT 234, 0
+        PRINT AT 233, 0 : PRINT AT 234, 0 : PRINT AT 235, 0
     END IF
 
     ' Mega beam display countdown + sweep-up from turret + color cycling
@@ -2315,15 +2411,14 @@ ChainDone:
     GOSUB DrawBullet
     GOSUB DrawAlienBullet
 
-    ' Update score display (position 229+ in new HUD layout)
-    PRINT AT 223 COLOR COL_WHITE, <>#Score
+    ' Update score display — round-robin 1 GRAM card per frame via DEFINE ALTERNATE
+    GOSUB UpdateScoreDisplay
 
     ' Extra life: first at 1000, then every 5000
     IF #Score >= #NextLife THEN
         #NextLife = #NextLife + 5000
         IF Lives < 9 THEN
             Lives = Lives + 1
-            GOSUB UpdateLivesHUD
             ' Announce extra life
             IF VOICE.AVAILABLE THEN
                 VOICE PLAY extra_life_phrase
@@ -2356,23 +2451,17 @@ ChainDone:
             END IF
         END IF
         ' Chain counter display: grey when inactive, blue when active
+        ' Cards 58-60 are static GRAM (CH, AI, N:). Card 28 is TinyFont digit.
         IF ChainCount = 0 THEN
-            ' Grey label + hyphen for inactive chain
-            PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
-            PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
-            PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
-            PRINT AT 231, 111                        ' GROM hyphen
-            PRINT AT 232, 0                          ' Clear second digit slot
+            PRINT AT 227, GRAM_CHAIN_CH * 8 + $1800
+            PRINT AT 228, GRAM_CHAIN_AI * 8 + $1800
+            PRINT AT 229, GRAM_CHAIN_N * 8 + $1800
+            PRINT AT 230, 0
         ELSE
-            ' Blue label + count for active chain
-            PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-            PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-            PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-            PRINT AT 231 COLOR COL_BLUE, <>ChainCount
-            ' Clear trailing digit when count shrinks (10->9)
-            IF ChainCount < 10 THEN
-                PRINT AT 232, 0
-            END IF
+            PRINT AT 227, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+            PRINT AT 228, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+            PRINT AT 229, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+            PRINT AT 230, GRAM_CHAIN_DIG * 8 + COL_BLUE + $0800
         END IF
     END IF
 
@@ -3435,40 +3524,22 @@ END
 ' Called after CLS or screen clears. Shows current #Score and chain state.
 ' --------------------------------------------
 DrawHUD: PROCEDURE
-    ' Score label (220-222) + value (223+)
-    PRINT AT 220, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 221, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 222, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 223 COLOR COL_WHITE, <>#Score
-    ' Chain label (228-230) + count (231-232) — color reflects active state
-    IF ChainCount = 0 THEN
-        PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
-        PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
-        PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
-        PRINT AT 231, 111 : PRINT AT 232, 0
-    ELSE
-        PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-        PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-        PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-        PRINT AT 231 COLOR COL_BLUE, <>ChainCount
-        IF ChainCount < 10 THEN PRINT AT 232, 0
-    END IF
-    ' Powerup indicator cleared
-    PRINT AT 233, 0 : PRINT AT 234, 0
-    ' Lives: ship icon at 236, count at 238
+    ' Score: packed digits (223-225) in GRAM; label (220-222) set by round-robin
+    PRINT AT 223, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
+    PRINT AT 224, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
+    PRINT AT 225, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+    PRINT AT 226, 0  ' Blank separator between score and chain
+    ' Chain label (227-229): static GRAM cards CH, AI, N: — grey when inactive
+    ' Chain digit (230): TinyFont card 28, updated by round-robin
+    PRINT AT 227, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 228, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 229, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 230, 0
+    ' Powerup indicator cleared (3 cells: 233-235)
+    PRINT AT 233, 0 : PRINT AT 234, 0 : PRINT AT 235, 0
+    ' Lives: ship icon at 236, TinyFont digit at 238 (card 29, round-robin)
     PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
-    GOSUB UpdateLivesHUD
-    RETURN
-END
-
-' --------------------------------------------
-' UpdateLivesHUD - Show lives remaining (X tile at 236, number at 237)
-' Replaces 4 identical IF/ELSEIF chains (invasion, death, extra life, wave start)
-' --------------------------------------------
-UpdateLivesHUD: PROCEDURE
-    IF Lives > 0 THEN
-        PRINT AT 238 COLOR COL_WHITE, <> (Lives - 1)
-    END IF
+    PRINT AT 238, GRAM_LIVES_DIG * 8 + COL_WHITE + $0800
     RETURN
 END
 
@@ -3814,18 +3885,22 @@ UpdatePowerUp: PROCEDURE
                 IF PowerUpType = 0 THEN
                     BeamTimer = 1
                     RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
+                    DEFINE GRAM_PWR1, 2, PowerupBeamGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF PowerUpType = 1 THEN
                     RapidTimer = 1
                     BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
+                    DEFINE GRAM_PWR1, 3, PowerupRapidGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF PowerUpType = 2 THEN
                     #GameFlags = #GameFlags OR FLAG_DUAL
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
+                    DEFINE GRAM_PWR1, 2, PowerupQuadGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
                 ELSEIF PowerUpType = 3 THEN
                     #MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
+                    DEFINE GRAM_PWR1, 2, PowerupMegaGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 ELSE
                     ' Shield - coexists with weapons, just set hits
@@ -4802,10 +4877,22 @@ StartNewWave: PROCEDURE
         NEXT LoopVar
 
         ' Restore powerup HUD GRAM cards (bye! overwrote slots 25-26)
-        DEFINE GRAM_PWR_BE, 4, PowerupBEGfx  ' Cards 25-28: BE, AM, RP, ID
+        IF BeamTimer > 0 THEN
+            DEFINE GRAM_PWR1, 2, PowerupBeamGfx
+        ELSEIF RapidTimer > 0 THEN
+            DEFINE GRAM_PWR1, 2, PowerupRapidGfx
+        ELSEIF #GameFlags AND FLAG_DUAL THEN
+            DEFINE GRAM_PWR1, 2, PowerupQuadGfx
+        ELSEIF #MegaTimer > 0 THEN
+            DEFINE GRAM_PWR1, 2, PowerupMegaGfx
+        END IF
         WAIT
     SkipEscape:
     END IF
+
+    ' Re-define warp-in animation cards (TinyFont label round-robin overwrites during gameplay)
+    DEFINE GRAM_WARP1, 3, WarpInGfx1    ' Cards 34-36: Warp-in animation
+    WAIT
 
     ' Phase A: Breather pause (blank screen + HUD only)
     FOR LoopVar = 0 TO 30
@@ -6904,38 +6991,38 @@ SquidRightF2Gfx:
     BITMAP "..X.X..."
     BITMAP "XX......"
 
-' --- COMPACT CHAIN TEXT (3 tiles, 5px tall) ---
-' Tile 1: CH
+' --- COMPACT CHAIN TEXT (3 tiles, TinyFont 4px) ---
+' Tile 1: CH (C left + H right)
 ChainCHGfx:
     BITMAP "........"
-    BITMAP ".###.#.#"
-    BITMAP ".#...#.#"
-    BITMAP ".#...###"
-    BITMAP ".#...#.#"
-    BITMAP ".###.#.#"
-    BITMAP "........"
+    BITMAP ".X..X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X...XXX."
+    BITMAP "X...X.X."
+    BITMAP "X.X.X.X."
+    BITMAP ".X..X.X."
     BITMAP "........"
 
-' Tile 2: AI
+' Tile 2: AI (A left + I right)
 ChainAIGfx:
     BITMAP "........"
-    BITMAP "..#..#.#"
-    BITMAP ".#.#.#.#"
-    BITMAP ".###.#.#"
-    BITMAP ".#.#.#.#"
-    BITMAP ".#.#.#.#"
-    BITMAP "........"
+    BITMAP ".X..XXX."
+    BITMAP "X.X..X.."
+    BITMAP "X.X..X.."
+    BITMAP "XXX..X.."
+    BITMAP "X.X..X.."
+    BITMAP "X.X.XXX."
     BITMAP "........"
 
-' Tile 3: N
+' Tile 3: N: (N left + colon right, static — digits use GROM)
 ChainNGfx:
     BITMAP "........"
-    BITMAP "..#....."
-    BITMAP "#.#.#..."
-    BITMAP "###....."
-    BITMAP ".##.#..."
-    BITMAP "..#....."
-    BITMAP "........"
+    BITMAP "X.X....."
+    BITMAP "XXX....."
+    BITMAP "XXX.X..."
+    BITMAP "XXX....."
+    BITMAP "XXX....."
+    BITMAP "X.X.X..."
     BITMAP "........"
 
 ' --- COMPACT SCORE TEXT (3 tiles) ---
@@ -7032,88 +7119,93 @@ ExplosionGfx3:
 ' Powerup HUD indicator graphics (8 tiles, 2 per powerup)
 ' Displayed in yellow (color 6) when powerup is active
 
-' === BEAM powerup (tiles 1-2) ===
-PowerupBEGfx:
+' === BEAM powerup TinyFont: "BE" + "AM" (2 cards, 3rd blank) ===
+PowerupBeamGfx:
     BITMAP "........"
-    BITMAP "##..###."
-    BITMAP "#.#.#..."
-    BITMAP "##..##.."
-    BITMAP "#.#.#..."
-    BITMAP "##..###."
-    BITMAP "........"
-    BITMAP "........"
-
-PowerupAMGfx:
-    BITMAP "........"
-    BITMAP ".#..#.#."
-    BITMAP "#.#.###."
-    BITMAP "###.###."
-    BITMAP "#.#.#.#."
-    BITMAP "#.#.#.#."
-    BITMAP "........"
+    BITMAP "XX..XXX."
+    BITMAP "X.X.X..."
+    BITMAP "XX..XX.."
+    BITMAP "X.X.X..."
+    BITMAP "X.X.X..."
+    BITMAP "XX..XXX."
     BITMAP "........"
 
-' === RAPID powerup (tiles 3-4) ===
-PowerupRPGfx:
     BITMAP "........"
-    BITMAP "##..##.."
-    BITMAP "#.#.#.#."
-    BITMAP "##..##.."
-    BITMAP "#.#.#..."
-    BITMAP "#.#.#..."
-    BITMAP "........"
+    BITMAP ".X..X.X."
+    BITMAP "X.X.XXX."
+    BITMAP "X.X.XXX."
+    BITMAP "XXX.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
     BITMAP "........"
 
-PowerupIDGfx:
+' === RAPID powerup TinyFont: "RA" + "PI" + "D_" (3 cards) ===
+PowerupRapidGfx:
     BITMAP "........"
-    BITMAP ".#..##.."
-    BITMAP ".#..#.#."
-    BITMAP ".#..#.#."
-    BITMAP ".#..#.#."
-    BITMAP ".#..##.."
-    BITMAP "........"
-    BITMAP "........"
-
-' === QUAD powerup (tiles 5-6) ===
-PowerupQUGfx:
-    BITMAP "........"
-    BITMAP ".XX..X.X"
-    BITMAP "X..X.X.X"
-    BITMAP "X..X.X.X"
-    BITMAP "X.XX.X.X"
-    BITMAP ".XXX..XX"
-    BITMAP "........"
+    BITMAP "XX...X.."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "XX..XXX."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
     BITMAP "........"
 
-PowerupADGfx:
     BITMAP "........"
-    BITMAP "..#..##."
-    BITMAP ".#.#.#.#"
-    BITMAP ".###.#.#"
-    BITMAP ".#.#.#.#"
-    BITMAP ".#.#.##."
-    BITMAP "........"
-    BITMAP "........"
-
-' === MEGA powerup (tiles 7-8) ===
-PowerupMEGfx:
-    BITMAP "........"
-    BITMAP "#.#.###."
-    BITMAP "###.#..."
-    BITMAP "###.##.."
-    BITMAP "#.#.#..."
-    BITMAP "#.#.###."
-    BITMAP "........"
+    BITMAP "XX..XXX."
+    BITMAP "X.X..X.."
+    BITMAP "X.X..X.."
+    BITMAP "XX...X.."
+    BITMAP "X....X.."
+    BITMAP "X...XXX."
     BITMAP "........"
 
-PowerupGAGfx:
     BITMAP "........"
-    BITMAP ".##..#.."
-    BITMAP "#...#.#."
-    BITMAP "#.#.###."
-    BITMAP "#.#.#.#."
-    BITMAP ".##.#.#."
+    BITMAP "XX......"
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "XX......"
     BITMAP "........"
+
+' === QUAD powerup TinyFont: "QU" + "AD" (2 cards, 3rd blank) ===
+PowerupQuadGfx:
+    BITMAP "........"
+    BITMAP ".X..X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "XXX.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP ".XX..XX."
+    BITMAP "........"
+
+    BITMAP "........"
+    BITMAP ".X..XX.."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "XXX.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.XX.."
+    BITMAP "........"
+
+' === MEGA powerup TinyFont: "ME" + "GA" (2 cards, 3rd blank) ===
+PowerupMegaGfx:
+    BITMAP "........"
+    BITMAP "X.X.XXX."
+    BITMAP "XXX.X..."
+    BITMAP "XXX.XX.."
+    BITMAP "X.X.X..."
+    BITMAP "X.X.X..."
+    BITMAP "X.X.XXX."
+    BITMAP "........"
+
+    BITMAP "........"
+    BITMAP ".X...X.."
+    BITMAP "X.X.X.X."
+    BITMAP "X...X.X."
+    BITMAP "X.X.XXX."
+    BITMAP "X.X.X.X."
+    BITMAP ".XX.X.X."
     BITMAP "........"
 
 ' === SHIELD dome graphic (solid bar above ship) ===
@@ -8914,3 +9006,138 @@ FontVY4Gfx:
     BITMAP "..XX...."
     BITMAP "..XX...."
     BITMAP "..X....."
+
+    ' ============================================================
+    ' SEGMENT 5 — SCORE DATA + COMPACT SCORE ASSEMBLY LIBRARY
+    ' ============================================================
+    SEGMENT 5
+
+    INCLUDE "lib/compact_score.bas"
+
+' Pre-computed packed digit pair shapes for DEFINE ALTERNATE score update.
+' 110 entries: 0-99 = two-digit pairs (L*10+R), 100-109 = single digit + blank.
+' Each entry = 4 packed DECLEs (2 rows per word, 8 rows per GRAM card).
+' Format matches IntyBASIC BITMAP/DEFINE: Word N = (row[2N+1] << 8) | row[2N]
+PackedPairs:
+    DATA $4400, $EEAA, $AAEE, $0044  ' 00
+    DATA $4400, $E4AC, $A4E4, $004E  ' 01
+    DATA $4400, $E2AA, $A8E4, $004E  ' 02
+    DATA $4E00, $E4A2, $AAE2, $0044  ' 03
+    DATA $4800, $EAA8, $AEEA, $0042  ' 04
+    DATA $4E00, $ECA8, $AAE2, $0044  ' 05
+    DATA $4600, $ECA8, $AAEA, $0044  ' 06
+    DATA $4E00, $E2A2, $A4E4, $0044  ' 07
+    DATA $4400, $E4AA, $AAEA, $0044  ' 08
+    DATA $4600, $EAAA, $A2E6, $0042  ' 09
+    DATA $4400, $4ECA, $4A4E, $00E4  ' 10
+    DATA $4400, $44CC, $4444, $00EE  ' 11
+    DATA $4400, $42CA, $4844, $00EE  ' 12
+    DATA $4E00, $44C2, $4A42, $00E4  ' 13
+    DATA $4800, $4AC8, $4E4A, $00E2  ' 14
+    DATA $4E00, $4CC8, $4A42, $00E4  ' 15
+    DATA $4600, $4CC8, $4A4A, $00E4  ' 16
+    DATA $4E00, $42C2, $4444, $00E4  ' 17
+    DATA $4400, $44CA, $4A4A, $00E4  ' 18
+    DATA $4600, $4ACA, $4246, $00E2  ' 19
+    DATA $4400, $2EAA, $8A4E, $00E4  ' 20
+    DATA $4400, $24AC, $8444, $00EE  ' 21
+    DATA $4400, $22AA, $8844, $00EE  ' 22
+    DATA $4E00, $24A2, $8A42, $00E4  ' 23
+    DATA $4800, $2AA8, $8E4A, $00E2  ' 24
+    DATA $4E00, $2CA8, $8A42, $00E4  ' 25
+    DATA $4600, $2CA8, $8A4A, $00E4  ' 26
+    DATA $4E00, $22A2, $8444, $00E4  ' 27
+    DATA $4400, $24AA, $8A4A, $00E4  ' 28
+    DATA $4600, $2AAA, $8246, $00E2  ' 29
+    DATA $E400, $4E2A, $AA2E, $0044  ' 30
+    DATA $E400, $442C, $A424, $004E  ' 31
+    DATA $E400, $422A, $A824, $004E  ' 32
+    DATA $EE00, $4422, $AA22, $0044  ' 33
+    DATA $E800, $4A28, $AE2A, $0042  ' 34
+    DATA $EE00, $4C28, $AA22, $0044  ' 35
+    DATA $E600, $4C28, $AA2A, $0044  ' 36
+    DATA $EE00, $4222, $A424, $0044  ' 37
+    DATA $E400, $442A, $AA2A, $0044  ' 38
+    DATA $E600, $4A2A, $A226, $0042  ' 39
+    DATA $8400, $AE8A, $EAAE, $0024  ' 40
+    DATA $8400, $A48C, $E4A4, $002E  ' 41
+    DATA $8400, $A28A, $E8A4, $002E  ' 42
+    DATA $8E00, $A482, $EAA2, $0024  ' 43
+    DATA $8800, $AA88, $EEAA, $0022  ' 44
+    DATA $8E00, $AC88, $EAA2, $0024  ' 45
+    DATA $8600, $AC88, $EAAA, $0024  ' 46
+    DATA $8E00, $A282, $E4A4, $0024  ' 47
+    DATA $8400, $A48A, $EAAA, $0024  ' 48
+    DATA $8600, $AA8A, $E2A6, $0022  ' 49
+    DATA $E400, $CE8A, $AA2E, $0044  ' 50
+    DATA $E400, $C48C, $A424, $004E  ' 51
+    DATA $E400, $C28A, $A824, $004E  ' 52
+    DATA $EE00, $C482, $AA22, $0044  ' 53
+    DATA $E800, $CA88, $AE2A, $0042  ' 54
+    DATA $EE00, $CC88, $AA22, $0044  ' 55
+    DATA $E600, $CC88, $AA2A, $0044  ' 56
+    DATA $EE00, $C282, $A424, $0044  ' 57
+    DATA $E400, $C48A, $AA2A, $0044  ' 58
+    DATA $E600, $CA8A, $A226, $0042  ' 59
+    DATA $6400, $CE8A, $AAAE, $0044  ' 60
+    DATA $6400, $C48C, $A4A4, $004E  ' 61
+    DATA $6400, $C28A, $A8A4, $004E  ' 62
+    DATA $6E00, $C482, $AAA2, $0044  ' 63
+    DATA $6800, $CA88, $AEAA, $0042  ' 64
+    DATA $6E00, $CC88, $AAA2, $0044  ' 65
+    DATA $6600, $CC88, $AAAA, $0044  ' 66
+    DATA $6E00, $C282, $A4A4, $0044  ' 67
+    DATA $6400, $C48A, $AAAA, $0044  ' 68
+    DATA $6600, $CA8A, $A2A6, $0042  ' 69
+    DATA $E400, $2E2A, $4A4E, $0044  ' 70
+    DATA $E400, $242C, $4444, $004E  ' 71
+    DATA $E400, $222A, $4844, $004E  ' 72
+    DATA $EE00, $2422, $4A42, $0044  ' 73
+    DATA $E800, $2A28, $4E4A, $0042  ' 74
+    DATA $EE00, $2C28, $4A42, $0044  ' 75
+    DATA $E600, $2C28, $4A4A, $0044  ' 76
+    DATA $EE00, $2222, $4444, $0044  ' 77
+    DATA $E400, $242A, $4A4A, $0044  ' 78
+    DATA $E600, $2A2A, $4246, $0042  ' 79
+    DATA $4400, $4EAA, $AAAE, $0044  ' 80
+    DATA $4400, $44AC, $A4A4, $004E  ' 81
+    DATA $4400, $42AA, $A8A4, $004E  ' 82
+    DATA $4E00, $44A2, $AAA2, $0044  ' 83
+    DATA $4800, $4AA8, $AEAA, $0042  ' 84
+    DATA $4E00, $4CA8, $AAA2, $0044  ' 85
+    DATA $4600, $4CA8, $AAAA, $0044  ' 86
+    DATA $4E00, $42A2, $A4A4, $0044  ' 87
+    DATA $4400, $44AA, $AAAA, $0044  ' 88
+    DATA $4600, $4AAA, $A2A6, $0042  ' 89
+    DATA $6400, $AEAA, $2A6E, $0024  ' 90
+    DATA $6400, $A4AC, $2464, $002E  ' 91
+    DATA $6400, $A2AA, $2864, $002E  ' 92
+    DATA $6E00, $A4A2, $2A62, $0024  ' 93
+    DATA $6800, $AAA8, $2E6A, $0022  ' 94
+    DATA $6E00, $ACA8, $2A62, $0024  ' 95
+    DATA $6600, $ACA8, $2A6A, $0024  ' 96
+    DATA $6E00, $A2A2, $2464, $0024  ' 97
+    DATA $6400, $A4AA, $2A6A, $0024  ' 98
+    DATA $6600, $AAAA, $2266, $0022  ' 99
+PackedPairsSingle:
+    DATA $4000, $E0A0, $A0E0, $0040  ' 0_
+    DATA $4000, $40C0, $4040, $00E0  ' 1_
+    DATA $4000, $20A0, $8040, $00E0  ' 2_
+    DATA $E000, $4020, $A020, $0040  ' 3_
+    DATA $8000, $A080, $E0A0, $0020  ' 4_
+    DATA $E000, $C080, $A020, $0040  ' 5_
+    DATA $6000, $C080, $A0A0, $0040  ' 6_
+    DATA $E000, $2020, $4040, $0040  ' 7_
+    DATA $4000, $40A0, $A0A0, $0040  ' 8_
+    DATA $6000, $A0A0, $2060, $0020  ' 9_
+
+' Pre-computed TinyFont character pair shapes for HUD "SCORE:" label.
+' From TinyFont.bas LEFT + RIGHT shapes XOR'd (bits don't overlap).
+' 3 entries: "SC", "OR", "E:" — 4 packed DECLEs each = 12 ROM words.
+TinyFontLabelData:
+    DATA $6400, $488A, $AA28, $0044  ' "SC" (card 34)
+    DATA $4C00, $AAAA, $AAAC, $004A  ' "OR" (card 35)
+    DATA $E000, $C880, $8080, $00E8  ' "E:" (card 36)
+
+' Chain cards 58-60 are static (DEFINE'd at StartGame from ChainCHGfx/AIGfx/NGfx).
+' Chain digits use GROM characters via PRINT AT — no round-robin needed.
