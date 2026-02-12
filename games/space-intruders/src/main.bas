@@ -153,7 +153,7 @@ CONST ALIEN_START_X = 0         ' Starting column on screen (leftmost)
 CONST ALIEN_START_Y = 1         ' Starting row on screen
 CONST ALIEN_MAX_X   = 11        ' Maximum X offset before reversing (20 - 9)
 CONST MARCH_SPEED_START = 60   ' Starting frames between march steps
-CONST MARCH_SPEED_MIN = 24      ' Fastest march speed (minimum frames) - balanced
+CONST MARCH_SPEED_MIN = 16      ' Fastest march speed (minimum frames) — 3.75/sec peak
 
 ' Bullet constants
 CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
@@ -250,8 +250,8 @@ CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this w
 DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, needs 16-bit)
 DIM FlyColors(6)               ' Saucer color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
-DIM StarPos(16)                 ' Star BACKTAB positions (16 stars, max 239 fits 8-bit)
-DIM StarType(16)                ' Star type: 0=slow/dim, 1=fast/bright
+DIM StarPos(16)                 ' Star column position (0-19)
+DIM StarType(16)                ' Packed: bits 1-7 = row base offset (60/80/160/180/220), bit 0 = type (0=slow, 1=fast)
 
 ' -- Core State --
 #GameFlags  = 0                 ' Bit-packed booleans (see FLAG_* constants)
@@ -1428,72 +1428,71 @@ DrawAlienGrid: PROCEDURE
 END
 
 ' --- GenerateStars: place 16 random stars on safe rows ---
+' StarPos = column (0-19), StarType = row base offset | type bit
 GenerateStars: PROCEDURE
-    ' Safe rows: 3(60-79), 4(80-99), 8(160-179), 9(180-199), 11(220-239)
+    ' Safe rows: 3(60), 4(80), 8(160), 9(180), 11(220) — all bases are even
     FOR LoopVar = 0 TO 15
-        ' Pick a safe row: 0-1=row3, 2-4=row4, 5-7=row8, 8-10=row9, 11-15=row11
         Col = RANDOM(20)
         Row = RANDOM(5)
         IF Row = 0 THEN
-            StarPos(LoopVar) = 60 + Col       ' Row 3
+            Row = 60                          ' Row 3 base offset
         ELSEIF Row = 1 THEN
-            StarPos(LoopVar) = 80 + Col       ' Row 4
+            Row = 80                          ' Row 4 base offset
         ELSEIF Row = 2 THEN
-            StarPos(LoopVar) = 160 + Col      ' Row 8
+            Row = 160                         ' Row 8 base offset
         ELSEIF Row = 3 THEN
-            StarPos(LoopVar) = 180 + Col      ' Row 9
+            Row = 180                         ' Row 9 base offset
         ELSE
-            StarPos(LoopVar) = 220 + Col      ' Row 11
+            Row = 220                         ' Row 11 base offset
         END IF
-        ' Alternate star type: even=slow/dim, odd=fast/bright
-        StarType(LoopVar) = LoopVar AND 1
+        StarPos(LoopVar) = Col               ' Store column only
+        ' Pack row base + type into StarType (bit 0 = type, bits 1-7 = base)
+        StarType(LoopVar) = Row OR (LoopVar AND 1)
         ' Draw the star
-        IF StarType(LoopVar) = 0 THEN
-            PRINT AT StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
+        IF (LoopVar AND 1) = 0 THEN
+            PRINT AT Row + Col, GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
         ELSE
-            PRINT AT StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
+            PRINT AT Row + Col, GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
         END IF
     NEXT LoopVar
     RETURN
 END
 
 ' --- ScrollStars: shift all stars left with parallax ---
+' Optimized: StarPos = column (0-19), StarType = row base | type bit
+' Eliminates 48 software div/mul calls per scroll (/ 20 and * 20)
 ScrollStars: PROCEDURE
-    FOR LoopVar = 0 TO 15  ' 16 stars
-        ' Calculate row and column from BACKTAB position
-        Row = StarPos(LoopVar) / 20
-        Col = StarPos(LoopVar) - (Row * 20)
+    FOR LoopVar = 0 TO 15
+        ' Extract row base offset (bits 1-7, clear type bit 0)
+        Row = StarType(LoopVar) AND $FE
 
         ' Clear old position
-        PRINT AT StarPos(LoopVar), 0
+        PRINT AT Row + StarPos(LoopVar), 0
 
         ' Parallax: slow stars move every other tick, fast every tick
-        IF StarType(LoopVar) = 0 THEN
+        IF (StarType(LoopVar) AND 1) = 0 THEN
             ' Slow/dim: move every 2nd tick
             IF (StarTick AND 1) = 0 THEN
-                IF Col = 0 THEN
-                    Col = 19
+                IF StarPos(LoopVar) = 0 THEN
+                    StarPos(LoopVar) = 19
                 ELSE
-                    Col = Col - 1
+                    StarPos(LoopVar) = StarPos(LoopVar) - 1
                 END IF
             END IF
         ELSE
             ' Fast/bright: move every tick
-            IF Col = 0 THEN
-                Col = 19
+            IF StarPos(LoopVar) = 0 THEN
+                StarPos(LoopVar) = 19
             ELSE
-                Col = Col - 1
+                StarPos(LoopVar) = StarPos(LoopVar) - 1
             END IF
         END IF
 
-        ' Update position
-        StarPos(LoopVar) = Row * 20 + Col
-
-        ' Redraw star
-        IF StarType(LoopVar) = 0 THEN
-            PRINT AT StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
+        ' Redraw star at new position
+        IF (StarType(LoopVar) AND 1) = 0 THEN
+            PRINT AT Row + StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
         ELSE
-            PRINT AT StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
+            PRINT AT Row + StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
         END IF
     NEXT LoopVar
     RETURN
@@ -1799,10 +1798,10 @@ GameLoop:
         GOSUB MovePlayer
     END IF
 
-    ' Animate alien walk frames independently (every 16 frames)
+    ' Animate alien walk frames independently (every 24 frames ≈ 2.5/sec)
     NeedRedraw = 0
     ShimmerCount = ShimmerCount + 1
-    IF ShimmerCount >= 16 THEN
+    IF ShimmerCount >= 24 THEN
         ShimmerCount = 0
         AnimFrame = AnimFrame XOR 1
         NeedRedraw = 1  ' Animation changed, need redraw
@@ -1998,7 +1997,7 @@ GameLoop:
         FOR Row = BombExpRow - 1 TO BombExpRow + 1
             IF Row >= 0 THEN
             IF Row < ALIEN_ROWS THEN
-                #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + Row)
                 FOR Col = BombExpCol - 1 TO BombExpCol + 2
                     IF Col >= 0 THEN
                     IF Col < ALIEN_COLS THEN
@@ -2364,7 +2363,7 @@ ChainDone:
         MegaBeamTimer = MegaBeamTimer - 1
         ' Clear old beam column before updating position
         FOR LoopVar = 0 TO 9
-            #ScreenPos = LoopVar * 20 + MegaBeamCol
+            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
@@ -2388,7 +2387,7 @@ ChainDone:
         END IF
         ' Draw beam from top row (Col) down to row 9 (at ship turret)
         FOR LoopVar = Col TO 9
-            #ScreenPos = LoopVar * 20 + MegaBeamCol
+            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
             PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + AlienColor + $0800
         NEXT LoopVar
         IF MegaBeamTimer = 0 THEN
@@ -2799,28 +2798,37 @@ ProcessOneOrbiter: PROCEDURE
         ' Clear last drawn position before deactivating
         Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
         Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20 + ALIEN_START_X + AlienOffsetX + Col
-        IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
+        LoopVar = ALIEN_START_Y + AlienOffsetY + Row
+        IF LoopVar <= 12 THEN
+            #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
+            IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
+        END IF
         HitRow = 255
     ELSE
         ' Advance orbit every 8 frames (piggyback on ShimmerCount)
         IF ShimmerCount = 0 OR ShimmerCount = 8 THEN
             Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
             Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-            #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20 + ALIEN_START_X + AlienOffsetX + Col
-            IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
+            LoopVar = ALIEN_START_Y + AlienOffsetY + Row
+            IF LoopVar <= 12 THEN
+                #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
+                IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
+            END IF
             HitRow = HitRow + 1
             IF HitRow >= 10 THEN HitRow = 0
         END IF
         ' Draw orbiter at current position
         Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
         Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20 + ALIEN_START_X + AlienOffsetX + Col
-        IF #ScreenPos < 220 THEN
-            IF AnimFrame = 0 THEN
-                PRINT AT #ScreenPos, GRAM_ALIEN2 * 8 + BossColor(FoundBoss) + $0800
-            ELSE
-                PRINT AT #ScreenPos, (GRAM_ALIEN2 + 1) * 8 + BossColor(FoundBoss) + $0800
+        LoopVar = ALIEN_START_Y + AlienOffsetY + Row
+        IF LoopVar <= 12 THEN
+            #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
+            IF #ScreenPos < 220 THEN
+                IF AnimFrame = 0 THEN
+                    PRINT AT #ScreenPos, GRAM_ALIEN2 * 8 + BossColor(FoundBoss) + $0800
+                ELSE
+                    PRINT AT #ScreenPos, (GRAM_ALIEN2 + 1) * 8 + BossColor(FoundBoss) + $0800
+                END IF
             END IF
         END IF
     END IF
@@ -3378,8 +3386,9 @@ END
 ' --------------------------------------------
 HandleDescent: PROCEDURE
     AlienOffsetY = AlienOffsetY + 1
-    IF CurrentMarchSpeed > 12 THEN
+    IF CurrentMarchSpeed > MARCH_SPEED_MIN THEN
         CurrentMarchSpeed = CurrentMarchSpeed - 6
+        IF CurrentMarchSpeed < MARCH_SPEED_MIN THEN CurrentMarchSpeed = MARCH_SPEED_MIN
     END IF
     GOSUB UpdateMusicGear
     RETURN
@@ -3389,21 +3398,17 @@ END
 ' MarchAliens - Move alien grid (dynamic boundaries)
 ' --------------------------------------------
 MarchAliens: PROCEDURE
-    ' Find leftmost and rightmost alive columns across all rows
-    HitRow = ALIEN_COLS - 1       ' LeftmostCol: start high, find min
-    LoopVar = 0                   ' RightmostCol: start low, find max
-    FOR Row = 0 TO ALIEN_ROWS - 1
-        IF #AlienRow(Row) THEN
-            #Mask = 1
-            FOR Col = 0 TO ALIEN_COLS - 1
-                IF #AlienRow(Row) AND #Mask THEN
-                    IF Col < HitRow THEN HitRow = Col
-                    IF Col > LoopVar THEN LoopVar = Col
-                END IF
-                #Mask = #Mask + #Mask
-            NEXT Col
+    ' Find leftmost and rightmost alive columns via OR-chain (~300 cyc vs ~1500)
+    ' Combine all rows into single column-presence mask
+    #Mask = #AlienRow(0) OR #AlienRow(1) OR #AlienRow(2) OR #AlienRow(3) OR #AlienRow(4)
+    HitRow = ALIEN_COLS - 1       ' LeftmostCol: first match in 0→8 scan
+    LoopVar = 0                   ' RightmostCol: last match in 0→8 scan
+    FOR Col = 0 TO ALIEN_COLS - 1
+        IF #Mask AND ColMaskData(Col) THEN
+            IF HitRow = ALIEN_COLS - 1 THEN HitRow = Col  ' First match = leftmost
+            LoopVar = Col  ' Always update = last match is rightmost
         END IF
-    NEXT Row
+    NEXT Col
 
     ' HitRow = leftmost alive col, LoopVar = rightmost alive col
     ' Right boundary: ALIEN_START_X + AlienOffsetX + LoopVar must stay <= 19
@@ -3419,7 +3424,7 @@ MarchAliens: PROCEDURE
         FOR Col = 0 TO HitRow - 1
             FOR Row = 0 TO ALIEN_ROWS - 1
                 IF ALIEN_START_Y + AlienOffsetY + Row < 11 THEN
-                    #ScreenPos = (ALIEN_START_Y + AlienOffsetY + Row) * 20
+                    #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + Row)
                     PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, 0
                 END IF
             NEXT Row
@@ -3812,7 +3817,7 @@ END
 ' --------------------------------------------
 MegaBeamClear: PROCEDURE
     FOR LoopVar = 0 TO 9
-        #ScreenPos = LoopVar * 20 + MegaBeamCol
+        #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
     RETURN
@@ -4016,7 +4021,7 @@ DrawAliens: PROCEDURE
     IF AlienOffsetY > LastClearedY THEN
         FOR ClearRow = LastClearedY TO AlienOffsetY - 1
             IF ALIEN_START_Y + ClearRow < 11 THEN
-                #ScreenPos = (ALIEN_START_Y + ClearRow) * 20
+                #ScreenPos = Row20Data(ALIEN_START_Y + ClearRow)
                 ' Only clear alien area + trails (not full 20 columns)
                 FOR Col = ALIEN_START_X + AlienOffsetX TO ALIEN_START_X + AlienOffsetX + ALIEN_COLS + 1
                     IF Col < 20 THEN PRINT AT #ScreenPos + Col, 0
@@ -4043,7 +4048,7 @@ DrawAliens: PROCEDURE
         END IF
         ' Skip if this row would land on the HUD (row 11 = positions 220+)
         IF HitCol AND ClearRow < 11 THEN
-        #ScreenPos = ClearRow * 20
+        #ScreenPos = Row20Data(ClearRow)
 
         ' Determine which alien type and wave color for this row
         IF Row = 0 THEN
@@ -4117,8 +4122,68 @@ DrawAliens: PROCEDURE
                 #Mask = #Mask + #Mask
             NEXT Col
         ELSE
-            ' Standard mode: draw with column/row reveal gating
-            ' Top-down mode gates by row, left sweep gates by column
+            ' Standard mode: two paths for performance
+            IF WaveRevealCol >= ALIEN_COLS - 1 AND (#GameFlags AND FLAG_TOPDOWN) = 0 THEN
+            ' FAST PATH: reveal complete, skip all warp/reveal checks
+            ' Pre-add row offset once (saves 2 additions per cell × 9 cols)
+            #ScreenPos = #ScreenPos + ALIEN_START_X + AlienOffsetX
+            IF #AlienRow(Row) = 0 THEN
+                ' EMPTY ROW: skip entire column loop (~1000 cycles saved)
+                ' Trail edges still need clearing after march
+                IF AlienOffsetX > 0 THEN
+                    PRINT AT #ScreenPos - 1, 0
+                END IF
+                IF AlienOffsetX < ALIEN_MAX_X THEN
+                    PRINT AT #ScreenPos + ALIEN_COLS, 0
+                END IF
+            ELSEIF RowBoss1 < 255 THEN
+                ' BOSS ROW: per-cell boss checking required
+                #Mask = 1
+                FOR Col = 0 TO ALIEN_COLS - 1
+                    IF #AlienRow(Row) AND #Mask THEN
+                        FoundBoss = 255
+                        IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
+                        IF FoundBoss = 255 AND RowBoss2 < 255 THEN
+                            IF Col = BossCol(RowBoss2) OR Col = BossCol(RowBoss2) + 1 THEN FoundBoss = RowBoss2
+                        END IF
+                        IF FoundBoss < 255 THEN
+                            GOSUB ComputeBossCard
+                            PRINT AT #ScreenPos + Col, #Card
+                            #Card = AlienCard * 8 + AlienColor + $0800
+                        ELSE
+                            PRINT AT #ScreenPos + Col, #Card
+                        END IF
+                    ELSE
+                        PRINT AT #ScreenPos + Col, 0
+                    END IF
+                    #Mask = #Mask + #Mask
+                NEXT Col
+                IF AlienOffsetX > 0 THEN
+                    PRINT AT #ScreenPos - 1, 0
+                END IF
+                IF AlienOffsetX < ALIEN_MAX_X THEN
+                    PRINT AT #ScreenPos + ALIEN_COLS, 0
+                END IF
+            ELSE
+                ' NO-BOSS ROW: fastest path, no boss checks (~25 cycles/cell saved)
+                #Mask = 1
+                FOR Col = 0 TO ALIEN_COLS - 1
+                    IF #AlienRow(Row) AND #Mask THEN
+                        PRINT AT #ScreenPos + Col, #Card
+                    ELSE
+                        PRINT AT #ScreenPos + Col, 0
+                    END IF
+                    #Mask = #Mask + #Mask
+                NEXT Col
+                IF AlienOffsetX > 0 THEN
+                    PRINT AT #ScreenPos - 1, 0
+                END IF
+                IF AlienOffsetX < ALIEN_MAX_X THEN
+                    PRINT AT #ScreenPos + ALIEN_COLS, 0
+                END IF
+            END IF
+            ELSE
+            ' REVEAL PATH: warp-in effects + reveal gating
             IF (#GameFlags AND FLAG_TOPDOWN) AND Row > WaveRevealRow THEN
                 ' Row not yet revealed in top-down mode - skip drawing
             ELSE
@@ -4126,7 +4191,6 @@ DrawAliens: PROCEDURE
             FOR Col = 0 TO ALIEN_COLS - 1
                 IF (#GameFlags AND FLAG_TOPDOWN) OR Col <= WaveRevealCol THEN
                     IF #AlienRow(Row) AND #Mask THEN
-                        ' Check if this cell is a boss (inline)
                         FoundBoss = 255
                         IF RowBoss1 < 255 THEN
                             IF Col = BossCol(RowBoss1) OR Col = BossCol(RowBoss1) + 1 THEN FoundBoss = RowBoss1
@@ -4139,7 +4203,7 @@ DrawAliens: PROCEDURE
                             PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, #Card
                             #Card = AlienCard * 8 + AlienColor + $0800
                         ELSE
-                            ' Warp-in: show materialize frames for currently revealing elements
+                            ' Warp-in: materialize frames for currently revealing elements
                             IF (#GameFlags AND FLAG_TOPDOWN) AND Row = WaveRevealRow AND WaveRevealRow < ALIEN_ROWS - 1 THEN
                                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, (GRAM_WARP1 + MarchCount) * 8 + AlienColor + $0800
                             ELSEIF Col = WaveRevealCol AND WaveRevealCol < ALIEN_COLS - 1 THEN
@@ -4154,14 +4218,15 @@ DrawAliens: PROCEDURE
                 END IF
                 #Mask = #Mask + #Mask
             NEXT Col
-            ' Clear trail on BOTH edges to handle direction reversals cleanly
+            END IF  ' top-down row gating
+            ' Clear trail on BOTH edges (reveal path)
             IF AlienOffsetX > 0 THEN
                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX - 1, 0
             END IF
             IF AlienOffsetX < ALIEN_MAX_X THEN
                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + ALIEN_COLS, 0
             END IF
-            END IF  ' top-down row gating
+            END IF  ' fast vs reveal path
         END IF
         END IF  ' row < 11 (protect HUD)
     NEXT Row
@@ -4187,7 +4252,7 @@ LoadPatternB: PROCEDURE
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
     ' Clear wingman bullet BACKTAB tile before deactivating
     IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
@@ -4516,7 +4581,7 @@ LoadPatternB: PROCEDURE
 
     ' Clear alien area on screen (rows 0-10)
     FOR LoopVar = 0 TO 10
-        #ScreenPos = LoopVar * 20
+        #ScreenPos = Row20Data(LoopVar)
         FOR Col = 0 TO 19
             PRINT AT #ScreenPos + Col, 0
         NEXT Col
@@ -4599,7 +4664,7 @@ ReloadHorde: PROCEDURE
     ' Clear bullets and rogue (preserve wingman)
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
     IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
@@ -4666,13 +4731,8 @@ StartNewWave: PROCEDURE
     WaveColor1 = WavePalette1(LoopVar)
     WaveColor2 = WavePalette2(LoopVar)
 
-    ' Set base march speed for this wave (gradually faster across 32 waves)
-    IF BaseMarchSpeed > MARCH_SPEED_MIN + 2 THEN
-        BaseMarchSpeed = BaseMarchSpeed - 2
-    ELSE
-        BaseMarchSpeed = MARCH_SPEED_MIN
-    END IF
-    CurrentMarchSpeed = BaseMarchSpeed
+    ' March speed: same starting speed every wave (challenge comes from level variety)
+    CurrentMarchSpeed = MARCH_SPEED_START
 
     ' Set initial music gear (music starts AFTER voice announcement below)
     IF Level >= 2 THEN
@@ -4706,7 +4766,7 @@ StartNewWave: PROCEDURE
     #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
     ' Clear wingman bullet BACKTAB tile before deactivating
     IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
@@ -5016,7 +5076,7 @@ UpdateCapture: PROCEDURE
                     IF HitRow + 6 >= RogueY THEN
                         ' Rogue destroys wingman! Release capture
                         IF #GameFlags AND FLAG_CAPBULLET THEN
-                            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                            #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                             IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                         END IF
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
@@ -5053,7 +5113,7 @@ UpdateCapture: PROCEDURE
     IF #GameFlags AND FLAG_CAPBULLET THEN
         ' Clear previous tile (skip row 0 = score display)
         IF CapBulletRow > 0 THEN
-            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+            #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
             IF #ScreenPos < 240 THEN
                 PRINT AT #ScreenPos, 0
             END IF
@@ -5083,7 +5143,7 @@ UpdateCapture: PROCEDURE
                                     RogueState = ROGUE_IDLE
                                     RogueTimer = 0 : RogueDivePhase = 0
                                     SPRITE SPR_FLYER, 0, 0, 0
-                                    #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                                    #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                                     IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                                     #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
                                     #Score = #Score + 50
@@ -5101,7 +5161,7 @@ UpdateCapture: PROCEDURE
 
         ' Draw bullet tile if still active
         IF #GameFlags AND FLAG_CAPBULLET THEN
-            #ScreenPos = CapBulletRow * 20 + CapBulletCol
+            #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
             IF #ScreenPos < 240 THEN
                 PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_WHITE + $0800
             END IF
@@ -5165,7 +5225,7 @@ CaptureHitscan: PROCEDURE
     #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
 
     ' Clear BACKTAB tile (bullet tile will also be cleared)
-    #ScreenPos = CapBulletRow * 20 + HitCol
+    #ScreenPos = Row20Data(CapBulletRow) + HitCol
     IF #ScreenPos < 240 THEN
         PRINT AT #ScreenPos, 0
     END IF
@@ -5269,7 +5329,7 @@ RogueUpdate: PROCEDURE
         RogueTimer = RogueTimer - 1
 
         ' Flash alien's BACKTAB tile between normal and white
-        #ScreenPos = (ALIEN_START_Y + AlienOffsetY + RogueRow) * 20
+        #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + RogueRow)
         #ScreenPos = #ScreenPos + ALIEN_START_X + AlienOffsetX + RogueCol
         IF #ScreenPos < 220 THEN
             IF RogueTimer AND 4 THEN
@@ -5779,7 +5839,7 @@ SaucerAnimate: PROCEDURE
                 IF CapPixelX >= FlyX - 4 THEN
                     IF CapPixelX <= FlyX + 16 THEN
                         ' Clear the wingman bullet from BACKTAB
-                        #ScreenPos = CapBulletRow * 20 + CapBulletCol
+                        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                         #GameFlags = #GameFlags AND $FFF7  ' Deactivate wingman bullet
                         GOSUB SaucerHit
@@ -5835,6 +5895,11 @@ END
 ' Column bitmask lookup table: ColMaskData(n) = 2^n (0-9)
 ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
+
+' Row-to-BACKTAB-position lookup: Row20Data(n) = n * 20 (rows 0-11)
+' Replaces software multiply in DrawAliens hot path (~20-50 cyc saved per use)
+Row20Data:
+    DATA 0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240
 
 ' ╔════════════════════════════════════════════════════════════╗
 ' ║  LEVEL DESIGN — 32-wave cycle (AND 31 wrapping)          ║
