@@ -160,6 +160,7 @@ CONST BULLET_SPEED  = 2         ' Player bullet speed (pixels per frame)
 CONST BULLET_TOP    = 8         ' Top of screen
 CONST ALIEN_BULLET_SPEED = 2    ' Alien bullet speed (pixels per frame) - doubled for challenge
 CONST ALIEN_SHOOT_RATE = 40     ' Frames between alien shots (~1.5/sec)
+CONST FLY_STEP_RATE = 2         ' Waypoints to advance per frame (flight engine)
 CONST RAPID_SPEED    = 4        ' Rapid fire bullet speed (4px/frame)
 CONST RAPID_COOLDOWN = 3        ' Frames between rapid fire shots
 
@@ -353,15 +354,12 @@ FlyFrame    = 0                 ' Flying sprite animation frame
 FlyColorIdx = 0                 ' Color cycle index (0-5)
 FlyColorTimer = 0               ' Frame counter for color change
 FlyColor    = 7                 ' Current sprite color
-SaucerCard  = GRAM_SAUCER       ' Current saucer GRAM card (animation frame)
 FlyState    = 0                 ' 0=enter, 1=looping, 2=exit, 3=offscreen pause
 FlyCenterX  = 0                 ' Saucer swirl circle center X
 FlyCenterY  = 0                 ' Saucer swirl circle center Y
 #FlyLoopCount = 0                ' Number of completed figure-8 loops
 #FlyPathLen  = 0                 ' Current pattern waypoint count
-FlyStepRate = 0                 ' Frames between waypoint advances
-FlyMaxLoops = 0                 ' 0=infinite, N=stop after N loops
-FlyTransSpd = 0                 ' Pixels per frame during transition
+FlyTransSpd = 0                 ' Pixels per frame during transition (also encodes pattern: 1=figure8, 2=diamond)
 #PathXAddr  = 0                 ' ROM address of FlyPathXData (set at title init)
 #PathYAddr  = 0                 ' ROM address of FlyPathYData (set at title init)
 
@@ -409,7 +407,6 @@ SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 
 ' -- Starfield & Parallax --
-StarCount   = 0                 ' Number of active stars
 StarTimer   = 0                 ' Frame counter for scroll updates
 StarTick    = 0                 ' Tick counter (for slow layer)
 SilhOffset  = 0                 ' Silhouette scroll position (0 to SILH_MAP_LEN-1)
@@ -1432,7 +1429,6 @@ END
 
 ' --- GenerateStars: place 16 random stars on safe rows ---
 GenerateStars: PROCEDURE
-    StarCount = 0
     ' Safe rows: 3(60-79), 4(80-99), 8(160-179), 9(180-199), 11(220-239)
     FOR LoopVar = 0 TO 15
         ' Pick a safe row: 0-1=row3, 2-4=row4, 5-7=row8, 8-10=row9, 11-15=row11
@@ -1457,14 +1453,13 @@ GenerateStars: PROCEDURE
         ELSE
             PRINT AT StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
         END IF
-        StarCount = StarCount + 1
     NEXT LoopVar
     RETURN
 END
 
 ' --- ScrollStars: shift all stars left with parallax ---
 ScrollStars: PROCEDURE
-    FOR LoopVar = 0 TO StarCount - 1
+    FOR LoopVar = 0 TO 15  ' 16 stars
         ' Calculate row and column from BACKTAB position
         Row = StarPos(LoopVar) / 20
         Col = StarPos(LoopVar) - (Row * 20)
@@ -1877,75 +1872,70 @@ GameLoop:
         NeedRedraw = 1  ' Pattern B always redraws during slide-in
     END IF
 
-    ' Single DrawAliens call per frame (if needed)
+    ' March processing (before DrawAliens so we only draw once per frame)
+    IF WaveRevealCol >= ALIEN_COLS - 1 THEN
+    IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN
+    IF DeathTimer = 0 THEN
+        MarchCount = MarchCount + 1
+        IF MarchCount >= CurrentMarchSpeed THEN
+            MarchCount = 0
+            GOSUB MarchAliens
+            NeedRedraw = 1  ' March changed grid, need redraw
+            ' Check if aliens reached the bottom (invasion!)
+            ' Find bottom-most alive row (scan from bottom up, stop at first alive)
+            HitRow = 255  ' sentinel: no alive row found
+            FOR Row = ALIEN_ROWS - 1 TO 0 STEP -1
+                IF #AlienRow(Row) THEN
+                    IF HitRow = 255 THEN HitRow = Row
+                END IF
+            NEXT Row
+            ' Check invasion threshold (aliens reached ship baseline)
+            IF HitRow < 255 THEN
+              IF GameOver = 0 THEN
+                IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
+                    ' Invasion! Lose a life and reset formation
+                    IF DeathTimer = 0 AND Invincible = 0 THEN
+                        Lives = Lives - 1
+                        ' Clear power-ups, bullets, rogue, wingman
+                        BeamTimer = 0 : RapidTimer = 0
+                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
+                        #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
+                        RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
+                        #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
+                        GOSUB SilenceSfx
+                        SPRITE SPR_PLAYER, 0, 0, 0
+                        SPRITE SPR_SHIP_ACCENT, 0, 0, 0
+                        SPRITE SPR_PBULLET, 0, 0, 0
+                        SPRITE SPR_ABULLET, 0, 0, 0
+                        SPRITE SPR_FLYER, 0, 0, 0
+                        SPRITE SPR_POWERUP, 0, 0, 0
+                        PowerUpState = 0  ' Cancel any falling/landed capsule
+                        IF Lives = 0 THEN
+                            ' No lives left — game over
+                            GameOver = 3
+                            DeathTimer = 75
+                            ShakeTimer = 30
+                        ELSE
+                            ' INVASION! Aliens freeze in place, then reset to middle
+                            ' Extra 30 frames (105-75) = freeze phase with aliens visible
+                            DeathTimer = 105
+                            ShakeTimer = 45  ' Longer shake for dramatic effect
+                            ' Don't reset aliens yet — they freeze where they are
+                            ' Clear and reset happens at DeathTimer = 75 (see below)
+                        END IF
+                    END IF
+                END IF
+              END IF
+            END IF
+        END IF
+    END IF
+    END IF
+    END IF
+
+    ' Single DrawAliens call per frame (shimmer, reveal, or march)
     IF NeedRedraw THEN GOSUB DrawAliens
     ' Orbiter draws on top of grid (after DrawAliens clears empty cells)
     IF OrbitStep < 10 OR OrbitStep2 < 10 THEN GOSUB UpdateOrbiter
-
-    ' Check if reveal is complete (all entrance animations done)
-    NeedRedraw = 0
-    IF WaveRevealCol >= ALIEN_COLS - 1 THEN
-        IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN NeedRedraw = 1
-    END IF
-
-    ' Update alien march (only after reveal is complete, and not during death)
-    IF NeedRedraw THEN
-    IF DeathTimer = 0 THEN
-    MarchCount = MarchCount + 1
-    IF MarchCount >= CurrentMarchSpeed THEN
-        MarchCount = 0
-        GOSUB MarchAliens
-        GOSUB DrawAliens
-        IF OrbitStep < 10 OR OrbitStep2 < 10 THEN GOSUB UpdateOrbiter
-        ' Check if aliens reached the bottom (invasion!)
-        ' Find bottom-most alive row (scan from bottom up, stop at first alive)
-        HitRow = 255  ' sentinel: no alive row found
-        FOR Row = ALIEN_ROWS - 1 TO 0 STEP -1
-            IF #AlienRow(Row) THEN
-                IF HitRow = 255 THEN HitRow = Row
-            END IF
-        NEXT Row
-        ' Check invasion threshold (aliens reached ship baseline)
-        IF HitRow < 255 THEN
-          IF GameOver = 0 THEN
-            IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
-                ' Invasion! Lose a life and reset formation
-                IF DeathTimer = 0 AND Invincible = 0 THEN
-                    Lives = Lives - 1
-                    ' Clear power-ups, bullets, rogue, wingman
-                    BeamTimer = 0 : RapidTimer = 0
-                    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
-                    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
-                    RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
-                    #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
-                    GOSUB SilenceSfx
-                    SPRITE SPR_PLAYER, 0, 0, 0
-                    SPRITE SPR_SHIP_ACCENT, 0, 0, 0
-                    SPRITE SPR_PBULLET, 0, 0, 0
-                    SPRITE SPR_ABULLET, 0, 0, 0
-                    SPRITE SPR_FLYER, 0, 0, 0
-                    SPRITE SPR_POWERUP, 0, 0, 0
-                    PowerUpState = 0  ' Cancel any falling/landed capsule
-                    IF Lives = 0 THEN
-                        ' No lives left — game over
-                        GameOver = 3
-                        DeathTimer = 75
-                        ShakeTimer = 30
-                    ELSE
-                        ' INVASION! Aliens freeze in place, then reset to middle
-                        ' Extra 30 frames (105-75) = freeze phase with aliens visible
-                        DeathTimer = 105
-                        ShakeTimer = 45  ' Longer shake for dramatic effect
-                        ' Don't reset aliens yet — they freeze where they are
-                        ' Clear and reset happens at DeathTimer = 75 (see below)
-                    END IF
-                END IF
-            END IF
-          END IF
-        END IF
-    END IF
-    END IF ' DeathTimer gate for march
-    END IF ' reveal complete gate
 
     ' (Relentless wave mechanic is now handled in CheckWaveWin → ReloadHorde)
 
@@ -3388,7 +3378,7 @@ END
 ' --------------------------------------------
 HandleDescent: PROCEDURE
     AlienOffsetY = AlienOffsetY + 1
-    IF CurrentMarchSpeed > 6 THEN
+    IF CurrentMarchSpeed > 12 THEN
         CurrentMarchSpeed = CurrentMarchSpeed - 6
     END IF
     GOSUB UpdateMusicGear
@@ -5743,25 +5733,25 @@ SaucerAnimate: PROCEDURE
     #FlyPhase = #FlyPhase + 1
     IF #FlyPhase >= 24 THEN #FlyPhase = 0
     IF #FlyPhase < 6 THEN
-        SaucerCard = GRAM_SAUCER                ' All windows dark
+        #Card = GRAM_SAUCER                     ' All windows dark
         FlyColor = SaucerColor1(PowerUpType)     ' Primary color
     ELSEIF #FlyPhase < 12 THEN
-        SaucerCard = GRAM_SAUCER_F2             ' Inner window lit
+        #Card = GRAM_SAUCER_F2                  ' Inner window lit
         FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
     ELSEIF #FlyPhase < 18 THEN
-        SaucerCard = GRAM_SAUCER_F3             ' Outer window lit
+        #Card = GRAM_SAUCER_F3                  ' Outer window lit
         FlyColor = SaucerColor1(PowerUpType)     ' Primary color
     ELSE
-        SaucerCard = GRAM_SAUCER_F4             ' Both windows + engine glow
+        #Card = GRAM_SAUCER_F4                  ' Both windows + engine glow
         FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
     END IF
 
     ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
     ' Handle pastel colors (8+) to avoid bit overflow into card number
     IF FlyColor >= 8 THEN
-        #Card = SaucerCard * 8 + (FlyColor AND 7) + $1800
+        #Card = #Card * 8 + (FlyColor AND 7) + $1800
     ELSE
-        #Card = SaucerCard * 8 + FlyColor + $0800
+        #Card = #Card * 8 + FlyColor + $0800
     END IF
     SPRITE SPR_SAUCER, FlyX + $0200, FlyY, #Card
     SPRITE SPR_SAUCER2, (FlyX + 8) + $0200, FlyY + $0400, #Card
@@ -6142,16 +6132,12 @@ FlightStart: PROCEDURE
         #PathXAddr = VARPTR FlightFigure8X(0)
         #PathYAddr = VARPTR FlightFigure8Y(0)
         #FlyPathLen = 316
-        FlyStepRate = 2
-        FlyMaxLoops = 2
-        FlyTransSpd = 1
+        FlyTransSpd = 1  ' Figure-8: 1px transition, max 2 loops
     ELSEIF LoopVar = PAT_DIAMOND THEN
         #PathXAddr = VARPTR FlightOrbitX(0)
         #PathYAddr = VARPTR FlightOrbitY(0)
         #FlyPathLen = 356
-        FlyStepRate = 2
-        FlyMaxLoops = 0       ' Infinite
-        FlyTransSpd = 2
+        FlyTransSpd = 2  ' Diamond orbit: 2px transition, infinite loops
     END IF
     FlyState = FLT_TRANSITION
     #FlyPhase = 0
@@ -6208,13 +6194,13 @@ FlightTick: PROCEDURE
     END IF
 
     ' FLT_FOLLOWING: traverse high-density curve
-    ' FlyStepRate = waypoints to advance per frame (speed control)
-    #FlyPhase = #FlyPhase + FlyStepRate
+    ' FLY_STEP_RATE = waypoints to advance per frame (speed control)
+    #FlyPhase = #FlyPhase + FLY_STEP_RATE
     IF #FlyPhase >= #FlyPathLen THEN
         #FlyPhase = 0
         #FlyLoopCount = #FlyLoopCount + 1
-        IF FlyMaxLoops > 0 THEN
-            IF #FlyLoopCount >= FlyMaxLoops THEN
+        IF FlyTransSpd = 1 THEN  ' Figure-8 pattern: max 2 loops
+            IF #FlyLoopCount >= 2 THEN
                 FlyState = FLT_DONE
                 RETURN
             END IF
