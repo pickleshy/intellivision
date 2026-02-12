@@ -637,6 +637,9 @@ TitleScreen:
     ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at CapsuleColor2)
     GOSUB DrawAlienGrid
 
+    ' TinyFont URL label: PAISLEYBOXERS.ITCH.IO BETA (row 11)
+    GOSUB LoadURLFont
+
     ' Initialize Zod via flight engine
     FlyColors(0) = 7 : FlyColors(1) = 6 : FlyColors(2) = 5
     FlyColors(3) = 3 : FlyColors(4) = 5 : FlyColors(5) = 6
@@ -968,6 +971,7 @@ SkipPressfire:
         StarTimer = 0
         StarTick = StarTick + 1
         GOSUB ScrollStars
+        GOSUB DrawURLText   ' Repaint URL (stars may overwrite row 11 chars)
     END IF
 
     ' Animation - toggle walk frame every 16 frames via GRAM redefine
@@ -1402,6 +1406,41 @@ GOLetterStaticGram:
     ' ============================================================
     SEGMENT 1
 
+' --- Load TinyFont URL into GRAM and draw on row 11 ---
+LoadURLFont: PROCEDURE
+    ' Overwrites orphaned GRAM_FONT cards (A,C,N,T,U,D) + gameplay cards (57-63)
+    DEFINE 27, 2, URLGroup1     ' PA, IS
+    WAIT
+    DEFINE 31, 2, URLGroup2     ' LE, YB
+    WAIT
+    DEFINE 34, 2, URLGroup3     ' OX, ER
+    WAIT
+    DEFINE 57, 4, URLGroup4a    ' S., IT, CH, .I
+    WAIT
+    DEFINE 61, 3, URLGroup4b    ' O_, BE, TA
+    WAIT
+    GOSUB DrawURLText
+    RETURN
+END
+
+' --- Draw TinyFont URL on row 11: PAISLEYBOXERS.ITCH.IO BETA ---
+DrawURLText: PROCEDURE
+    PRINT AT 220, 27 * 8 + 3 + $0800   ' "PA"
+    PRINT AT 221, 28 * 8 + 3 + $0800   ' "IS"
+    PRINT AT 222, 31 * 8 + 3 + $0800   ' "LE"
+    PRINT AT 223, 32 * 8 + 3 + $0800   ' "YB"
+    PRINT AT 224, 34 * 8 + 3 + $0800   ' "OX"
+    PRINT AT 225, 35 * 8 + 3 + $0800   ' "ER"
+    PRINT AT 226, 57 * 8 + 3 + $0800   ' "S."
+    PRINT AT 227, 58 * 8 + 3 + $0800   ' "IT"
+    PRINT AT 228, 59 * 8 + 3 + $0800   ' "CH"
+    PRINT AT 229, 60 * 8 + 3 + $0800   ' ".I"
+    PRINT AT 230, 61 * 8 + 3 + $0800   ' "O "
+    PRINT AT 231, 62 * 8 + 3 + $0800   ' "BE"
+    PRINT AT 232, 63 * 8 + 3 + $0800   ' "TA"
+    RETURN
+END
+
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
     ' Clear rows 5-7 first (cols 0-19)
@@ -1582,6 +1621,8 @@ StartGame:
     DEFINE GRAM_BOMB1_F1, 1, SquidLeftF2Gfx  ' Card 56 (overwritten by title anim)
     WAIT
     DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx ' Card 57
+    WAIT
+    DEFINE GRAM_CHAIN_CH, 3, ChainCHGfx   ' Cards 58-60: Chain labels (overwritten by URL on title)
     WAIT
     ' Initialize score digit display (skip label cards 0-2 during first wave reveal)
     ScoreCard = 2    ' First call goes to 3 (digit card 61)
@@ -6747,6 +6788,27 @@ FontVGfx:
     BITMAP ".XX.XX.."
     BITMAP "..XXX..."
     BITMAP "...X...."
+
+' --- TinyFont URL pairs: PAISLEYBOXERS.ITCH.IO BETA (title screen row 11) ---
+' Each entry = 4 DECLEs (8 rows packed, left+right XOR'd from TinyFont.bas)
+URLGroup1:   ' Cards 27-28 (overwrites GRAM_FONT_A, GRAM_FONT_C)
+    DATA $C400, $AAAA, $8ACE, $008A  ' "PA"
+    DATA $E600, $4448, $4A42, $00E4  ' "IS"
+URLGroup2:   ' Cards 31-32 (overwrites GRAM_FONT_N, GRAM_FONT_T)
+    DATA $8E00, $8C88, $8888, $00EE  ' "LE"
+    DATA $AC00, $ACAA, $4A4A, $004C  ' "YB"
+URLGroup3:   ' Cards 34-35 (overwrites GRAM_FONT_U, GRAM_FONT_D)
+    DATA $4A00, $A4AA, $AAAA, $004A  ' "OX"
+    DATA $EC00, $CA8A, $8A8C, $00EA  ' "ER"
+URLGroup4a:  ' Cards 57-60 (overwrites gameplay bomb/chain cards)
+    DATA $6000, $4080, $A020, $0044  ' "S."
+    DATA $EE00, $4444, $4444, $00E4  ' "IT"
+    DATA $4A00, $8EAA, $AA8A, $004A  ' "CH"
+    DATA $0E00, $0404, $0404, $004E  ' ".I"
+URLGroup4b:  ' Cards 61-63 (overwrites gameplay score digit cards)
+    DATA $4000, $A0A0, $A0A0, $0040  ' "O "
+    DATA $CE00, $CCA8, $A8A8, $00CE  ' "BE"
+    DATA $E400, $4A4A, $4A4E, $004A  ' "TA"
 
 ' --- Star dots (single pixel at different positions for variety) ---
 Star1Gfx:
