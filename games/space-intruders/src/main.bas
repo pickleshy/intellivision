@@ -24,6 +24,8 @@ CONST GRAM_SHIP     = 0         ' Player ship graphic (2 cards)
 CONST GRAM_ALIEN1   = 2         ' Top row alien (2 cards for animation)
 CONST GRAM_ALIEN2   = 4         ' Middle rows alien
 CONST GRAM_ALIEN3   = 6         ' Bottom rows alien
+CONST GRAM_ALIEN4   = 19        ' Row 3 alien (reuses title-only crab card slots)
+CONST GRAM_ALIEN5   = 30        ' Row 4 alien (reuses title-only font card slots)
 CONST GRAM_BULLET   = 8         ' Bullet graphic
 ' Title screen big alien - 2 side-by-side 8x8 sprites (16x8)
 CONST GRAM_BAND1    = 9         ' Alien left half
@@ -88,7 +90,6 @@ CONST GRAM_SAUCER_F3 = 43      ' Saucer frame 3 (middle window lit)
 CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
 CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
-CONST GRAM_QUAD    = 47         ' Quad laser (4 thin vertical lines)
 CONST GRAM_CAP_F1  = 48         ' Capsule animation frame 1
 CONST GRAM_CAP_F2  = 49         ' Capsule animation frame 2
 CONST GRAM_CAP_F3  = 50         ' Capsule animation frame 3
@@ -235,10 +236,9 @@ CONST FLAG_AUTOFIRE  = 64       ' Bit 6: AutoFire
 CONST FLAG_DEBUG     = 128      ' Bit 7: DebugMode
 CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode (pincer)
 CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
-CONST FLAG_TOPDOWN   = 1024     ' Bit 10: TopDown reveal mode (rows appear in place)
-CONST FLAG_FLYDOWN   = 2048     ' Bit 11: FlyDown mode (aliens descend from above)
+' Bits 10-11: FREE (was FLAG_TOPDOWN/FLAG_FLYDOWN, replaced by WaveEntrance variable)
 CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Keypad 0 debounce (capture)
-CONST FLAG_DUAL      = 8192     ' Bit 13: Quad laser active
+CONST FLAG_BOMB      = 8192     ' Bit 13: Bomb weapon active
 CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
 CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this wave
 
@@ -342,8 +342,10 @@ DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each be
 OrbitStep      = 255               ' Orbiter path index (0-9 = active, 255 = inactive)
 OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
-WaveColor1     = 1                 ' Crab color (rows 1-2) — default blue
-WaveColor2     = 5                 ' Octopus color (rows 3-4) — default green
+WaveColor1     = 1                 ' Crab color (row 1) — default blue
+WaveColor2     = 5                 ' Octopus color (row 2) — default green
+WaveColor3     = 2                 ' Beetle color (row 3) — default red
+WaveColor4     = 7                 ' Jellyfish color (row 4) — default white
 
 ' -- Saucer & Flight Engine --
 FlyX        = 0                 ' Flying sprite X position (from path table)
@@ -386,7 +388,7 @@ CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward ali
 ' -- Power-Up System --
 ' These vars double as title-screen animation state (see [title:] comments at init sites)
 PowerUpState = 0                ' 0=none, 1=falling, 2=landed / [title: anim frame counter]
-PowerUpType  = 0                ' 0=beam, 1=rapid, 2=quad, 3=mega, 4=shield / [title: shimmer counter]
+PowerUpType  = 0                ' 0=beam, 1=rapid, 2=bomb, 3=mega, 4=shield / [title: shimmer counter]
 PowerUpX     = 1                ' Capsule X position / [title: march direction 1=right, 0=left]
 CapsuleFrame = 0                ' Capsule animation frame 0-7 / [title: slide-in position]
 CapsuleColor1 = 0               ' Capsule primary color / [title: march step counter]
@@ -403,7 +405,7 @@ TutorialTimer  = 0              ' First powerup hint: 255=ready, 1-180=showing, 
 
 ' -- Sound Effects --
 SfxVolume   = 0                 ' Current decay volume (0 = silent)
-SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=quad
+SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=bomb, 6=parry, 7=shoot, 8=(free)
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 
 ' -- Starfield & Parallax --
@@ -439,6 +441,10 @@ GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2
     DEFINE GRAM_ALIEN2, 2, Alien2Gfx
     WAIT
     DEFINE GRAM_ALIEN3, 2, Alien3Gfx
+    WAIT
+    DEFINE GRAM_ALIEN4, 2, Alien4Gfx      ' Cards 19-20 (reuses title crab slots)
+    WAIT
+    DEFINE GRAM_ALIEN5, 2, Alien5Gfx      ' Cards 30-31 (reuses title font slots)
     WAIT
     DEFINE GRAM_BULLET, 1, BulletGfx
     WAIT
@@ -520,8 +526,6 @@ GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2
     WAIT
     DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
     WAIT
-    DEFINE GRAM_QUAD, 1, QuadGfx
-    WAIT
     DEFINE GRAM_ZIGZAG1, 1, ZigzagF1Gfx
     WAIT
     DEFINE GRAM_BOMB1, 1, SquidLeftF1Gfx
@@ -555,6 +559,9 @@ GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2
     ' Initialize Intellivoice (once only — multiple calls can lock real hardware)
     IF VOICE.AVAILABLE THEN VOICE INIT
 
+    ' Boot splash: show developer URL for ~1 second
+    GOSUB BootSplash
+
 ' ============================================
 ' Reset state and return to title screen
 ' (shared by GameOver=2 and GameOver=6)
@@ -582,7 +589,7 @@ ResetToTitle:
     FOR LoopVar = 0 TO MAX_BOSSES - 1 : BossHP(LoopVar) = 0 : NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
     #GameFlags = #GameFlags AND $EFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET + FLAG_KEY0HELD
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
     #MegaTimer = 0
     MegaBeamTimer = 0
     #GameFlags = #GameFlags AND $FFBF
@@ -613,6 +620,9 @@ TitleScreen:
     DEFINE GRAM_STAR1, 1, Star1Gfx   ' Card 37
     WAIT
     DEFINE GRAM_STAR2, 1, Star2Gfx   ' Card 38
+    WAIT
+    ' Reload band alien sprites (cards 9-12, game over TinyFont overwrites them)
+    GOSUB ReloadBandSprites
 
     PowerUpState = 0      ' [title: animation frame counter]
     PowerUpX = 1          ' [title: march direction 1=right, 0=left]
@@ -636,9 +646,6 @@ TitleScreen:
 
     ' Draw 3x3 alien grid on BACKTAB (rows 5-7, starting at CapsuleColor2)
     GOSUB DrawAlienGrid
-
-    ' TinyFont URL label: PAISLEYBOXERS.ITCH.IO BETA (row 11)
-    GOSUB LoadURLFont
 
     ' Initialize Zod via flight engine
     FlyColors(0) = 7 : FlyColors(1) = 6 : FlyColors(2) = 5
@@ -971,7 +978,6 @@ SkipPressfire:
         StarTimer = 0
         StarTick = StarTick + 1
         GOSUB ScrollStars
-        GOSUB DrawURLText   ' Repaint URL (stars may overwrite row 11 chars)
     END IF
 
     ' Animation - toggle walk frame every 16 frames via GRAM redefine
@@ -1051,9 +1057,41 @@ SkipPressfire:
     ' ============================================================
     SEGMENT 1
 
+' --- BootSplash: 1-second TinyFont developer URL at startup ---
+BootSplash: PROCEDURE
+    ' Load TinyFont pairs into temporary GRAM cards 0-19
+    DEFINE 0, 4, SplashBatch0
+    WAIT
+    DEFINE 4, 4, SplashBatch1
+    WAIT
+    DEFINE 8, 4, SplashBatch2
+    WAIT
+    DEFINE 12, 4, SplashBatch3
+    WAIT
+    DEFINE 16, 4, SplashBatch4
+    WAIT
+    ' Line 1: PAISLEYBOXERS.ITCH.IO (row 5, col 5, 11 cards)
+    FOR LoopVar = 0 TO 10
+        PRINT AT 105 + LoopVar, LoopVar * 8 + COL_WHITE + $0800
+    NEXT LoopVar
+    ' Line 2: BETA - 02/12/2026 (row 7, col 6, 9 cards)
+    FOR LoopVar = 0 TO 8
+        PRINT AT 146 + LoopVar, (11 + LoopVar) * 8 + COL_WHITE + $0800
+    NEXT LoopVar
+    ' Hold for ~1 second
+    FOR LoopVar = 0 TO 59
+        WAIT
+    NEXT LoopVar
+    CLS
+    WAIT
+    RETURN
+END
+
 ' ============================================
 ' UTILITY PROCEDURES (shared code consolidation)
 ' ============================================
+
+    SEGMENT 2  ' UpdateScoreDisplay moved to Seg 2 (Seg 1 critically full)
 
 ' --- UpdateScoreDisplay: Update 1 GRAM card per frame via DEFINE ALTERNATE ---
 ' POKEs ISR's _gram2_* variables so the ISR copies data to GRAM during VBLANK.
@@ -1072,7 +1110,7 @@ UpdateScoreDisplay: PROCEDURE
     IF ScoreCard < 3 THEN
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             ScoreCard = 3
-        ELSEIF (#GameFlags AND FLAG_TOPDOWN) THEN
+        ELSEIF WaveEntrance = 1 THEN
             IF WaveRevealRow < ALIEN_ROWS - 1 THEN
                 ScoreCard = 3
             END IF
@@ -1147,6 +1185,8 @@ UpdateScoreDisplay: PROCEDURE
     RETURN
 END
 
+    SEGMENT 1  ' Back to Seg 1 for remaining utility procedures
+
 ' --- HideAllSprites: Hide all 8 hardware sprites ---
 HideAllSprites: PROCEDURE
     SPRITE 0, 0, 0, 0 : SPRITE 1, 0, 0, 0
@@ -1164,6 +1204,16 @@ HitShield: PROCEDURE
     IF ShieldHits = 0 THEN
         IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
     END IF
+    RETURN
+END
+
+' --- ReloadBandSprites: Restore alien band GRAM (cards 9-12) ---
+' Game over TinyFont overwrites cards 9-12; call before DrawAlienGrid on title screen.
+ReloadBandSprites: PROCEDURE
+    DEFINE GRAM_BAND1, 2, Band1Gfx       ' Cards 9-10: skull left/right frame 1
+    WAIT
+    DEFINE GRAM_BAND1_F1, 2, Band1F1Gfx  ' Cards 11-12: skull left/right frame 2
+    WAIT
     RETURN
 END
 
@@ -1401,45 +1451,7 @@ GOLetterGram:
 GOLetterStaticGram:
     DATA 37, 27, 38, 29, 40, 41, 29, 33
 
-    ' ============================================================
-    ' SEGMENT 1 (continued) — DRAWING & HUD PROCEDURES
-    ' ============================================================
-    SEGMENT 1
-
-' --- Load TinyFont URL into GRAM and draw on row 11 ---
-LoadURLFont: PROCEDURE
-    ' Overwrites orphaned GRAM_FONT cards (A,C,N,T,U,D) + gameplay cards (57-63)
-    DEFINE 27, 2, URLGroup1     ' PA, IS
-    WAIT
-    DEFINE 31, 2, URLGroup2     ' LE, YB
-    WAIT
-    DEFINE 34, 2, URLGroup3     ' OX, ER
-    WAIT
-    DEFINE 57, 4, URLGroup4a    ' S., IT, CH, .I
-    WAIT
-    DEFINE 61, 3, URLGroup4b    ' O_, BE, TA
-    WAIT
-    GOSUB DrawURLText
-    RETURN
-END
-
-' --- Draw TinyFont URL on row 11: PAISLEYBOXERS.ITCH.IO BETA ---
-DrawURLText: PROCEDURE
-    PRINT AT 220, 27 * 8 + 3 + $0800   ' "PA"
-    PRINT AT 221, 28 * 8 + 3 + $0800   ' "IS"
-    PRINT AT 222, 31 * 8 + 3 + $0800   ' "LE"
-    PRINT AT 223, 32 * 8 + 3 + $0800   ' "YB"
-    PRINT AT 224, 34 * 8 + 3 + $0800   ' "OX"
-    PRINT AT 225, 35 * 8 + 3 + $0800   ' "ER"
-    PRINT AT 226, 57 * 8 + 3 + $0800   ' "S."
-    PRINT AT 227, 58 * 8 + 3 + $0800   ' "IT"
-    PRINT AT 228, 59 * 8 + 3 + $0800   ' "CH"
-    PRINT AT 229, 60 * 8 + 3 + $0800   ' ".I"
-    PRINT AT 230, 61 * 8 + 3 + $0800   ' "O "
-    PRINT AT 231, 62 * 8 + 3 + $0800   ' "BE"
-    PRINT AT 232, 63 * 8 + 3 + $0800   ' "TA"
-    RETURN
-END
+    SEGMENT 2  ' Title drawing procs moved to Seg 2 (Seg 1 critically full)
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
 DrawAlienGrid: PROCEDURE
@@ -1548,6 +1560,8 @@ DrawSilhouette: PROCEDURE
     RETURN
 END
 
+    SEGMENT 1  ' Back to Seg 1 for StartGame / GameLoop inline code
+
 ' ============================================
 ' START GAME - Initialize gameplay
 ' ============================================
@@ -1563,6 +1577,10 @@ StartGame:
     DEFINE GRAM_ALIEN2, 2, Alien2Gfx      ' Cards 4-5
     WAIT
     DEFINE GRAM_ALIEN3, 2, Alien3Gfx      ' Cards 6-7
+    WAIT
+    DEFINE GRAM_ALIEN4, 2, Alien4Gfx      ' Cards 19-20
+    WAIT
+    DEFINE GRAM_ALIEN5, 2, Alien5Gfx      ' Cards 30-31
     WAIT
     DEFINE GRAM_BULLET, 1, BulletGfx      ' Card 8
     WAIT
@@ -1610,8 +1628,6 @@ StartGame:
     WAIT
     DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx ' Card 46
     WAIT
-    DEFINE GRAM_QUAD, 1, QuadGfx          ' Card 47
-    WAIT
     DEFINE GRAM_CAP_F1, 4, CapsuleF1Gfx   ' Cards 48-51
     WAIT
     DEFINE GRAM_ZIGZAG1, 2, ZigzagF1Gfx   ' Cards 52-53
@@ -1622,7 +1638,7 @@ StartGame:
     WAIT
     DEFINE GRAM_BOMB2_F1, 1, SquidRightF2Gfx ' Card 57
     WAIT
-    DEFINE GRAM_CHAIN_CH, 3, ChainCHGfx   ' Cards 58-60: Chain labels (overwritten by URL on title)
+    DEFINE GRAM_CHAIN_CH, 3, ChainCHGfx   ' Cards 58-60: Chain labels
     WAIT
     ' Initialize score digit display (skip label cards 0-2 during first wave reveal)
     ScoreCard = 2    ' First call goes to 3 (digit card 61)
@@ -1639,7 +1655,7 @@ StartGame:
 
     ' Initialize level, march speed, and wave 1 palette
     Level = 1
-    WaveColor0 = 6 : WaveColor1 = 1 : WaveColor2 = 5  ' Yellow / Blue / Green
+    WaveColor0 = 6 : WaveColor1 = 1 : WaveColor2 = 5 : WaveColor3 = 2 : WaveColor4 = 7  ' Yel / Blu / Grn / Red / Wht
     BaseMarchSpeed = MARCH_SPEED_START
     CurrentMarchSpeed = MARCH_SPEED_START
     MusicGear = 0
@@ -1663,12 +1679,12 @@ StartGame:
     #FlyLoopCount = RANDOM(360) + 180  ' Random spawn threshold
     BeamTimer = 0  ' No beam power-up
     RapidTimer = 0 ' No rapid fire
-    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)  ' No dual laser
+    #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)  ' No bomb weapon
     #MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     ShieldHits = 0  ' No shield
     PowerUpState = 0  ' No power-up drop
-    ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=quad(2), 3=mega(1) out of 8
+    ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=bomb(2), 3=mega(1) out of 8
     PowerUpType = PowerUpWeights(RANDOM(8))
     FireCooldown = 0 ' No fire cooldown
     ChainCount = 0  ' Reset kill chain
@@ -1778,16 +1794,34 @@ GameLoop:
             END IF
         END IF
 
-        ' "PRESS FIRE" shimmer: alternate white/tan every 4 frames
+        ' "PRESS FIRE" shimmer: alternate grey/white every 4 frames (GRAM font)
         PowerUpType = PowerUpType + 1
         IF PowerUpType >= 4 THEN
             PowerUpType = 0
             WavePhase = WavePhase + 1
             IF WavePhase >= 4 THEN WavePhase = 0
             IF WaveColors(WavePhase) = 0 THEN
-                PRINT AT 205 COLOR COL_TAN, "PRESS FIRE"
+                ' Grey = color 8: GRAM card * 8 + $1800 (bit 12 set, low bits 0)
+                PRINT AT 205, GRAM_FONT_P * 8 + $1800
+                PRINT AT 206, GRAM_FONT_R * 8 + $1800
+                PRINT AT 207, GRAM_FONT_E * 8 + $1800
+                PRINT AT 208, GRAM_FONT_S * 8 + $1800
+                PRINT AT 209, GRAM_FONT_S * 8 + $1800
+                PRINT AT 211, GRAM_FONT_F * 8 + $1800
+                PRINT AT 212, GRAM_FONT_I * 8 + $1800
+                PRINT AT 213, GRAM_FONT_R * 8 + $1800
+                PRINT AT 214, GRAM_FONT_E * 8 + $1800
             ELSE
-                PRINT AT 205 COLOR COL_WHITE, "PRESS FIRE"
+                ' White = color 7: GRAM card * 8 + 7 + $0800
+                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
+                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
+                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
+                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
+                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
+                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
+                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
             END IF
         END IF
 
@@ -1849,15 +1883,15 @@ GameLoop:
     END IF
 
     ' Advance wave reveal
-    IF #GameFlags AND FLAG_FLYDOWN THEN
+    IF WaveEntrance = 2 THEN
         ' Fly-down: entire grid descends from above screen
         ' WaveRevealRow = rows still hidden above (counts DOWN to 0)
         IF WaveRevealRow > 0 THEN
             WaveRevealRow = WaveRevealRow - 1
             NeedRedraw = 1  ' Descent continues, redraw needed
             IF WaveRevealRow = 0 THEN
-                ' Descent complete, clear flag and wipe ghost trails
-                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_FLYDOWN)
+                ' Descent complete, wipe ghost trails
+                WaveEntrance = 0
                 ' Clear rows 0 through ALIEN_ROWS-1 to remove any fly-down ghosts
                 FOR ClearRow = 0 TO ALIEN_ROWS - 1
                     #ScreenPos = ClearRow * 20
@@ -1868,7 +1902,7 @@ GameLoop:
                 GOSUB DrawSilhouette  ' Restore row 0 silhouette after ghost wipe
             END IF
         END IF
-    ELSEIF #GameFlags AND FLAG_TOPDOWN THEN
+    ELSEIF WaveEntrance = 1 THEN
         ' Top-to-bottom row reveal with warp-in animation
         IF WaveRevealRow < ALIEN_ROWS - 1 THEN
             MarchCount = MarchCount + 1
@@ -1914,7 +1948,7 @@ GameLoop:
 
     ' March processing (before DrawAliens so we only draw once per frame)
     IF WaveRevealCol >= ALIEN_COLS - 1 THEN
-    IF (#GameFlags AND FLAG_FLYDOWN) = 0 THEN
+    IF WaveEntrance <> 2 THEN
     IF DeathTimer = 0 THEN
         MarchCount = MarchCount + 1
         IF MarchCount >= CurrentMarchSpeed THEN
@@ -1938,7 +1972,7 @@ GameLoop:
                         Lives = Lives - 1
                         ' Clear power-ups, bullets, rogue, wingman
                         BeamTimer = 0 : RapidTimer = 0
-                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
+                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0 : ShieldHits = 0
                         #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                         RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
@@ -2175,7 +2209,7 @@ ChainDone:
                 Lives = Lives - 1
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0 : ShieldHits = 0
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0 : ShieldHits = 0
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
                 ' Clear wingman and any active capsule (dies with player)
@@ -2297,6 +2331,32 @@ ChainDone:
                 DEFINE TGRAM_V, 1, FontVY1Gfx : WAIT
                 DEFINE TGRAM_V + 1, 1, FontVY3Gfx : WAIT
                 DEFINE TGRAM_V + 2, 1, FontVY4Gfx : WAIT
+                ' Load TinyFont labels for game over screen
+                DEFINE 9, 4, GOBatch1      ' Cards 9-12: SC, OR, E:, NE
+                WAIT
+                DEFINE 20, 1, GOEBlankGfx  ' Card 20: E_ (no colon, for SCORE!)
+                WAIT
+                DEFINE 13, 3, GOBatch2     ' Cards 13-15: W_, HI, GH
+                WAIT
+                DEFINE 42, 4, GOBatch3     ' Cards 42-45: TO, P_, CH, AI
+                WAIT
+                DEFINE 46, 1, GOBatch4     ' Card 46: N_ (clean, no colon)
+                WAIT
+                ' Chain count digit: PackedPairs → card 47 via ISR POKE
+                IF ChainMax > 1 THEN
+                    IF ChainMax >= 10 THEN
+                        #Mask = ChainMax
+                    ELSE
+                        #Mask = ChainMax + 100
+                    END IF
+                    #Mask = #Mask + #Mask  ' *2
+                    #Mask = #Mask + #Mask  ' *4
+                    #Mask = VARPTR PackedPairs(0) + #Mask
+                    POKE $0107, 47         ' _gram2_target = card 47
+                    POKE $0108, 1          ' _gram2_total = 1 card
+                    POKE $0345, #Mask      ' _gram2_bitmap = source (TRIGGER — last!)
+                    WAIT
+                END IF
                 ' Initialize game over letter animation
                 GOAnimIdx = 8 : GOAnimFrame = 0 : MarchCount = 0
                 ' "GAME OVER" in custom font at row 2 col 5, centered
@@ -2308,22 +2368,37 @@ ChainDone:
                 PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
                 PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
                 PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
-                ' Score at row 5, GROM label + packed digit cards
-                PRINT AT 104 COLOR COL_WHITE, "SCORE "
+                ' Score at row 5: TinyFont label + packed digit cards
+                FOR LoopVar = 0 TO 2
+                    PRINT AT 107 + LoopVar, (9 + LoopVar) * 8 + COL_WHITE + $0800
+                NEXT LoopVar
                 PRINT AT 110, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
                 PRINT AT 111, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
                 PRINT AT 112, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-                ' High score at row 6 (centered under score)
+                ' High score at row 6
                 IF #Score >= #HighScore THEN
-                    PRINT AT 125 COLOR COL_YELLOW, "NEW HIGH!"
+                    ' New high: TinyFont "NEW HIGH SCORE!"
+                    FOR LoopVar = 0 TO 3
+                        PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800
+                    NEXT LoopVar
+                    PRINT AT 131, 9 * 8 + COL_YELLOW + $0800    ' SC
+                    PRINT AT 132, 10 * 8 + COL_YELLOW + $0800   ' OR
+                    PRINT AT 133, 20 * 8 + COL_YELLOW + $0800   ' E_ (no colon)
+                    PRINT AT 134 COLOR COL_YELLOW, "!"
                 ELSE
-                    PRINT AT 122 COLOR COL_YELLOW, "HIGH SCORE "
-                    PRINT AT 133, <>#HighScore
+                    ' TinyFont "HIGH" + GROM digits
+                    PRINT AT 126, 14 * 8 + COL_YELLOW + $0800
+                    PRINT AT 127, 15 * 8 + COL_YELLOW + $0800
+                    PRINT AT 129 COLOR COL_YELLOW, <>#HighScore
                 END IF
-                ' Best chain at row 7 (if achieved a chain)
+                ' Top chain at row 7 (if achieved a chain)
                 IF ChainMax > 1 THEN
-                    PRINT AT 143 COLOR COL_BLUE, "BEST CHAIN "
-                    PRINT AT 154, <>ChainMax
+                    PRINT AT 147, 42 * 8 + COL_BLUE + $0800   ' TO
+                    PRINT AT 148, 43 * 8 + COL_BLUE + $0800   ' P_
+                    PRINT AT 149, 44 * 8 + COL_BLUE + $0800   ' CH
+                    PRINT AT 150, 45 * 8 + COL_BLUE + $0800   ' AI
+                    PRINT AT 151, 46 * 8 + COL_BLUE + $0800   ' N:
+                    PRINT AT 152, 47 * 8 + COL_BLUE + $0800   ' digit
                 END IF
                 ' "PRESS FIRE" at row 10, centered using custom font
                 PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
@@ -2374,7 +2449,7 @@ ChainDone:
     GOSUB CheckWaveWin
 
     ' Tick down power-up timers
-    ' Beam, Rapid, Dual persist until death (no countdown)
+    ' Beam, Rapid, Bomb persist until death (no countdown)
     ' Only MegaTimer counts down (5-second window)
     IF FireCooldown > 0 THEN
         FireCooldown = FireCooldown - 1
@@ -2385,7 +2460,7 @@ ChainDone:
 
     ' Update powerup HUD indicator (positions 233-235, yellow TinyFont)
     ' Cards 25-27 are DEFINE'd per powerup type at pickup time
-    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_DUAL) OR #MegaTimer > 0 THEN
+    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR #MegaTimer > 0 THEN
         PRINT AT 233, GRAM_PWR1 * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR2 * 8 + COL_YELLOW + $0800
         IF RapidTimer > 0 THEN
@@ -2511,6 +2586,8 @@ ChainDone:
 
     GOTO GameLoop
 
+    SEGMENT 2  ' Gameplay procedures moved to Seg 2 (Seg 1 critically full)
+
 ' --------------------------------------------
 ' MovePlayer - Handle player input
 ' --------------------------------------------
@@ -2592,16 +2669,16 @@ MovePlayer: PROCEDURE
                 POKE $1F7, 8
                 POKE $1F8, PEEK($1F8) AND $DF
             END IF
-        ELSEIF #GameFlags AND FLAG_DUAL THEN
-            ' Quad laser: single center bullet with wide hitbox
+        ELSEIF #GameFlags AND FLAG_BOMB THEN
+            ' Bomb weapon: fires capsule projectile, one shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
-                BulletX = PlayerX  ' Align with turret (drawn at BulletX, 8px wide)
+                BulletX = PlayerX
                 BulletY = PLAYER_Y - 4
                 #GameFlags = #GameFlags OR FLAG_BULLET
-                #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
-                ' Quad laser SFX: rising burst energy weapon
-                SfxType = 8 : SfxVolume = 14 : #SfxPitch = 500
-                SOUND 2, 500, 14
+                #GameFlags = #GameFlags AND $FFDF     ' New shot
+                ' Bomb launch SFX: deep thunk
+                SfxType = 7 : SfxVolume = 14 : #SfxPitch = 100
+                SOUND 2, 100, 14
             END IF
         ELSE
             ' Normal/beam/rapid: single center shot
@@ -2683,7 +2760,7 @@ MoveBullet: PROCEDURE
     END IF
     END IF
 
-    ' Then move bullet up (rapid fire = 3px, dual = 2px, normal = 1.25px)
+    ' Then move bullet up (rapid fire = 3px, bomb/beam = 2px, normal = 1.25px)
     IF #GameFlags AND FLAG_BULLET THEN
         IF RapidTimer > 0 THEN
             IF BulletY > BULLET_TOP + RAPID_SPEED THEN
@@ -2692,8 +2769,8 @@ MoveBullet: PROCEDURE
                 #GameFlags = #GameFlags AND $FFFE
                 IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
-        ELSEIF (#GameFlags AND FLAG_DUAL) OR BeamTimer > 0 THEN
-            ' Quad laser / beam: flat 2px/frame
+        ELSEIF (#GameFlags AND FLAG_BOMB) OR BeamTimer > 0 THEN
+            ' Bomb / beam: flat 2px/frame
             IF BulletY > BULLET_TOP + 2 THEN
                 BulletY = BulletY - 2
             ELSE
@@ -2760,27 +2837,6 @@ CheckRowForHit: PROCEDURE
 
                 IF #GameFlags AND FLAG_BULLET THEN
                     HitCol = (BulletX - 4) / 8
-                    GOSUB CheckOneColumn
-                END IF
-            ELSEIF #GameFlags AND FLAG_DUAL THEN
-                ' Quad laser: 4 columns centered on sprite (32px kill zone)
-                IF BulletX >= 12 THEN
-                    HitCol = (BulletX - 12) / 8
-                    GOSUB CheckOneColumn
-                END IF
-
-                IF #GameFlags AND FLAG_BULLET THEN
-                    HitCol = (BulletX - 4) / 8
-                    GOSUB CheckOneColumn
-                END IF
-
-                IF #GameFlags AND FLAG_BULLET THEN
-                    HitCol = (BulletX + 4) / 8
-                    GOSUB CheckOneColumn
-                END IF
-
-                IF #GameFlags AND FLAG_BULLET THEN
-                    HitCol = (BulletX + 12) / 8
                     GOSUB CheckOneColumn
                 END IF
             ELSE
@@ -2865,11 +2921,13 @@ ProcessOneOrbiter: PROCEDURE
         IF LoopVar <= 12 THEN
             #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
             IF #ScreenPos < 220 THEN
-                IF AnimFrame = 0 THEN
-                    PRINT AT #ScreenPos, GRAM_ALIEN2 * 8 + BossColor(FoundBoss) + $0800
+                ' Use alien type matching boss row (crab for rows 0-2, beetle for 3-4)
+                IF BossRow(FoundBoss) < 3 THEN
+                    #Card = (GRAM_ALIEN2 + AnimFrame) * 8 + BossColor(FoundBoss) + $0800
                 ELSE
-                    PRINT AT #ScreenPos, (GRAM_ALIEN2 + 1) * 8 + BossColor(FoundBoss) + $0800
+                    #Card = (GRAM_ALIEN4 + AnimFrame) * 8 + BossColor(FoundBoss) + $0800
                 END IF
+                PRINT AT #ScreenPos, #Card
             END IF
         END IF
     END IF
@@ -3000,6 +3058,65 @@ BombExplode: PROCEDURE
     RETURN
 END
 
+' PlayerBombExplode — area explosion from player bomb weapon
+' Prereq: BombExpRow/BombExpCol set to grid coordinates of hit
+PlayerBombExplode: PROCEDURE
+    BombExpTimer = 20
+
+    ' Kill bosses in blast radius (4-wide x 3-tall)
+    FOR LoopVar = 0 TO BossCount - 1
+        IF BossHP(LoopVar) > 0 THEN
+            IF BossRow(LoopVar) >= BombExpRow - 1 THEN
+            IF BossRow(LoopVar) <= BombExpRow + 1 THEN
+                IF BossCol(LoopVar) + 1 >= BombExpCol - 1 THEN
+                IF BossCol(LoopVar) <= BombExpCol + 2 THEN
+                    Row = BossRow(LoopVar)
+                    Col = BossCol(LoopVar)
+                    BossHP(LoopVar) = 0
+                    #Mask = ColMaskData(Col)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
+                    #Mask = ColMaskData(Col + 1)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
+                    #Score = #Score + 10
+                END IF
+                END IF
+            END IF
+            END IF
+        END IF
+    NEXT LoopVar
+
+    ' Kill regular aliens in blast radius
+    FOR Row = BombExpRow - 1 TO BombExpRow + 1
+        IF Row >= 0 THEN
+        IF Row < ALIEN_ROWS THEN
+            FOR Col = BombExpCol - 1 TO BombExpCol + 2
+                IF Col >= 0 THEN
+                IF Col < ALIEN_COLS THEN
+                    #Mask = ColMaskData(Col)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                        #Score = #Score + 10
+                    END IF
+                END IF
+                END IF
+            NEXT Col
+        END IF
+        END IF
+    NEXT Row
+
+    ' Boom SFX + screen shake
+    SfxType = 5 : SfxVolume = 15 : #SfxPitch = 0
+    SOUND 2, 0, 15
+    ShakeTimer = 20
+    NeedRedraw = 1
+
+    RETURN
+END
+
     ' ============================================================
     ' SEGMENT 2 — COLLISION LOGIC & ALIEN DRAWING
     ' ============================================================
@@ -3044,6 +3161,15 @@ CheckOneColumn: PROCEDURE
                         GOSUB UpdateBossColor
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
                         SOUND 2, 120, 14
+                        ' Bomb weapon: area explosion even on non-kill hit
+                        IF #GameFlags AND FLAG_BOMB THEN
+                            #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
+                            IF BombExpTimer = 0 THEN
+                                BombExpRow = AlienGridRow
+                                BombExpCol = AlienGridCol
+                                GOSUB PlayerBombExplode
+                            END IF
+                        END IF
                         RETURN
                     ELSE
                         ' Boss dead! Check type
@@ -3064,6 +3190,14 @@ CheckOneColumn: PROCEDURE
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             GOSUB BumpChain
                             GOSUB SkullBossDeath
+                            ' Bomb weapon: area explosion on skull boss kill
+                            IF #GameFlags AND FLAG_BOMB THEN
+                                IF BombExpTimer = 0 THEN
+                                    BombExpRow = AlienGridRow
+                                    BombExpCol = AlienGridCol
+                                    GOSUB PlayerBombExplode
+                                END IF
+                            END IF
                             RETURN
                         END IF
                     END IF
@@ -3099,6 +3233,15 @@ CheckOneColumn: PROCEDURE
                 ' Show explosion on BACKTAB (replaces alien, stays in place)
                 #ExplosionPos = HitRow * 20 + HitCol
                 GOSUB ShowChainExplosion
+                ' Bomb weapon: area explosion on alien kill
+                IF #GameFlags AND FLAG_BOMB THEN
+                    #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
+                    IF BombExpTimer = 0 THEN
+                        BombExpRow = AlienGridRow
+                        BombExpCol = AlienGridCol
+                        GOSUB PlayerBombExplode
+                    END IF
+                END IF
             END IF
         END IF
     END IF
@@ -3216,9 +3359,9 @@ DrawBullet: PROCEDURE
             ELSE
                 SPRITE SPR_PBULLET, $0200, BulletY + $0100, GRAM_BEAM * 8 + AlienColor + $0800
             END IF
-        ELSEIF #GameFlags AND FLAG_DUAL THEN
-            ' Quad laser mode: 4-line pattern sprite
-            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_QUAD * 8 + AlienColor + $0800
+        ELSEIF #GameFlags AND FLAG_BOMB THEN
+            ' Bomb weapon: animated capsule sprite in yellow
+            SPRITE SPR_PBULLET, BulletX + $0200, BulletY, (GRAM_CAP_F1 + BulletColor / 2) * 8 + COL_YELLOW + $0800
         ELSE
             SPRITE SPR_PBULLET, BulletX + $0200, BulletY, GRAM_BULLET * 8 + AlienColor + $0800
         END IF
@@ -3374,21 +3517,21 @@ END
 
 ' --- SetEntrancePattern: Set entrance mode from DATA table ---
 ' Input: LoopVar = wave index (0-31)
-' WaveEntranceData values: 0=left sweep, 1=top-down reveal, 2=fly-down from above
+' Sets WaveEntrance: 0=left sweep, 1=top-down reveal, 2=fly-down from above
 SetEntrancePattern: PROCEDURE
-    ' Clear both entrance flags
-    #GameFlags = #GameFlags AND $F3FF  ' Clear FLAG_TOPDOWN + FLAG_FLYDOWN
+    ' Reset entrance mode (0=left sweep, 1=top-down, 2=fly-down)
+    WaveEntrance = 0
     WaveRevealCol = 0
     WaveRevealRow = 0
     HitRow = WaveEntranceData(LoopVar)
     IF HitRow = 1 THEN
         ' Top-down reveal: rows appear in place one at a time
-        #GameFlags = #GameFlags OR FLAG_TOPDOWN
+        WaveEntrance = 1
         WaveRevealCol = ALIEN_COLS - 1
         ' WaveRevealRow counts UP (0 to ALIEN_ROWS-1) for rows revealed
     ELSEIF HitRow = 2 THEN
         ' Fly-down: entire grid descends from above screen
-        #GameFlags = #GameFlags OR FLAG_FLYDOWN
+        WaveEntrance = 2
         WaveRevealCol = ALIEN_COLS - 1
         WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
     END IF
@@ -3685,17 +3828,6 @@ UpdateSfx: PROCEDURE
         ELSE
             SfxVolume = 0
         END IF
-    ELSEIF SfxType = 8 THEN
-        ' Quad laser: rising burst energy weapon (pitch descends = higher tone)
-        IF #SfxPitch > 80 THEN #SfxPitch = #SfxPitch - 35
-        IF #SfxPitch <= 115 THEN
-            ' Near end of pitch rise, fast volume cut
-            IF SfxVolume > 3 THEN
-                SfxVolume = SfxVolume - 3
-            ELSE
-                SfxVolume = 0
-            END IF
-        END IF
     ELSEIF SfxType = 9 THEN
         ' Shield absorb: high-pitched ping with fast decay
         #SfxPitch = #SfxPitch + 50
@@ -3879,8 +4011,8 @@ UpdatePowerUp: PROCEDURE
         CapsuleColor2 = COL_YELLOW    ' Rapid: yellow/green
         CapsuleColor1 = COL_GREEN
     ELSEIF PowerUpType = 2 THEN
-        CapsuleColor2 = COL_WHITE     ' Dual: white/tan
-        CapsuleColor1 = COL_TAN
+        CapsuleColor2 = COL_YELLOW    ' Bomb: yellow/red danger pulse
+        CapsuleColor1 = COL_RED
     ELSEIF PowerUpType = 3 THEN
         CapsuleColor2 = COL_RED       ' Mega: red/tan
         CapsuleColor1 = COL_TAN
@@ -3920,22 +4052,22 @@ UpdatePowerUp: PROCEDURE
                 ' Picked up! Activate power-up based on type
                 IF PowerUpType = 0 THEN
                     BeamTimer = 1
-                    RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
+                    RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0
                     DEFINE GRAM_PWR1, 2, PowerupBeamGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF PowerUpType = 1 THEN
                     RapidTimer = 1
-                    BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL) : #MegaTimer = 0
+                    BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0
                     DEFINE GRAM_PWR1, 3, PowerupRapidGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF PowerUpType = 2 THEN
-                    #GameFlags = #GameFlags OR FLAG_DUAL
+                    #GameFlags = #GameFlags OR FLAG_BOMB
                     BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
-                    DEFINE GRAM_PWR1, 2, PowerupQuadGfx
-                    IF VOICE.AVAILABLE THEN VOICE PLAY quad_phrase
+                    DEFINE GRAM_PWR1, 2, PowerupBombGfx
+                    IF VOICE.AVAILABLE THEN VOICE PLAY bomb_phrase
                 ELSEIF PowerUpType = 3 THEN
                     #MegaTimer = 120
-                    BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_DUAL)
+                    BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
                     DEFINE GRAM_PWR1, 2, PowerupMegaGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 ELSE
@@ -4079,7 +4211,7 @@ DrawAliens: PROCEDURE
         HitCol = 1  ' Default: draw this row (reuse HitCol as skip flag)
         ' Fly-down mode: subtract offset (aliens start above screen)
         ' WaveRevealRow = rows hidden above screen (counts down to 0)
-        IF #GameFlags AND FLAG_FLYDOWN THEN
+        IF WaveEntrance = 2 THEN
             IF ClearRow < WaveRevealRow THEN
                 ' Row is above screen, skip entirely
                 HitCol = 0
@@ -4091,16 +4223,22 @@ DrawAliens: PROCEDURE
         IF HitCol AND ClearRow < 11 THEN
         #ScreenPos = Row20Data(ClearRow)
 
-        ' Determine which alien type and wave color for this row
+        ' Determine which alien type and wave color for this row (5 unique types)
         IF Row = 0 THEN
             AlienCard = GRAM_ALIEN1 + AnimFrame
-            AlienColor = WaveColor0  ' Squid color (wave palette)
-        ELSEIF Row < 3 THEN
+            AlienColor = WaveColor0
+        ELSEIF Row = 1 THEN
             AlienCard = GRAM_ALIEN2 + AnimFrame
-            AlienColor = WaveColor1  ' Crab color (wave palette)
-        ELSE
+            AlienColor = WaveColor1
+        ELSEIF Row = 2 THEN
             AlienCard = GRAM_ALIEN3 + AnimFrame
-            AlienColor = WaveColor2  ' Octopus color (wave palette)
+            AlienColor = WaveColor2
+        ELSEIF Row = 3 THEN
+            AlienCard = GRAM_ALIEN4 + AnimFrame
+            AlienColor = WaveColor3
+        ELSE
+            AlienCard = GRAM_ALIEN5 + AnimFrame
+            AlienColor = WaveColor4
         END IF
 
         ' Color Stack mode - SAME format as sprites!
@@ -4164,7 +4302,7 @@ DrawAliens: PROCEDURE
             NEXT Col
         ELSE
             ' Standard mode: two paths for performance
-            IF WaveRevealCol >= ALIEN_COLS - 1 AND (#GameFlags AND FLAG_TOPDOWN) = 0 THEN
+            IF WaveRevealCol >= ALIEN_COLS - 1 AND WaveEntrance <> 1 THEN
             ' FAST PATH: reveal complete, skip all warp/reveal checks
             ' Pre-add row offset once (saves 2 additions per cell × 9 cols)
             #ScreenPos = #ScreenPos + ALIEN_START_X + AlienOffsetX
@@ -4225,12 +4363,12 @@ DrawAliens: PROCEDURE
             END IF
             ELSE
             ' REVEAL PATH: warp-in effects + reveal gating
-            IF (#GameFlags AND FLAG_TOPDOWN) AND Row > WaveRevealRow THEN
+            IF WaveEntrance = 1 AND Row > WaveRevealRow THEN
                 ' Row not yet revealed in top-down mode - skip drawing
             ELSE
             #Mask = 1
             FOR Col = 0 TO ALIEN_COLS - 1
-                IF (#GameFlags AND FLAG_TOPDOWN) OR Col <= WaveRevealCol THEN
+                IF WaveEntrance = 1 OR Col <= WaveRevealCol THEN
                     IF #AlienRow(Row) AND #Mask THEN
                         FoundBoss = 255
                         IF RowBoss1 < 255 THEN
@@ -4245,7 +4383,7 @@ DrawAliens: PROCEDURE
                             #Card = AlienCard * 8 + AlienColor + $0800
                         ELSE
                             ' Warp-in: materialize frames for currently revealing elements
-                            IF (#GameFlags AND FLAG_TOPDOWN) AND Row = WaveRevealRow AND WaveRevealRow < ALIEN_ROWS - 1 THEN
+                            IF WaveEntrance = 1 AND Row = WaveRevealRow AND WaveRevealRow < ALIEN_ROWS - 1 THEN
                                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, (GRAM_WARP1 + MarchCount) * 8 + AlienColor + $0800
                             ELSEIF Col = WaveRevealCol AND WaveRevealCol < ALIEN_COLS - 1 THEN
                                 PRINT AT #ScreenPos + ALIEN_START_X + AlienOffsetX + Col, (GRAM_WARP1 + MarchCount) * 8 + AlienColor + $0800
@@ -4616,7 +4754,7 @@ LoadPatternB: PROCEDURE
 
     ' Set dual-slide mode: halves fly in from screen edges
     #GameFlags = #GameFlags OR FLAG_REVEAL
-    #GameFlags = #GameFlags AND $FBFF  ' Clear top-down flag for pincer
+    WaveEntrance = 0                   ' Clear entrance mode for dual-slide
     WaveRevealCol = 0              ' Left group starts at far left
     RightRevealCol = 10            ' Right group starts at far right
 
@@ -4731,8 +4869,7 @@ ReloadHorde: PROCEDURE
     GOSUB DrawHUD
     GOSUB DrawSilhouette
     ' Set fly-down entrance
-    #GameFlags = #GameFlags AND $F3FF  ' Clear FLAG_TOPDOWN + FLAG_FLYDOWN
-    #GameFlags = #GameFlags OR FLAG_FLYDOWN
+    WaveEntrance = 2
     WaveRevealCol = ALIEN_COLS - 1
     WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
     RightRevealCol = ALIEN_COLS - 1
@@ -4771,6 +4908,8 @@ StartNewWave: PROCEDURE
     WaveColor0 = WavePalette0(LoopVar)
     WaveColor1 = WavePalette1(LoopVar)
     WaveColor2 = WavePalette2(LoopVar)
+    WaveColor3 = WavePalette3(LoopVar)
+    WaveColor4 = WavePalette4(LoopVar)
 
     ' March speed: same starting speed every wave (challenge comes from level variety)
     CurrentMarchSpeed = MARCH_SPEED_START
@@ -4972,8 +5111,8 @@ StartNewWave: PROCEDURE
             DEFINE GRAM_PWR1, 2, PowerupBeamGfx
         ELSEIF RapidTimer > 0 THEN
             DEFINE GRAM_PWR1, 2, PowerupRapidGfx
-        ELSEIF #GameFlags AND FLAG_DUAL THEN
-            DEFINE GRAM_PWR1, 2, PowerupQuadGfx
+        ELSEIF #GameFlags AND FLAG_BOMB THEN
+            DEFINE GRAM_PWR1, 2, PowerupBombGfx
         ELSEIF #MegaTimer > 0 THEN
             DEFINE GRAM_PWR1, 2, PowerupMegaGfx
         END IF
@@ -5038,8 +5177,8 @@ beam_phrase:
 rapid_phrase:
     VOICE RR1, AA, PP, IH, DD2, PA1, FF, AY, ER1, PA1, 0
 
-quad_phrase:
-    VOICE KK2, WW, AO, DD1, PA1, LL, EY, ZZ, ER1, ZZ, PA1, 0
+bomb_phrase:
+    VOICE BB1, AO, MM, BB2, PA1, 0
 
 mega_phrase:
     VOICE MM, EH, GG2, AX, PA1, BB1, IY, MM, PA1, 0
@@ -5063,14 +5202,14 @@ reinforce_phrase:
     VOICE IH, NN1, KK2, AX, MM, IH, NN1, PA2, HH1, OR, DD1, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
-' Index by PowerUpType (0=beam, 1=rapid, 2=dual, 3=mega, 4=shield)
+' Index by PowerUpType (0=beam, 1=rapid, 2=bomb, 3=mega, 4=shield)
 SaucerColor1:
-    DATA COL_BLUE, COL_YELLOW, COL_WHITE, COL_RED, COL_CYAN
+    DATA COL_BLUE, COL_YELLOW, COL_YELLOW, COL_RED, COL_CYAN
 SaucerColor2:
-    DATA COL_WHITE, COL_GREEN, COL_TAN, COL_TAN, COL_BLUE
+    DATA COL_WHITE, COL_GREEN, COL_RED, COL_TAN, COL_BLUE
 
 ' Power-up weighted distribution (8 slots)
-' beam=2, rapid=2, quad=2, mega=1, shield=1
+' beam=2, rapid=2, bomb=2, mega=1, shield=1
 PowerUpWeights:
     DATA 0, 0, 1, 1, 2, 2, 3, 4
 
@@ -5344,16 +5483,22 @@ RoguePickAlien: PROCEDURE
 
     RogueRow = HitRow
 
-    ' Set alien type/color based on row (uses wave palette)
+    ' Set alien type/color based on row (5 unique types)
     IF RogueRow = 0 THEN
         RogueCard = GRAM_ALIEN1
         RogueColor = WaveColor0
-    ELSEIF RogueRow < 3 THEN
+    ELSEIF RogueRow = 1 THEN
         RogueCard = GRAM_ALIEN2
         RogueColor = WaveColor1
-    ELSE
+    ELSEIF RogueRow = 2 THEN
         RogueCard = GRAM_ALIEN3
         RogueColor = WaveColor2
+    ELSEIF RogueRow = 3 THEN
+        RogueCard = GRAM_ALIEN4
+        RogueColor = WaveColor3
+    ELSE
+        RogueCard = GRAM_ALIEN5
+        RogueColor = WaveColor4
     END IF
 
     RogueState = ROGUE_SHAKE
@@ -6021,13 +6166,17 @@ CaptureOrbitDY:
 
 ' Wave color palettes (6 palettes, cycling via (Level-1) MOD 6)
 ' Independent of the 32-wave cycle — provides 6-color variety
-' Each palette: squid (row 0), crab (rows 1-2), octopus (rows 3-4)
+' Each palette: one per alien row (5 rows, 5 palettes)
 WavePalette0:
     DATA 6, 7, 5, 1, 2, 3
 WavePalette1:
     DATA 5, 6, 1, 2, 1, 7
 WavePalette2:
     DATA 7, 5, 2, 3, 6, 7
+WavePalette3:
+    DATA 2, 3, 7, 5, 6, 1
+WavePalette4:
+    DATA 3, 2, 6, 7, 5, 5
 
 ' Wave entrance patterns (32 entries, indexed by (Level-1) AND 31)
 ' 0 = left sweep (columns appear left-to-right)
@@ -6461,6 +6610,48 @@ Alien3Gfx:
     BITMAP "X....X.."
     BITMAP "........"
 
+' Alien Type 4 - Row 3 (beetle/shield bug) - 1px gap right & bottom
+Alien4Gfx:
+    ' Frame 0 - antennae up, legs in
+    BITMAP "X....X.."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".X..X..."
+    BITMAP "..XX...."
+    BITMAP "........"
+    ' Frame 1 - antennae angled, legs out
+    BITMAP ".X..X..."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP "X....X.."
+    BITMAP "..XX...."
+    BITMAP "........"
+
+' Alien Type 5 - Row 4 (jellyfish/bell) - 1px gap right & bottom
+Alien5Gfx:
+    ' Frame 0 - tentacles narrow
+    BITMAP "..XX...."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".X..X..."
+    BITMAP ".X..X..."
+    BITMAP "X....X.."
+    BITMAP "........"
+    ' Frame 1 - tentacles spread
+    BITMAP "..XX...."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP "X.XX.X.."
+    BITMAP ".X..X..."
+    BITMAP ".X..X..."
+    BITMAP "........"
+
 ' Warp-in animation frames (universal for all alien types)
 WarpInGfx1:
     ' Frame 1: single pixel - just arriving from hyperspace
@@ -6789,26 +6980,33 @@ FontVGfx:
     BITMAP "..XXX..."
     BITMAP "...X...."
 
-' --- TinyFont URL pairs: PAISLEYBOXERS.ITCH.IO BETA (title screen row 11) ---
-' Each entry = 4 DECLEs (8 rows packed, left+right XOR'd from TinyFont.bas)
-URLGroup1:   ' Cards 27-28 (overwrites GRAM_FONT_A, GRAM_FONT_C)
+' --- TinyFont boot splash: PAISLEYBOXERS.ITCH.IO / BETA - 02/12/2026 ---
+' 20 pairs in 5 DEFINE batches of 4 cards each (cards 0-19, temporary)
+SplashBatch0:  ' Cards 0-3
     DATA $C400, $AAAA, $8ACE, $008A  ' "PA"
     DATA $E600, $4448, $4A42, $00E4  ' "IS"
-URLGroup2:   ' Cards 31-32 (overwrites GRAM_FONT_N, GRAM_FONT_T)
     DATA $8E00, $8C88, $8888, $00EE  ' "LE"
     DATA $AC00, $ACAA, $4A4A, $004C  ' "YB"
-URLGroup3:   ' Cards 34-35 (overwrites GRAM_FONT_U, GRAM_FONT_D)
+SplashBatch1:  ' Cards 4-7
     DATA $4A00, $A4AA, $AAAA, $004A  ' "OX"
     DATA $EC00, $CA8A, $8A8C, $00EA  ' "ER"
-URLGroup4a:  ' Cards 57-60 (overwrites gameplay bomb/chain cards)
     DATA $6000, $4080, $A020, $0044  ' "S."
     DATA $EE00, $4444, $4444, $00E4  ' "IT"
+SplashBatch2:  ' Cards 8-11
     DATA $4A00, $8EAA, $AA8A, $004A  ' "CH"
     DATA $0E00, $0404, $0404, $004E  ' ".I"
-URLGroup4b:  ' Cards 61-63 (overwrites gameplay score digit cards)
     DATA $4000, $A0A0, $A0A0, $0040  ' "O "
     DATA $CE00, $CCA8, $A8A8, $00CE  ' "BE"
+SplashBatch3:  ' Cards 12-15
     DATA $E400, $4A4A, $4A4E, $004A  ' "TA"
+    DATA $0000, $0E00, $0000, $0000  ' " -"
+    DATA $0400, $0E0A, $0A0E, $0004  ' " 0"
+    DATA $4200, $24A2, $8844, $00E8  ' "2/"
+SplashBatch4:  ' Cards 16-19
+    DATA $4400, $42CA, $4844, $00EE  ' "12"
+    DATA $2400, $422A, $8844, $008E  ' "/2"
+    DATA $4400, $E2AA, $A8E4, $004E  ' "02"
+    DATA $6000, $C080, $A0A0, $0040  ' "6 "
 
 ' --- Star dots (single pixel at different positions for variety) ---
 Star1Gfx:
@@ -7008,17 +7206,7 @@ MegaBeamGfx:
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
 
-' Quad laser (4 thin lines spread across 8px)
-QuadGfx:
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-    BITMAP ".X.X.X.X"
-
+' (Card 47 freed — was QuadGfx)
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:
     BITMAP "........"
@@ -7172,6 +7360,139 @@ ScoreEGfx:
     BITMAP "........"
     BITMAP "........"
 
+' --- GAME OVER TinyFont labels (12 cards) ---
+
+' Batch 1: SC, OR, E_, NE (cards 9-12)
+GOBatch1:
+    ' SC (S left + C right)
+    BITMAP "........"
+    BITMAP ".XX..X.."
+    BITMAP "X...X.X."
+    BITMAP ".X..X..."
+    BITMAP "..X.X..."
+    BITMAP "X.X.X.X."
+    BITMAP ".X...X.."
+    BITMAP "........"
+    ' OR (O left + R right)
+    BITMAP "........"
+    BITMAP ".X..XX.."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.XX.."
+    BITMAP "X.X.X.X."
+    BITMAP ".X..X.X."
+    BITMAP "........"
+    ' E: (E left + colon right)
+    BITMAP "........"
+    BITMAP "XXX....."
+    BITMAP "X......."
+    BITMAP "XX..X..."
+    BITMAP "X......."
+    BITMAP "X......."
+    BITMAP "XXX.X..."
+    BITMAP "........"
+    ' NE (N left + E right)
+    BITMAP "........"
+    BITMAP "X.X.XXX."
+    BITMAP "XXX.X..."
+    BITMAP "XXX.XX.."
+    BITMAP "XXX.X..."
+    BITMAP "XXX.X..."
+    BITMAP "X.X.XXX."
+    BITMAP "........"
+
+' Batch 2: W_, HI, GH (cards 13-15)
+GOBatch2:
+    ' W_ (W left + blank right)
+    BITMAP "........"
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "XXX....."
+    BITMAP "XXX....."
+    BITMAP "X.X....."
+    BITMAP "........"
+    ' HI (H left + I right)
+    BITMAP "........"
+    BITMAP "X.X.XXX."
+    BITMAP "X.X..X.."
+    BITMAP "XXX..X.."
+    BITMAP "X.X..X.."
+    BITMAP "X.X..X.."
+    BITMAP "X.X.XXX."
+    BITMAP "........"
+    ' GH (G left + H right)
+    BITMAP "........"
+    BITMAP ".XX.X.X."
+    BITMAP "X...X.X."
+    BITMAP "X...XXX."
+    BITMAP "X.X.X.X."
+    BITMAP "X.X.X.X."
+    BITMAP ".X..X.X."
+    BITMAP "........"
+
+' Batch 3: TO, P_, CH, AI (cards 42-45)
+GOBatch3:
+    ' TO (T left + O right)
+    BITMAP "........"
+    BITMAP "XXX..X.."
+    BITMAP ".X..X.X."
+    BITMAP ".X..X.X."
+    BITMAP ".X..X.X."
+    BITMAP ".X..X.X."
+    BITMAP ".X...X.."
+    BITMAP "........"
+    ' P_ (P left + blank right)
+    BITMAP "........"
+    BITMAP "XX......"
+    BITMAP "X.X....."
+    BITMAP "X.X....."
+    BITMAP "XX......"
+    BITMAP "X......."
+    BITMAP "X......."
+    BITMAP "........"
+    ' CH (C left + H right)
+    BITMAP "........"
+    BITMAP ".X..X.X."
+    BITMAP "X.X.X.X."
+    BITMAP "X...XXX."
+    BITMAP "X...X.X."
+    BITMAP "X.X.X.X."
+    BITMAP ".X..X.X."
+    BITMAP "........"
+    ' AI (A left + I right)
+    BITMAP "........"
+    BITMAP ".X..XXX."
+    BITMAP "X.X..X.."
+    BITMAP "X.X..X.."
+    BITMAP "XXX..X.."
+    BITMAP "X.X..X.."
+    BITMAP "X.X.XXX."
+    BITMAP "........"
+
+' Batch 4: N: (card 46)
+GOBatch4:
+    ' N: (N left + colon right)
+    BITMAP "........"
+    BITMAP "X.X....."
+    BITMAP "XXX....."
+    BITMAP "XXX.X..."
+    BITMAP "XXX....."
+    BITMAP "XXX....."
+    BITMAP "X.X.X..."
+    BITMAP "........"
+
+' E_ without colon (card 20, for "NEW HIGH SCORE!")
+GOEBlankGfx:
+    BITMAP "........"
+    BITMAP "XXX....."
+    BITMAP "X......."
+    BITMAP "XX......"
+    BITMAP "X......."
+    BITMAP "X......."
+    BITMAP "XXX....."
+    BITMAP "........"
+
 ' --- WIDE CRAB (14x7 → padded to 16x8) ---
 WideCrabLeftF1Gfx:
     BITMAP ".....XXX"
@@ -7281,22 +7602,23 @@ PowerupRapidGfx:
     BITMAP "XX......"
     BITMAP "........"
 
-' === QUAD powerup TinyFont: "QU" + "AD" (2 cards, 3rd blank) ===
-PowerupQuadGfx:
+' === BOMB powerup TinyFont: "BO" + "MB" (2 cards) ===
+PowerupBombGfx:
+    ' "BO" (B left + O right)
     BITMAP "........"
-    BITMAP ".X..X.X."
+    BITMAP "XX...X.."
+    BITMAP "X.X.X.X."
+    BITMAP "XX..X.X."
     BITMAP "X.X.X.X."
     BITMAP "X.X.X.X."
+    BITMAP "XX...X.."
+    BITMAP "........"
+    ' "MB" (M left + B right)
+    BITMAP "........"
+    BITMAP "X.X.XX.."
     BITMAP "XXX.X.X."
+    BITMAP "XXX.XX.."
     BITMAP "X.X.X.X."
-    BITMAP ".XX..XX."
-    BITMAP "........"
-
-    BITMAP "........"
-    BITMAP ".X..XX.."
-    BITMAP "X.X.X.X."
-    BITMAP "X.X.X.X."
-    BITMAP "XXX.X.X."
     BITMAP "X.X.X.X."
     BITMAP "X.X.XX.."
     BITMAP "........"
