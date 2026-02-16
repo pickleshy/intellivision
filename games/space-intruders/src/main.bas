@@ -1687,12 +1687,16 @@ StartGame:
     ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=bomb(2), 3=mega(1) out of 8
     PowerUpType = PowerUpWeights(RANDOM(8))
     FireCooldown = 0 ' No fire cooldown
+    CapsuleFrame = 0  ' Reset capsule animation (title-shared)
+    CapsuleColor1 = 0 ' Reset temp color storage (title-shared)
+    CapsuleColor2 = 0 ' Reset temp color storage (title-shared)
     ChainCount = 0  ' Reset kill chain
     ChainMax = 0    ' Reset best chain for new game
     RogueState = 0 : RogueTimer = 0 : RogueDivePhase = 0
     FOR LoopVar = 0 TO MAX_BOSSES - 1 : BossHP(LoopVar) = 0 : NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : BossType(0) = SKULL_TYPE  ' Wave 1 has no boss
     #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
+    CaptureWaves = 0                 ' Reset captured alien wave counter
     TutorialTimer = 255              ' Ready to show "GET THE POWERUP!" on first drop
     SPRITE SPR_FLYER, 0, 0, 0
     SPRITE SPR_SAUCER, 0, 0, 0

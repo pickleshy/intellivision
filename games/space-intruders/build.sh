@@ -59,20 +59,19 @@ echo "LST: $LST"
 # Run in emulator if requested
 if [ "$1" = "run" ]; then
     echo ""
-    echo "=== Launching jzIntv (with ECS) ==="
+    echo "=== Launching jzIntv ==="
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
-        --ecsimg="$ECS_ROM" \
+        --voice=1 \
         -z3 \
         "$ROM"
 elif [ "$1" = "voice" ]; then
     echo ""
-    echo "=== Launching jzIntv (with Intellivoice + ECS) ==="
+    echo "=== Launching jzIntv (with Intellivoice) ==="
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
-        --ecsimg="$ECS_ROM" \
         --voice=1 \
         -z3 \
         "$ROM"

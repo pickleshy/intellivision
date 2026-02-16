@@ -1863,3 +1863,121 @@ Use `--sym-file=game.sym` (if generated) for symbolic debugging with labels.
 - **CP1610 Programmer's Reference**: AtariAge archives
 - **as1600 Assembler Manual**: `~/jzintv/doc/` directory
 - **Oscar Toledo G.'s Books**: Cover assembly optimization in depth
+- **Space Patrol Source Code**: `games/spacepatrol/` — production-quality assembly reference
+
+---
+
+## Advanced Patterns from Space Patrol
+
+*Additional techniques learned from Joe Zbiciak's Space Patrol source code*
+
+See **[games/space-intruders/STICHacking.md](games/space-intruders/STICHacking.md)** for full documentation of advanced patterns.
+
+### Quick Reference
+
+**Sprite Multiplexing (12 on 8 MOBs):**
+- Round-robin allocation with multiplex counters
+- Group sprites by behavior (enemies vs bullets)
+- Dynamic MOB reallocation based on active count
+- Worst case: 631 cycles, Average: ~350 cycles
+
+**Cycle Budget Discipline:**
+- Annotate every instruction with cycle count
+- Track running subtotals with inline comments
+- Document worst-case paths
+- VBLANK budget: ~3500 cycles max (NTSC)
+- Game loop budget: ~10,000-12,000 cycles
+
+**Memory Management:**
+- Compile-time allocation tracking (SCRATCH/SYSTEM macros)
+- Overflow detection at assembly time
+- Clear separation of memory regions
+
+**INITMEM Compressed Initialization:**
+- 1-2 words per variable vs 3 words naive
+- Packed 8-bit constant table
+- 16-bit constant table for larger values
+- Escape code for arbitrary values
+
+**Fixed-Point Math:**
+- 1s complement representation
+- Integer in low byte, fraction in high byte
+- Saves 6 cycles per coordinate read
+- Commutative with SWAP operation
+
+**Two-Phase GRAM Updates:**
+- Background: Prepare data in shadow buffers
+- Interrupt: Block-copy during VBLANK
+- Separate concerns: calculation vs rendering
+- IntyBASIC: Use `POKE _gram2_*` ISR vars
+
+**Data-Driven Design:**
+- Spawn tables instead of hardcoded logic
+- Level data in DATA statements
+- Easy for non-programmers to edit
+- ROM-efficient
+
+**Build Automation:**
+- C utilities generate assembly from source files
+- Font packer, world assembler, graphics convolvers
+- Designer-friendly formats → optimized data
+- IntyBASIC: Python/Node scripts generate .bas DATA
+
+### Space Patrol Project Structure
+
+```
+games/spacepatrol/
+├── spacepat.asm          # Top-level source
+├── Makefile              # Linux build system
+├── build.bat             # Windows build
+│
+├── os/                   # OS-level utilities
+│   ├── main_os.asm       # Init, ISR, main loop
+│   ├── rand.asm          # RNG
+│   └── debounce.asm      # Controller input
+│
+├── engine/               # Core engines
+│   ├── engine1.asm       # ISR (VBLANK updates)
+│   ├── engine2.asm       # Background updates
+│   ├── upmux.asm         # Sprite multiplexing (cycle-counted)
+│   ├── tracker.asm       # Music system
+│   └── sfxeng.asm        # Sound effects
+│
+├── bg/                   # Enemy AI
+│   ├── bgengine.asm      # Bad guy controller
+│   ├── bgsaucer.asm      # Saucer behavior
+│   └── bgthink.asm       # Enemy thinker
+│
+├── game/                 # Game logic
+│   ├── gameloop.asm      # Main loop
+│   ├── level.asm         # Level setup
+│   ├── title.asm         # Title screen
+│   └── score.asm         # Scoring
+│
+├── world/                # Level data
+│   ├── *.wr3             # World files (source)
+│   └── spawns.asm        # Spawn tables
+│
+├── macro/                # Reusable macros
+│   ├── dseg.mac          # Memory allocation
+│   ├── initmem.mac       # Initialization system
+│   └── stic.mac          # STIC helpers
+│
+├── c/                    # Build utilities
+│   ├── mkfont16.c        # Font packer
+│   ├── wasm3.c           # World assembler
+│   └── makerock.c        # Graphics generator
+│
+└── doc/
+    └── data_structures.txt   # Architecture docs
+```
+
+### Key Takeaways
+
+1. **Modular Architecture:** Separate engines (graphics, sound, AI) for maintainability
+2. **Cycle Counting:** Production code annotates every instruction
+3. **Data-Driven:** Spawn tables, level data, behavior programs
+4. **Build Pipeline:** Source formats → generated assembly
+5. **Memory Discipline:** Compile-time tracking, overflow detection
+6. **Two-Phase Rendering:** Prepare in background, update in ISR
+7. **Documentation:** Inline comments explain architecture decisions
