@@ -1,0 +1,26 @@
+# TinyFont 4-pixel Character Library
+# Format: CHAR=hex_pattern (4 nibbles, top to bottom)
+# Each nibble represents 1 row of 4 pixels
+
+# Letters
+B=C,A,A,C
+E=E,C,C,E
+T=E,4,4,4
+A=4,A,E,A
+
+# Digits
+0=E,A,A,E
+1=4,C,4,E
+2=E,2,8,E
+3=E,2,2,E
+4=A,A,E,2
+5=E,8,2,E
+6=C,8,E,A
+7=E,2,4,4
+8=E,A,E,A
+9=E,A,E,2
+
+# Symbols
+SPACE=0,0,0,0
+DASH=0,E,0,0
+SLASH=2,4,8,4

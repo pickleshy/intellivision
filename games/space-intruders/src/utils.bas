@@ -14,27 +14,21 @@
 
 ' --- BootSplash: 1-second TinyFont developer URL at startup ---
 BootSplash: PROCEDURE
-    ' Load TinyFont pairs into temporary GRAM cards 0-19
+    ' Load TinyFont pairs into temporary GRAM cards 0-10 for URL line
     DEFINE 0, 4, SplashBatch0
     WAIT
     DEFINE 4, 4, SplashBatch1
     WAIT
-    DEFINE 8, 4, SplashBatch2
+    DEFINE 8, 3, SplashBatch2
     WAIT
-    DEFINE 12, 4, SplashBatch3
-    WAIT
-    DEFINE 16, 4, SplashBatch4
-    WAIT
-    ' Line 1: PAISLEYBOXERS.ITCH.IO (row 5, col 5, 11 cards)
+    ' Line 1: PAISLEYBOXERS.ITCH.IO (row 5, col 5, 11 cards TinyFont)
     FOR LoopVar = 0 TO 10
         PRINT AT 105 + LoopVar, LoopVar * 8 + COL_WHITE + $0800
     NEXT LoopVar
-    ' Line 2: BETA - 02/12/2026 (row 7, col 6, 9 cards)
-    FOR LoopVar = 0 TO 8
-        PRINT AT 146 + LoopVar, (11 + LoopVar) * 8 + COL_WHITE + $0800
-    NEXT LoopVar
-    ' Hold for ~1 second
-    FOR LoopVar = 0 TO 59
+    ' Line 2: BETA - MM/DD/YYYY (row 7, centered, GROM font via generated procedure)
+    GOSUB SplashDate_Print
+    ' Hold for ~3 seconds
+    FOR LoopVar = 0 TO 179
         WAIT
     NEXT LoopVar
     CLS

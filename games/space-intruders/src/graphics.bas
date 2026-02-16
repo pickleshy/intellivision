@@ -515,16 +515,9 @@ SplashBatch2:  ' Cards 8-11
     DATA $0E00, $0404, $0404, $004E  ' ".I"
     DATA $4000, $A0A0, $A0A0, $0040  ' "O "
     DATA $CE00, $CCA8, $A8A8, $00CE  ' "BE"
-SplashBatch3:  ' Cards 12-15
-    DATA $E400, $4A4A, $4A4E, $004A  ' "TA"
-    DATA $0000, $0E00, $0000, $0000  ' " -"
-    DATA $0400, $0E0A, $0A0E, $0004  ' " 0"
-    DATA $4200, $24A2, $8844, $00E8  ' "2/"
-SplashBatch4:  ' Cards 16-19
-    DATA $4400, $42CA, $4844, $00EE  ' "12"
-    DATA $2400, $422A, $8844, $008E  ' "/2"
-    DATA $4400, $E2AA, $A8E4, $004E  ' "02"
-    DATA $6000, $C080, $A0A0, $0040  ' "6 "
+
+' --- Splash Date Line (auto-generated at build time) ---
+INCLUDE "games/space-intruders/src/splash_date_generated.bas"
 
 ' --- Star dots (single pixel at different positions for variety) ---
 Star1Gfx:
@@ -1157,5 +1150,5 @@ ShieldArcGfx:
     BITMAP "##....##"
     BITMAP "#......#"
     BITMAP "#......#"
-    BITMAP "........"
+    BITMAP ".######."
 

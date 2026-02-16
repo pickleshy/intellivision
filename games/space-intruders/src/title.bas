@@ -29,6 +29,9 @@ TitleScreen:
     WAIT
     ' Reload band alien sprites (cards 9-12, game over TinyFont overwrites them)
     GOSUB ReloadBandSprites
+    ' Reload Zod crab sprites (cards 19-20, boot splash date overwrites them)
+    DEFINE GRAM_CRAB_F1, 2, SmallCrabF1Gfx
+    WAIT
 
     PowerUpState = 0      ' [title: animation frame counter]
     PowerUpX = 1          ' [title: march direction 1=right, 0=left]

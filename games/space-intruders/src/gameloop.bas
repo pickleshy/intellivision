@@ -616,13 +616,16 @@ ChainDone:
                 ' Load TinyFont labels for game over screen
                 DEFINE 9, 4, GOBatch1      ' Cards 9-12: SC, OR, E:, NE
                 WAIT
-                DEFINE 20, 1, GOEBlankGfx  ' Card 20: E_ (no colon, for SCORE!)
+                DEFINE 32, 1, GOEBlankGfx  ' Card 32: E_ (no colon, for SCORE!) - moved from card 20 to avoid Zod conflict
                 WAIT
                 DEFINE 13, 3, GOBatch2     ' Cards 13-15: W_, HI, GH
                 WAIT
                 DEFINE 42, 4, GOBatch3     ' Cards 42-45: TO, P_, CH, AI
                 WAIT
                 DEFINE 46, 1, GOBatch4     ' Card 46: N_ (clean, no colon)
+                WAIT
+                ' Reload Zod crab (cards 19-20) - no longer conflicts with GOEBlankGfx (now card 32)
+                DEFINE GRAM_CRAB_F1, 2, SmallCrabF1Gfx
                 WAIT
                 ' Chain count digit: PackedPairs → card 47 via ISR POKE
                 IF ChainMax > 1 THEN
@@ -659,13 +662,14 @@ ChainDone:
                 PRINT AT 112, GRAM_SCORE_E * 8 + COL_WHITE + $0800
                 ' High score at row 6
                 IF #Score >= #HighScore THEN
-                    ' New high: TinyFont "NEW HIGH SCORE!"
+                    ' New high: TinyFont "NEW HIGH SCORE!" (single space)
                     FOR LoopVar = 0 TO 3
                         PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800
                     NEXT LoopVar
+                    PRINT AT 130, 0                              ' Blank GROM space
                     PRINT AT 131, 9 * 8 + COL_YELLOW + $0800    ' SC
                     PRINT AT 132, 10 * 8 + COL_YELLOW + $0800   ' OR
-                    PRINT AT 133, 20 * 8 + COL_YELLOW + $0800   ' E_ (no colon)
+                    PRINT AT 133, 32 * 8 + COL_YELLOW + $0800   ' E_ (card 32)
                     PRINT AT 134 COLOR COL_YELLOW, "!"
                 ELSE
                     ' TinyFont "HIGH" + GROM digits

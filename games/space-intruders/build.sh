@@ -41,6 +41,11 @@ mkdir -p "$BUILD_DIR"
 # Change to project root for correct INCLUDE paths
 cd "$PROJECT_ROOT"
 
+# Pre-build: Generate splash date (auto-updates build date in boot screen)
+echo "[0/2] Generating splash date..."
+"$GAME_DIR/scripts/generate_splash_date_print.sh" > "$GAME_DIR/src/splash_date_generated.bas"
+echo "      Generated: splash_date_generated.bas ($(date +"%m/%d/%Y"))"
+
 # Step 1: Compile BASIC to assembly
 echo "[1/2] Compiling IntyBASIC..."
 arch -x86_64 $INTYBASIC "$SRC" "$ASM" "$(dirname "$INTYBASIC")"
