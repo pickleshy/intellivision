@@ -33,8 +33,8 @@ export const BOMB_TYPE = 1;
 export const MARCH_SPEED_MIN = 24;
 export const MARCH_SPEED_MAX = 60;
 
-// Alien type names by row
-export const ALIEN_TYPES = ['squid', 'crab', 'crab', 'octopus', 'octopus'];
+// Alien type names by row (5 distinct alien graphics)
+export const ALIEN_TYPES = ['Alien 1 (Row 0)', 'Alien 2 (Row 1)', 'Alien 3 (Row 2)', 'Alien 4 (Row 3)', 'Alien 5 (Row 4)'];
 
 export const TOTAL_WAVES = 32;
 
@@ -43,13 +43,13 @@ export const TOTAL_WAVES = 32;
 const DEFAULT_PATTERNS = [
     [0x081, 0x042, 0x024, 0x018, 0x024], //  0: Chevron
     [0x0D6, 0x038, 0x06C, 0x092, 0x000], //  1: Diamond
-    [0x119, 0x13D, 0x119, 0x101, 0x101], //  2: Pillars
-    [0x101, 0x10D, 0x101, 0x161, 0x101], //  3: Dual Pillars
-    [0x155, 0x0AA, 0x155, 0x0AA, 0x155], //  4: Checkerboard
-    [0x010, 0x028, 0x044, 0x082, 0x101], //  5: Arrow
-    [0x038, 0x07C, 0x0FE, 0x07C, 0x038], //  6: Fortress
-    [0x1FF, 0x000, 0x1FF, 0x000, 0x1FF], //  7: Phalanx
-    [0x010, 0x038, 0x1FF, 0x038, 0x010], //  8: Cross
+    [0x099, 0x0BD, 0x099, 0x081, 0x081], //  2: Pillars
+    [0x081, 0x08D, 0x101, 0x162, 0x102], //  3: Dual Pillars
+    [0x155, 0x0AA, 0x16D, 0x092, 0x155], //  4: Checkerboard
+    [0x030, 0x048, 0x0B4, 0x17A, 0x084], //  5: Arrow
+    [0x078, 0x084, 0x1B6, 0x0CC, 0x078], //  6: Fortress
+    [0x0FE, 0x0FE, 0x0FE, 0x0FE, 0x0FE], //  7: Phalanx
+    [0x010, 0x038, 0x1C7, 0x038, 0x010], //  8: Cross
     [0x183, 0x0C6, 0x000, 0x0C6, 0x183], //  9: Wings
     [0x007, 0x038, 0x1C0, 0x038, 0x007], // 10: Zigzag
     [0x1FF, 0x101, 0x101, 0x101, 0x1FF], // 11: Frame
@@ -57,41 +57,50 @@ const DEFAULT_PATTERNS = [
     [0x1FF, 0x07C, 0x038, 0x010, 0x000], // 13: Funnel
     [0x010, 0x028, 0x044, 0x0AA, 0x1FF], // 14: Inverted V
     [0x1FF, 0x1FF, 0x000, 0x1FF, 0x1FF], // 15: Dense Rows
+    [0x038, 0x07C, 0x0FE, 0x07C, 0x038], // 16: Fortress (alt)
+    [0x155, 0x0AA, 0x155, 0x0AA, 0x155], // 17: Checkerboard (alt)
+    [0x010, 0x038, 0x1FF, 0x038, 0x010], // 18: Cross (alt)
+    [0x101, 0x10D, 0x101, 0x161, 0x101], // 19: Dual Pillars (alt)
+    [0x010, 0x028, 0x044, 0x082, 0x101], // 20: Arrow (alt)
+    [0x119, 0x13D, 0x119, 0x101, 0x101], // 21: Pillars (alt)
+    [0x1FF, 0x000, 0x1FF, 0x000, 0x1FF], // 22: Phalanx (alt)
 ];
 
 const DEFAULT_PATTERN_INDEX = [
-    // Waves 1-8: introductory
+    // Waves 1-8
     0, 1, 2, 3, 4, 5, 6, 7,
-    // Waves 9-16: mix new + old
+    // Waves 9-16
     8, 9, 10, 11, 0, 12, 13, 14,
-    // Waves 17-24: harder combos
-    15, 6, 9, 4, 11, 8, 3, 5,
-    // Waves 25-32: endgame gauntlet
-    14, 2, 10, 15, 13, 7, 12, 6,
+    // Waves 17-24
+    15, 16, 9, 17, 11, 18, 19, 20,
+    // Waves 25-32
+    14, 21, 10, 15, 13, 22, 12, 16,
 ];
 
 const DEFAULT_ENTRANCES = [
-    1, 0, 2, 0, 2, 0, 1, 2,  // Waves  1-8
-    0, 2, 1, 0, 2, 1, 0, 2,  // Waves  9-16
-    2, 0, 1, 2, 0, 1, 2, 0,  // Waves 17-24
-    1, 2, 0, 2, 1, 0, 2, 1,  // Waves 25-32
+    // 0=Left sweep, 1=Top-down reveal, 2=Fly-down from above
+    1, 0, 2, 0, 2, 2, 1, 2,  // Waves  1-8
+    2, 2, 1, 2, 2, 1, 2, 2,  // Waves  9-16
+    2, 2, 1, 2, 2, 1, 2, 2,  // Waves 17-24
+    1, 2, 2, 2, 1, 2, 2, 1,  // Waves 25-32
 ];
 
 // 6 palettes cycling via (wave) MOD 6
-// Each: [squid_color, crab_color, octopus_color]
+// Each: [row0_color, row1_color, row2_color, row3_color, row4_color]
+// Game uses WavePalette0-4 arrays (5 colors per palette)
 const PALETTE_BANK = [
-    [6, 7, 5], // palette 0
-    [1, 2, 3], // palette 1
-    [5, 6, 1], // palette 2
-    [2, 1, 3], // palette 3
-    [7, 5, 2], // palette 4
-    [3, 6, 7], // palette 5
+    [6, 5, 7, 2, 3], // palette 0
+    [7, 6, 5, 3, 2], // palette 1
+    [5, 1, 2, 7, 6], // palette 2
+    [1, 2, 3, 5, 7], // palette 3
+    [2, 7, 5, 6, 3], // palette 4
+    [3, 7, 2, 1, 5], // palette 5
 ];
 
 // Map 32 waves to palette bank via MOD 6
 function getDefaultPalette(waveIndex) {
     const p = PALETTE_BANK[waveIndex % 6];
-    return { squid: p[0], crab: p[1], octopus: p[2] };
+    return { row0: p[0], row1: p[1], row2: p[2], row3: p[3], row4: p[4] };
 }
 
 // Reinforcement waves (second horde before Pattern B)

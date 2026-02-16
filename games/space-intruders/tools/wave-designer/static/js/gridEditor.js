@@ -7,12 +7,14 @@ import {
     SKULL_TYPE, BOMB_TYPE, MAX_BOSSES
 } from './state.js';
 
-// Unicode glyphs for alien types
-const ALIEN_GLYPHS = {
-    squid: '\u{1F991}',    // squid emoji as placeholder
-    crab: '\u{1F980}',     // crab
-    octopus: '\u{1F419}',  // octopus
-};
+// Unicode glyphs for alien types (5 rows)
+const ALIEN_GLYPHS = [
+    '\u{1F47E}',  // Row 0: alien emoji
+    '\u{1F577}',  // Row 1: spider
+    '\u{1F41E}',  // Row 2: beetle
+    '\u{1F997}',  // Row 3: cricket
+    '\u{1FABC}',  // Row 4: jellyfish
+];
 
 export class GridEditor {
     constructor(container, colLabelContainer, state) {
@@ -118,8 +120,8 @@ export class GridEditor {
             for (let c = 0; c < GRID_COLS; c++) {
                 const cell = this.cells[r][c];
                 const alive = this.state.isCellAlive(r, c);
-                const alienType = ALIEN_TYPES[r];
-                const colorIdx = palette[alienType];
+                const rowKey = `row${r}`;  // Palette uses row0, row1, row2, row3, row4
+                const colorIdx = palette[rowKey];
                 const bossInfo = bossMap.get(`${r},${c}`);
 
                 // Reset classes
@@ -131,7 +133,7 @@ export class GridEditor {
                     cell.style.backgroundColor = INTV_COLORS[colorIdx].hex;
                     // Ensure text is visible
                     cell.style.color = colorIdx === 0 ? '#333' : '#000';
-                    cell.textContent = ALIEN_GLYPHS[alienType] || '\u25A0';
+                    cell.textContent = ALIEN_GLYPHS[r] || '\u25A0';
                 } else {
                     cell.classList.add('dead');
                     cell.style.backgroundColor = '';

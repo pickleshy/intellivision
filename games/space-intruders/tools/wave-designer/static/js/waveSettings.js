@@ -15,7 +15,7 @@ export class WaveSettings {
     }
 
     _buildPalettePickers() {
-        ['squid', 'crab', 'octopus'].forEach(alienType => {
+        ['row0', 'row1', 'row2', 'row3', 'row4'].forEach(alienType => {
             const container = document.getElementById(`palette-${alienType}`);
             if (!container) return;
             container.innerHTML = '';
@@ -85,7 +85,7 @@ export class WaveSettings {
         if (speedDisplay) speedDisplay.textContent = wave.marchSpeed;
 
         // Update palette swatches
-        ['squid', 'crab', 'octopus'].forEach(alienType => {
+        ['row0', 'row1', 'row2', 'row3', 'row4'].forEach(alienType => {
             const container = document.getElementById(`palette-${alienType}`);
             if (!container) return;
             const selected = wave.palette[alienType];
