@@ -91,7 +91,7 @@ OrbiterHitEffect: PROCEDURE
     #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
     #GameFlags = #GameFlags OR FLAG_SHOTLAND
     GOSUB BumpChain
-    #Score = #Score + 25
+    Points = 25 : GOSUB AddToScore
     SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
     SOUND 2, 200, 12
     RETURN
@@ -145,7 +145,7 @@ BombExplode: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                     END IF
-                    #Score = #Score + 10
+                    Points = 10 : GOSUB AddToScore
                 END IF
                 END IF
             END IF
@@ -169,7 +169,7 @@ BombExplode: PROCEDURE
                             #Mask = ColMaskData(Col)
                             IF #AlienRow(Row) AND #Mask THEN
                                 #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                                #Score = #Score + 10
+                                Points = 10 : GOSUB AddToScore
                             END IF
                         END IF
                     ELSE
@@ -177,7 +177,7 @@ BombExplode: PROCEDURE
                         #Mask = ColMaskData(Col)
                         IF #AlienRow(Row) AND #Mask THEN
                             #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                            #Score = #Score + 10
+                            Points = 10 : GOSUB AddToScore
                         END IF
                     END IF
                 END IF
@@ -188,7 +188,7 @@ BombExplode: PROCEDURE
     NEXT Row
 
     ' Score for bomb itself
-    #Score = #Score + BOMB_SCORE
+    Points = BOMB_SCORE : GOSUB AddToScore
 
     ' Big SFX (white noise boom, same as ship explosion)
     SfxType = 5 : SfxVolume = 15 : #SfxPitch = 0
@@ -223,7 +223,7 @@ PlayerBombExplode: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                     END IF
-                    #Score = #Score + 10
+                    Points = 10 : GOSUB AddToScore
                 END IF
                 END IF
             END IF
@@ -241,7 +241,7 @@ PlayerBombExplode: PROCEDURE
                     #Mask = ColMaskData(Col)
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                        #Score = #Score + 10
+                        Points = 10 : GOSUB AddToScore
                     END IF
                 END IF
                 END IF
@@ -361,9 +361,9 @@ CheckOneColumn: PROCEDURE
                 GOSUB BumpChain
                 ' Bonus caps at 50 points (chain 5+), but chain counter keeps growing for display
                 IF ChainCount <= 5 THEN
-                    #Score = #Score + ChainCount * 10
+                    Points = ChainCount * 10 : GOSUB AddToScore
                 ELSE
-                    #Score = #Score + 50
+                    Points = 50 : GOSUB AddToScore
                 END IF
 
                 ' Noise explosion SFX (short punchy crunch)
@@ -605,21 +605,40 @@ DrawAliens: PROCEDURE
         #ScreenPos = Row20Data(ClearRow)
 
         ' Determine which alien type and wave color for this row (5 unique types)
+        ' Set base color first
         IF Row = 0 THEN
-            AlienCard = GRAM_ALIEN1 + AnimFrame
             AlienColor = WaveColor0
         ELSEIF Row = 1 THEN
-            AlienCard = GRAM_ALIEN2 + AnimFrame
             AlienColor = WaveColor1
         ELSEIF Row = 2 THEN
-            AlienCard = GRAM_ALIEN3 + AnimFrame
             AlienColor = WaveColor2
         ELSEIF Row = 3 THEN
-            AlienCard = GRAM_ALIEN4 + AnimFrame
             AlienColor = WaveColor3
         ELSE
-            AlienCard = GRAM_ALIEN5 + AnimFrame
             AlienColor = WaveColor4
+        END IF
+
+        ' Select card based on ShiftPos (substep march position)
+        ' SubstepState bits 0-1 = ShiftPos (0-2)
+        IF (SubstepState AND 3) = 0 THEN
+            ' Base position: use standard alien cards with animation
+            IF Row = 0 THEN
+                AlienCard = GRAM_ALIEN1 + AnimFrame
+            ELSEIF Row = 1 THEN
+                AlienCard = GRAM_ALIEN2 + AnimFrame
+            ELSEIF Row = 2 THEN
+                AlienCard = GRAM_ALIEN3 + AnimFrame
+            ELSEIF Row = 3 THEN
+                AlienCard = GRAM_ALIEN4 + AnimFrame
+            ELSE
+                AlienCard = GRAM_ALIEN5 + AnimFrame
+            END IF
+        ELSEIF (SubstepState AND 3) = 1 THEN
+            ' Shift-1 (+1px): lookup table (31,32,37,38,47) - constant time!
+            AlienCard = Shift1CardData(Row)
+        ELSE
+            ' Shift-2 (+2px): lookup table (42,43,44,38,47) - constant time!
+            AlienCard = Shift2CardData(Row)
         END IF
 
         ' Color Stack mode - SAME format as sprites!
@@ -725,7 +744,7 @@ DrawAliens: PROCEDURE
                     PRINT AT #ScreenPos + ALIEN_COLS, 0
                 END IF
             ELSE
-                ' NO-BOSS ROW: fastest path, no boss checks (~25 cycles/cell saved)
+                ' NO-BOSS ROW: BASIC loop (simple and reliable)
                 #Mask = 1
                 FOR Col = 0 TO ALIEN_COLS - 1
                     IF #AlienRow(Row) AND #Mask THEN

@@ -162,7 +162,47 @@ GameLoop:
         ShimmerCount = 0
         AnimFrame = AnimFrame XOR 1
         NeedRedraw = 1  ' Animation changed, need redraw
+        SubstepState = (SubstepState AND 3) OR 4  ' DefineStep = 1, ShiftPos unchanged
     END IF
+
+    ' DEFINE shift GRAM cards: DISABLED FOR PERFORMANCE TESTING
+    ' Substep animation (smooth march) costs ~6 DEFINE calls per cycle
+    ' Commenting out to test if this is the performance bottleneck
+    ' Uncomment to re-enable smooth march animation
+    '
+    ' IF (SubstepState / 4) = 1 THEN
+    '     ' Load shift-1 rows 0-2 (cards 31, 32, 37 - non-contiguous)
+    '     IF AnimFrame = 0 THEN
+    '         DEFINE GRAM_SHIFT1_R0, 1, Shift1F0Row0
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R1, 1, Shift1F0Row1
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R2, 1, Shift1F0Row2
+    '     ELSE
+    '         DEFINE GRAM_SHIFT1_R0, 1, Shift1F1Row0
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R1, 1, Shift1F1Row1
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R2, 1, Shift1F1Row2
+    '     END IF
+    '     SubstepState = (SubstepState AND 3) OR 8  ' DefineStep = 2
+    ' ELSEIF (SubstepState / 4) = 2 THEN
+    '     ' Load shift-1 rows 3-4 (cards 38, 47) + shift-2 rows 0-2 (cards 42-44)
+    '     IF AnimFrame = 0 THEN
+    '         DEFINE GRAM_SHIFT1_R3, 1, Shift1F0Row3       ' Card 38
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R4, 1, Shift1F0Row4       ' Card 47
+    '         WAIT
+    '         DEFINE GRAM_SHIFT2_BASE, 3, Shift2F0Rows0_2  ' Cards 42-44
+    '     ELSE
+    '         DEFINE GRAM_SHIFT1_R3, 1, Shift1F1Row3       ' Card 38
+    '         WAIT
+    '         DEFINE GRAM_SHIFT1_R4, 1, Shift1F1Row4       ' Card 47
+    '         WAIT
+    '         DEFINE GRAM_SHIFT2_BASE, 3, Shift2F1Rows0_2  ' Cards 42-44
+    '     END IF
+    '     SubstepState = SubstepState AND 3  ' DefineStep = 0
+    ' END IF
 
     ' Advance wave reveal
     IF WaveEntrance = 2 THEN
@@ -228,15 +268,43 @@ GameLoop:
         NeedRedraw = 1  ' Pattern B always redraws during slide-in
     END IF
 
-    ' March processing (before DrawAliens so we only draw once per frame)
+    ' March processing (3-substep: 0→1px→2px→snap to next column)
     IF WaveRevealCol >= ALIEN_COLS - 1 THEN
     IF WaveEntrance <> 2 THEN
     IF DeathTimer = 0 THEN
         MarchCount = MarchCount + 1
         IF MarchCount >= CurrentMarchSpeed THEN
             MarchCount = 0
+            ' SUBSTEP DISABLED - Snap-only march for maximum performance
+            ' Aliens move 8px instantly (classic march behavior)
+            SubstepState = 0  ' Always snap position
             GOSUB MarchAliens
-            NeedRedraw = 1  ' March changed grid, need redraw
+            NeedRedraw = 1
+            '
+            ' ORIGINAL SUBSTEP CODE (commented for performance testing):
+            ' IF AlienDir = 1 THEN
+            '     ' Moving right
+            '     IF (SubstepState AND 3) < 2 THEN
+            '         SubstepState = SubstepState + 1  ' Shift +1px or +2px
+            '         NeedRedraw = 1
+            '     ELSE
+            '         ' Substep complete, snap to next column
+            '         SubstepState = SubstepState AND 12  ' ShiftPos = 0, keep DefineStep
+            '         GOSUB MarchAliens  ' Actual grid position change
+            '         NeedRedraw = 1
+            '     END IF
+            ' ELSE
+            '     ' Moving left (AlienDir = 255)
+            '     IF (SubstepState AND 3) > 0 THEN
+            '         SubstepState = SubstepState - 1  ' De-shift
+            '         NeedRedraw = 1
+            '     ELSE
+            '         ' At base position, snap to previous column
+            '         SubstepState = (SubstepState AND 12) OR 2  ' ShiftPos = 2
+            '         GOSUB MarchAliens  ' Actual grid position change
+            '         NeedRedraw = 1
+            '     END IF
+            ' END IF
             ' Check if aliens reached the bottom (invasion!)
             ' Find bottom-most alive row (scan from bottom up, stop at first alive)
             HitRow = 255  ' sentinel: no alive row found
@@ -254,7 +322,7 @@ GameLoop:
                         Lives = Lives - 1
                         ' Clear power-ups, bullets, rogue, wingman
                         BeamTimer = 0 : RapidTimer = 0
-                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0 : ShieldHits = 0
+                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
                         #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                         RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
@@ -377,11 +445,11 @@ GameLoop:
         #ChainFreq1 = #ChainFreq1 + 10
         #ChainFreq2 = #ChainFreq2 + 6
         IF (ChainTimer AND 1) = 0 THEN
-            IF #ChainVol > 0 THEN #ChainVol = #ChainVol - 1
+            IF ChainVol > 0 THEN ChainVol = ChainVol - 1
         END IF
         POKE $1F7, 12 + (24 - ChainTimer) / 3
-        SOUND 0, #ChainFreq1, #ChainVol
-        SOUND 2, #ChainFreq2, #ChainVol
+        SOUND 0, #ChainFreq1, ChainVol
+        SOUND 2, #ChainFreq2, ChainVol
         IF ChainTimer = 0 THEN
             ' SFX done — silence and restart music
             SOUND 0, 0, 0
@@ -445,7 +513,7 @@ ChainDone:
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
                             ' Skill bonus for the risky parry
-                            #Score = #Score + 25
+                            Points = 25 : GOSUB AddToScore
                             ' Bright zap SFX (type 6)
                             SfxType = 6 : SfxVolume = 15 : #SfxPitch = 60
                         END IF
@@ -467,7 +535,7 @@ ChainDone:
                             RogueState = ROGUE_IDLE
                             RogueTimer = 0 : RogueDivePhase = 0
                             SPRITE SPR_FLYER, 0, 0, 0
-                            #Score = #Score + 50
+                            Points = 50 : GOSUB AddToScore
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             GOSUB BumpChain
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
@@ -491,7 +559,7 @@ ChainDone:
                 Lives = Lives - 1
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0 : ShieldHits = 0
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
                 ' Clear wingman and any active capsule (dies with player)
@@ -569,8 +637,16 @@ ChainDone:
                 SCROLL 0, 0
                 CLS
                 GOSUB HideAllSprites
-                ' Update high score
-                IF #Score > #HighScore THEN #HighScore = #Score
+                ' Update high score (32-bit comparison and copy)
+                IF #ScoreHigh > #HighScoreHigh THEN
+                    #HighScore = #Score
+                    #HighScoreHigh = #ScoreHigh
+                ELSEIF #ScoreHigh = #HighScoreHigh THEN
+                    IF #Score > #HighScore THEN
+                        #HighScore = #Score
+                        #HighScoreHigh = #ScoreHigh
+                    END IF
+                END IF
                 ' Reload title font for game over screen (powerup HUD overwrote it)
                 DEFINE GRAM_FONT_S, 4, FontSGfx  ' Cards 25-28: S, P, A, C
                 WAIT
@@ -661,7 +737,7 @@ ChainDone:
                 PRINT AT 111, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
                 PRINT AT 112, GRAM_SCORE_E * 8 + COL_WHITE + $0800
                 ' High score at row 6
-                IF #Score >= #HighScore THEN
+                IF #ScoreHigh > #HighScoreHigh OR (#ScoreHigh = #HighScoreHigh AND #Score >= #HighScore) THEN
                     ' New high: TinyFont "NEW HIGH SCORE!" (single space)
                     FOR LoopVar = 0 TO 3
                         PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800
@@ -675,6 +751,7 @@ ChainDone:
                     ' TinyFont "HIGH" + GROM digits
                     PRINT AT 126, 14 * 8 + COL_YELLOW + $0800
                     PRINT AT 127, 15 * 8 + COL_YELLOW + $0800
+                    ' TODO: Show full 32-bit high score (#HighScoreHigh + #HighScore)
                     PRINT AT 129 COLOR COL_YELLOW, <>#HighScore
                 END IF
                 ' Top chain at row 7 (if achieved a chain)
@@ -740,13 +817,13 @@ ChainDone:
     IF FireCooldown > 0 THEN
         FireCooldown = FireCooldown - 1
     END IF
-    IF #MegaTimer > 0 THEN
-        #MegaTimer = #MegaTimer - 1
+    IF MegaTimer > 0 THEN
+        MegaTimer = MegaTimer - 1
     END IF
 
     ' Update powerup HUD indicator (positions 233-235, yellow TinyFont)
     ' Cards 25-27 are DEFINE'd per powerup type at pickup time
-    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR #MegaTimer > 0 THEN
+    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR MegaTimer > 0 THEN
         PRINT AT 233, GRAM_PWR1 * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR2 * 8 + COL_YELLOW + $0800
         IF RapidTimer > 0 THEN
@@ -842,17 +919,19 @@ ChainDone:
             END IF
         END IF
         ' Chain counter display: grey when inactive, blue when active
-        ' Cards 58-60 are static GRAM (CH, AI, N:). Card 28 is TinyFont digit.
+        ' Cards 58-60 are static GRAM (CH, AI, N). Digit at position 231 shows "00"-"99"
         IF ChainCount = 0 THEN
-            PRINT AT 227, GRAM_CHAIN_CH * 8 + $1800
-            PRINT AT 228, GRAM_CHAIN_AI * 8 + $1800
-            PRINT AT 229, GRAM_CHAIN_N * 8 + $1800
-            PRINT AT 230, 0
+            ' Inactive: grey "CHAIN00" (TinyFont shows "00" when chain is 0)
+            PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+            PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+            PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+            PRINT AT 231, GRAM_CHAIN_DIG * 8 + $1800  ' "00" in grey (TinyFont)
         ELSE
-            PRINT AT 227, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
-            PRINT AT 228, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
-            PRINT AT 229, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
-            PRINT AT 230, GRAM_CHAIN_DIG * 8 + COL_BLUE + $0800
+            ' Active 1-99: blue "CHAIN" with digit (leading zero for 1-9)
+            PRINT AT 228, GRAM_CHAIN_CH * 8 + COL_BLUE + $0800
+            PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
+            PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
+            PRINT AT 231, GRAM_CHAIN_DIG * 8 + COL_BLUE + $0800
         END IF
     END IF
 

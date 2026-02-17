@@ -25,6 +25,15 @@ CONST GRAM_ALIEN2   = 4         ' Middle rows alien
 CONST GRAM_ALIEN3   = 6         ' Bottom rows alien
 CONST GRAM_ALIEN4   = 19        ' Row 3 alien (reuses title-only crab card slots)
 CONST GRAM_ALIEN5   = 30        ' Row 4 alien (reuses title-only font card slots)
+' Substep march shift cards (dynamically DEFINE'd during gameplay)
+' Shift-1: Non-contiguous free cards (no conflicts!)
+CONST GRAM_SHIFT1_R0 = 31       ' Shift-1 row 0 (title font N, free during gameplay)
+CONST GRAM_SHIFT1_R1 = 32       ' Shift-1 row 1 (title font T, free during gameplay)
+CONST GRAM_SHIFT1_R2 = 37       ' Shift-1 row 2 (star 1, title only)
+CONST GRAM_SHIFT1_R3 = 38       ' Shift-1 row 3 (star 2, title only)
+CONST GRAM_SHIFT1_R4 = 47       ' Shift-1 row 4 (free slot)
+' Shift-2: Limited to rows 0-2 only (rows 3-4 use shift-1 or snap)
+CONST GRAM_SHIFT2_BASE = 42     ' Shift-2 rows 0-2 in cards 42-44 (saucer freed!)
 CONST GRAM_BULLET   = 8         ' Bullet graphic
 ' Title screen big alien - 2 side-by-side 8x8 sprites (16x8)
 CONST GRAM_BAND1    = 9         ' Alien left half
@@ -81,12 +90,10 @@ CONST GRAM_WARP2  = 35          ' Warp-in frame 2: forming cluster
 CONST GRAM_WARP3  = 36          ' Warp-in frame 3: coalescing shape
 CONST GRAM_STAR1  = 37        ' Star dot (upper-left pixel)
 CONST GRAM_STAR2  = 38        ' Star dot (lower-right pixel)
-CONST GRAM_SAUCER = 39         ' Flying saucer (bonus target)
+CONST GRAM_SAUCER = 39         ' Flying saucer (single frame, animation via color shift)
 CONST GRAM_BEAM   = 40         ' Wide beam shot (full 8px width)
 CONST GRAM_POWERUP = 41        ' Power-up capsule graphic
-CONST GRAM_SAUCER_F2 = 42      ' Saucer frame 2 (left window lit)
-CONST GRAM_SAUCER_F3 = 43      ' Saucer frame 3 (middle window lit)
-CONST GRAM_SAUCER_F4 = 44      ' Saucer frame 4 (right window + engine glow)
+' Cards 42-44: Freed for alien substep shift-2 (saucer uses color animation only)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
 CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
 CONST GRAM_CAP_F1  = 48         ' Capsule animation frame 1
@@ -102,14 +109,16 @@ CONST GRAM_BOMB2_F1 = 57        ' Bomb alien right half frame 2
 CONST GRAM_CHAIN_CH = 58        ' Compact "CH" for chain display
 CONST GRAM_CHAIN_AI = 59        ' Compact "AI" for chain display
 CONST GRAM_CHAIN_N  = 60        ' Compact "N" for chain display
-CONST GRAM_SCORE_SC = 61        ' Score digits D4,D3 (title: "SC" label)
-CONST GRAM_SCORE_OR = 62        ' Score digits D2,D1 (title: "OR" label)
-CONST GRAM_SCORE_E  = 63        ' Score digit D0 (title: "E" label)
+CONST GRAM_SCORE_M  = 32        ' Score digits D6,D5 (millions + hundred-thousands)
+CONST GRAM_SCORE_SC = 61        ' Score digits D4,D3 (title: "SC" label, gameplay: ten-thousands + thousands)
+CONST GRAM_SCORE_OR = 62        ' Score digits D2,D1 (title: "OR" label, gameplay: hundreds + tens)
+CONST GRAM_SCORE_E  = 63        ' Score digit D0 (title: "E" label, gameplay: ones + blank)
 
-' Compact score library card assignments (must match GRAM_SCORE_* above)
-CONST SCORE_CARD0 = 61          ' Ten-thousands + thousands
-CONST SCORE_CARD1 = 62          ' Hundreds + tens
-CONST SCORE_CARD2 = 63          ' Ones + blank
+' UpdateScoreDisplay round-robin card assignments (extended for 7-digit display)
+CONST SCORE_CARD_M  = 32        ' Millions + hundred-thousands (D6D5)
+CONST SCORE_CARD0 = 61          ' Ten-thousands + thousands (D4D3)
+CONST SCORE_CARD1 = 62          ' Hundreds + tens (D2D1)
+CONST SCORE_CARD2 = 63          ' Ones + blank (D0)
 
 ' Wingman sprite (Mooninite-style) - uses free slots 13 and 18
 CONST GRAM_WINGMAN_F1 = 13      ' Wingman frame 1 (legs together)

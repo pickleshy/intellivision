@@ -2,9 +2,9 @@
 ' SPACE INTRUDERS - Graphics Module
 ' ============================================
 ' BITMAP definitions for all game graphics
-' Segment: 2 (data only, low priority)
+' Segment: 3 (pure data - moved from Seg 2 to free critical space)
 
-    SEGMENT 2
+    SEGMENT 3
 
 ' === Graphics Data === 
 
@@ -168,6 +168,227 @@ Alien5Gfx:
     BITMAP "X.XX.X.."
     BITMAP ".X..X..."
     BITMAP ".X..X..."
+    BITMAP "........"
+
+' --------------------------------------------
+' Shifted Alien Graphics (Substep March)
+' --------------------------------------------
+' Cards 34-38: Shift-1 all 5 rows (time-shared with warp-in + stars)
+' Cards 25-27: Shift-2 rows 0-2 (time-shared with powerup HUD, guarded)
+' Cards 43, 47: Shift-2 rows 3-4 (reclaimed from saucer F3 + free slot)
+' --------------------------------------------
+' Frame 0, Shift-1 (+1px): Individual rows for non-contiguous loading
+Shift1F0Row0:    ' Squid F0 shifted right 1px (card 31)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP "..X..X.."
+    BITMAP "..XXXX.."
+    BITMAP "..X..X.."
+    BITMAP "...XX..."
+    BITMAP "........"
+
+Shift1F0Row1:    ' Crab F0 shifted right 1px (card 32)
+    BITMAP "..X..X.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "..X..X.."
+    BITMAP "........"
+
+Shift1F0Row2:    ' Octopus F0 shifted right 1px (card 37)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP "..X..X.."
+    BITMAP "...XX..."
+    BITMAP "........"
+
+Shift1F0Row3:    ' Beetle F0 shifted right 1px (card 38)
+    BITMAP ".X....X."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP "..X..X.."
+    BITMAP "...XX..."
+    BITMAP "........"
+
+Shift1F0Row4:    ' Jellyfish F0 shifted right 1px (card 47)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP "..X..X.."
+    BITMAP "..X..X.."
+    BITMAP ".X....X."
+    BITMAP "........"
+
+' Frame 1, Shift-1 (+1px): Individual rows for non-contiguous loading
+Shift1F1Row0:    ' Squid F1 shifted right 1px (card 31)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP ".X.XX.X."
+    BITMAP ".X....X."
+    BITMAP "..X..X.."
+    BITMAP "........"
+
+Shift1F1Row1:    ' Crab F1 shifted right 1px (card 32)
+    BITMAP ".X....X."
+    BITMAP ".X.XX.X."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
+    BITMAP ".X....X."
+    BITMAP "........"
+
+Shift1F1Row2:    ' Octopus F1 shifted right 1px (card 37)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP ".X....X."
+    BITMAP ".X....X."
+    BITMAP "........"
+
+Shift1F1Row3:    ' Beetle F1 shifted right 1px (card 38)
+    BITMAP "..X..X.."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XX..XX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X....X."
+    BITMAP "...XX..."
+    BITMAP "........"
+
+Shift1F1Row4:    ' Jellyfish F1 shifted right 1px (card 47)
+    BITMAP "...XX..."
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP "..X..X.."
+    BITMAP "..X..X.."
+    BITMAP "........"
+
+' Frame 0, Shift-2 (+2px): Rows 0-2 (cards 25-27)
+Shift2F0Rows0_2:
+    ' Squid F0 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XXXXXX"
+    BITMAP "...X..X."
+    BITMAP "...XXXX."
+    BITMAP "...X..X."
+    BITMAP "....XX.."
+    BITMAP "........"
+
+    ' Crab F0 shifted right 2px
+    BITMAP "...X..X."
+    BITMAP "..XXXXXX"
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "...XXXX."
+    BITMAP "...XXXX."
+    BITMAP "...X..X."
+    BITMAP "........"
+
+    ' Octopus F0 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "..X.XX.X"
+    BITMAP "...X..X."
+    BITMAP "....XX.."
+    BITMAP "........"
+
+' Frame 1, Shift-2 (+2px): Rows 0-2 (cards 25-27)
+Shift2F1Rows0_2:
+    ' Squid F1 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XX..XX"
+    BITMAP "...XXXX."
+    BITMAP "..X.XX.X"
+    BITMAP "..X....X"
+    BITMAP "...X..X."
+    BITMAP "........"
+
+    ' Crab F1 shifted right 2px
+    BITMAP "..X....X"
+    BITMAP "..X.XX.X"
+    BITMAP "..XXXXXX"
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "...XXXX."
+    BITMAP "..X....X"
+    BITMAP "........"
+
+    ' Octopus F1 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "..X.XX.X"
+    BITMAP "..X....X"
+    BITMAP "..X....X"
+    BITMAP "........"
+
+' Frame 0, Shift-2 (+2px): Row 3 (card 43)
+Shift2F0Row3:
+    ' Beetle F0 shifted right 2px
+    BITMAP "..X....X"
+    BITMAP "...XXXX."
+    BITMAP "..XXXXXX"
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "...X..X."
+    BITMAP "....XX.."
+    BITMAP "........"
+
+' Frame 0, Shift-2 (+2px): Row 4 (card 47)
+Shift2F0Row4:
+    ' Jellyfish F0 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XXXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "...X..X."
+    BITMAP "...X..X."
+    BITMAP "..X....X"
+    BITMAP "........"
+
+' Frame 1, Shift-2 (+2px): Row 3 (card 43)
+Shift2F1Row3:
+    ' Beetle F1 shifted right 2px
+    BITMAP "...X..X."
+    BITMAP "...XXXX."
+    BITMAP "..XXXXXX"
+    BITMAP "..XX..XX"
+    BITMAP "..XXXXXX"
+    BITMAP "..X....X"
+    BITMAP "....XX.."
+    BITMAP "........"
+
+' Frame 1, Shift-2 (+2px): Row 4 (card 47)
+Shift2F1Row4:
+    ' Jellyfish F1 shifted right 2px
+    BITMAP "....XX.."
+    BITMAP "...XXXX."
+    BITMAP "..XXXXXX"
+    BITMAP "..XXXXXX"
+    BITMAP "..X.XX.X"
+    BITMAP "...X..X."
+    BITMAP "...X..X."
     BITMAP "........"
 
 ' Warp-in animation frames (universal for all alien types)
@@ -1144,11 +1365,11 @@ PowerupMegaGfx:
 ' === SHIELD dome graphic (solid bar above ship) ===
 ShieldArcGfx:
     BITMAP "..####.."
-    BITMAP ".##..##."
+    BITMAP "..#..#.."
     BITMAP ".##..##."
     BITMAP "##....##"
-    BITMAP "##....##"
+    BITMAP "##.##.##"
     BITMAP "#......#"
-    BITMAP "#......#"
-    BITMAP ".######."
+    BITMAP "#.####.#"
+    BITMAP "###..###"
 

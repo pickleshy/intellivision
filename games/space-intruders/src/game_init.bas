@@ -64,11 +64,11 @@ StartGame:
     DEFINE GRAM_WARP1, 3, WarpInGfx1    ' Cards 34-36: Warp-in animation
     WAIT
     ' Cards 39-55: Saucer, beams, capsules, bombs, zigzag
-    DEFINE GRAM_SAUCER, 1, SaucerGfx      ' Card 39
+    DEFINE GRAM_SAUCER, 1, SaucerGfx      ' Card 39 (single frame, animation via color shift)
     WAIT
     DEFINE GRAM_BEAM, 1, BeamGfx          ' Card 40
     WAIT
-    DEFINE GRAM_SAUCER_F2, 3, SaucerF2Gfx ' Cards 42-44 (skips 41=POWERUP, reused from capsule)
+    ' Card 42 freed for alien substep shift-2
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx   ' Card 45
     WAIT
@@ -126,7 +126,7 @@ StartGame:
     BeamTimer = 0  ' No beam power-up
     RapidTimer = 0 ' No rapid fire
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)  ' No bomb weapon
-    #MegaTimer = 0  ' No mega beam
+    MegaTimer = 0  ' No mega beam
     MegaBeamTimer = 0
     ShieldHits = 0  ' No shield
     PowerUpState = 0  ' No power-up drop

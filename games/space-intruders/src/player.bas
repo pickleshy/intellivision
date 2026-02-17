@@ -68,7 +68,7 @@ MovePlayer: PROCEDURE
     ' Fire: side buttons (not keypad) or auto-fire
     IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
     IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-        IF #MegaTimer > 0 THEN
+        IF MegaTimer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
             IF MegaBeamTimer = 0 THEN
                 MegaBeamCol = (PlayerX - 4) / 8
@@ -117,7 +117,7 @@ MovePlayer: PROCEDURE
                         ChainTimer = 24
                         #ChainFreq1 = 150
                         #ChainFreq2 = 80
-                        #ChainVol = 15
+                        ChainVol = 15
                         POKE $1F7, 12
                         POKE $1F8, $18
                         SOUND 0, 150, 14

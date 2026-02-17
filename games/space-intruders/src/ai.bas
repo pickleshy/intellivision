@@ -120,7 +120,7 @@ UpdateCapture: PROCEDURE
                                     #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                                     IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                                     #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
-                                    #Score = #Score + 50
+                                    Points = 50 : GOSUB AddToScore
                                     #GameFlags = #GameFlags OR FLAG_SHOTLAND
                                     GOSUB BumpChain
                                     SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
@@ -205,7 +205,7 @@ CaptureHitscan: PROCEDURE
     END IF
 
     ' Score +10
-    #Score = #Score + 10
+    Points = 10 : GOSUB AddToScore
 
     ' Deactivate bullet (it hit something)
     #GameFlags = #GameFlags AND $FFF7
@@ -768,26 +768,21 @@ END
 ' Extracted from UpdateSaucer for clarity
 ' --------------------------------------------
 SaucerAnimate: PROCEDURE
-    ' Animate saucer: 4-frame window scan + color based on powerup type
-    ' Uses pre-loaded GRAM frames (no DEFINE during gameplay for performance)
+    ' Animate saucer: color cycling only (single GRAM card, animation via color shift)
+    ' Cards 42-44 freed for alien substep shift-2
     #FlyPhase = #FlyPhase + 1
     IF #FlyPhase >= 24 THEN #FlyPhase = 0
-    IF #FlyPhase < 6 THEN
-        #Card = GRAM_SAUCER                     ' All windows dark
-        FlyColor = SaucerColor1(PowerUpType)     ' Primary color
-    ELSEIF #FlyPhase < 12 THEN
-        #Card = GRAM_SAUCER_F2                  ' Inner window lit
-        FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
-    ELSEIF #FlyPhase < 18 THEN
-        #Card = GRAM_SAUCER_F3                  ' Outer window lit
+
+    ' Cycle colors (no GRAM frame switching)
+    IF #FlyPhase < 12 THEN
         FlyColor = SaucerColor1(PowerUpType)     ' Primary color
     ELSE
-        #Card = GRAM_SAUCER_F4                  ' Both windows + engine glow
         FlyColor = SaucerColor2(PowerUpType)     ' Secondary color
     END IF
 
     ' Draw saucer as 2 sprites: left half + FLIPX right half (16px wide)
     ' Handle pastel colors (8+) to avoid bit overflow into card number
+    #Card = GRAM_SAUCER
     IF FlyColor >= 8 THEN
         #Card = #Card * 8 + (FlyColor AND 7) + $1800
     ELSE
@@ -844,7 +839,7 @@ SaucerHit: PROCEDURE
     SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
     SOUND 2, 150, 15  ' Immediate tone hit on channel 3
     ' Bonus points
-    #Score = #Score + 100
+    Points = 10 : GOSUB AddToScore
     ' Drop power-up from saucer position
     PowerUpState = 1       ' Falling
     PowerUpX = FlyX        ' Drop from saucer X

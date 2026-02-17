@@ -23,6 +23,7 @@ ResetToTitle:
     Lives = STARTING_LIVES
     Level = 1
     #Score = 0
+    #ScoreHigh = 0
     #NextLife = 1000
     PlayerX = 80
     AlienOffsetX = 0
@@ -36,7 +37,7 @@ ResetToTitle:
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
     #GameFlags = #GameFlags AND $EFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET + FLAG_KEY0HELD
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
-    #MegaTimer = 0
+    MegaTimer = 0
     MegaBeamTimer = 0
     #GameFlags = #GameFlags AND $FFBF
     Key1Held = 0
@@ -47,3 +48,10 @@ ResetToTitle:
     ShakeTimer = 0
     SCROLL 0, 0
     GOSUB HideAllSprites
+
+    ' Clean ISR state before transitioning to TitleScreen (prevents ISR pollution from gameplay)
+    POKE $0345, 0    ' Clear _gram2_bitmap trigger
+    POKE $0108, 0    ' Clear _gram2_total counter
+
+    ' Explicit jump required since TitleScreen is now in SEGMENT 1
+    GOTO TitleScreen

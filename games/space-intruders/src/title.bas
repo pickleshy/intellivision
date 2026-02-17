@@ -2,9 +2,9 @@
 ' SPACE INTRUDERS - Title Screen Module
 ' ============================================
 ' Title screen rendering and input handling
-' Segment: 0 (title logic in main segment)
+' Segment: 1 (non-critical, moved from Seg 0 to free main segment)
 
-    SEGMENT 0
+    SEGMENT 1
 
 ' === Title Screen Logic ===
 
@@ -41,10 +41,10 @@ TitleScreen:
     ' Display title text with initial animation frames (edge view)
     GOSUB DrawTitleAnimated
 
-    ' Generate scrolling starfield on safe rows (3, 4, 8, 9, 11)
-    StarTimer = 0
-    StarTick = 0
-    GOSUB GenerateStars
+    ' Static star field (25 stars, no arrays!) + 2 animated stars for motion
+    GOSUB DrawStaticStars
+    BulletX = RANDOM(20)    ' Animated star 1 starting position
+    ABulletX = RANDOM(20)   ' Animated star 2 starting position
 
     ' "PRESS FIRE" slides in from edges — don't print here
     WavePhase = 0          ' Color cycle index for PRESS FIRE
@@ -381,12 +381,11 @@ TitleLoop:
     END IF
 SkipPressfire:
 
-    ' Scrolling starfield - update every 5 frames
+    ' Animate stars - 2 scrolling stars give illusion of motion (every 5 frames)
     StarTimer = StarTimer + 1
     IF StarTimer >= 5 THEN
         StarTimer = 0
-        StarTick = StarTick + 1
-        GOSUB ScrollStars
+        GOSUB AnimateStars
     END IF
 
     ' Animation - toggle walk frame every 16 frames via GRAM redefine

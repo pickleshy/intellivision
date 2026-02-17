@@ -171,74 +171,62 @@ DrawAlienGrid: PROCEDURE
     RETURN
 END
 
-' --- GenerateStars: place 16 random stars on safe rows ---
-' StarPos = column (0-19), StarType = row base offset | type bit
-GenerateStars: PROCEDURE
-    ' Safe rows: 3(60), 4(80), 8(160), 9(180), 11(220) — all bases are even
-    FOR LoopVar = 0 TO 15
+
+' --- DrawStaticStars: 3-layer parallax starfield (avoids alien grid rows 5-7) ---
+' Layer 1 (far): Rows 8-11, dense, dim (dark green)
+' Layer 2 (mid): Rows 1-2, medium density, medium brightness
+' Layer 3 (near): Row 0, sparse, bright
+DrawStaticStars: PROCEDURE
+    ' Layer 1: Far stars (rows 8-11, below aliens) - very dense, dim
+    FOR LoopVar = 0 TO 39  ' 40 stars, ~10 per row
         Col = RANDOM(20)
-        Row = RANDOM(5)
-        IF Row = 0 THEN
-            Row = 60                          ' Row 3 base offset
-        ELSEIF Row = 1 THEN
-            Row = 80                          ' Row 4 base offset
-        ELSEIF Row = 2 THEN
-            Row = 160                         ' Row 8 base offset
-        ELSEIF Row = 3 THEN
-            Row = 180                         ' Row 9 base offset
-        ELSE
-            Row = 220                         ' Row 11 base offset
-        END IF
-        StarPos(LoopVar) = Col               ' Store column only
-        ' Pack row base + type into StarType (bit 0 = type, bits 1-7 = base)
-        StarType(LoopVar) = Row OR (LoopVar AND 1)
-        ' Draw the star
-        IF (LoopVar AND 1) = 0 THEN
-            PRINT AT Row + Col, GRAM_STAR1 * 8 + 4 + $0800  ' Dark green, dim
-        ELSE
-            PRINT AT Row + Col, GRAM_STAR2 * 8 + 7 + $0800  ' White, bright
-        END IF
+        Row = RANDOM(4) + 8  ' Rows 8-11
+        PRINT AT Row * 20 + Col, GRAM_STAR1 * 8 + 4 + $0800  ' Dark green
+    NEXT LoopVar
+
+    ' Layer 2: Mid stars (rows 2-4, between logo and aliens) - dense
+    FOR LoopVar = 0 TO 29  ' 30 stars, ~10 per row
+        Col = RANDOM(20)
+        Row = RANDOM(3) + 2  ' Rows 2-4
+        PRINT AT Row * 20 + Col, GRAM_STAR2 * 8 + 5 + $0800  ' Green
+    NEXT LoopVar
+
+    ' Layer 3: Bright accent stars (rows 2-4) - sparse, white
+    FOR LoopVar = 0 TO 8  ' 9 stars, ~3 per row
+        Col = RANDOM(20)
+        Row = RANDOM(3) + 2  ' Rows 2-4
+        PRINT AT Row * 20 + Col, GRAM_STAR1 * 8 + 7 + $0800  ' White (brightest)
     NEXT LoopVar
     RETURN
 END
 
-' --- ScrollStars: shift all stars left with parallax ---
-' Optimized: StarPos = column (0-19), StarType = row base | type bit
-' Eliminates 48 software div/mul calls per scroll (/ 20 and * 20)
-ScrollStars: PROCEDURE
-    FOR LoopVar = 0 TO 15
-        ' Extract row base offset (bits 1-7, clear type bit 0)
-        Row = StarType(LoopVar) AND $FE
+' --- AnimateStars: 2 animated stars for motion illusion ---
+' Uses BulletX/ABulletX (unused on title screen) - saves 30+ variables!
+AnimateStars: PROCEDURE
+    ' Clear old positions
+    PRINT AT 60 + BulletX, 0   ' Row 3 (near layer, fast scroll)
+    PRINT AT 80 + ABulletX, 0  ' Row 4 (mid layer, slow scroll)
 
-        ' Clear old position
-        PRINT AT Row + StarPos(LoopVar), 0
+    ' Update positions (scroll left - different speeds for parallax)
+    ' Fast star (row 3): moves every frame
+    IF BulletX = 0 THEN
+        BulletX = 19
+    ELSE
+        BulletX = BulletX - 1
+    END IF
 
-        ' Parallax: slow stars move every other tick, fast every tick
-        IF (StarType(LoopVar) AND 1) = 0 THEN
-            ' Slow/dim: move every 2nd tick
-            IF (StarTick AND 1) = 0 THEN
-                IF StarPos(LoopVar) = 0 THEN
-                    StarPos(LoopVar) = 19
-                ELSE
-                    StarPos(LoopVar) = StarPos(LoopVar) - 1
-                END IF
-            END IF
+    ' Slow star (row 4): moves every other frame (StarTimer driven)
+    IF StarTimer >= 5 THEN
+        IF ABulletX = 0 THEN
+            ABulletX = 19
         ELSE
-            ' Fast/bright: move every tick
-            IF StarPos(LoopVar) = 0 THEN
-                StarPos(LoopVar) = 19
-            ELSE
-                StarPos(LoopVar) = StarPos(LoopVar) - 1
-            END IF
+            ABulletX = ABulletX - 1
         END IF
+    END IF
 
-        ' Redraw star at new position
-        IF (StarType(LoopVar) AND 1) = 0 THEN
-            PRINT AT Row + StarPos(LoopVar), GRAM_STAR1 * 8 + 4 + $0800
-        ELSE
-            PRINT AT Row + StarPos(LoopVar), GRAM_STAR2 * 8 + 7 + $0800
-        END IF
-    NEXT LoopVar
+    ' Draw new positions (both bright white for visibility)
+    PRINT AT 60 + BulletX, GRAM_STAR2 * 8 + 7 + $0800   ' Row 3, white (fast)
+    PRINT AT 80 + ABulletX, GRAM_STAR1 * 8 + 7 + $0800  ' Row 4, white (slow)
     RETURN
 END
 

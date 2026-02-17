@@ -59,21 +59,21 @@ UpdatePowerUp: PROCEDURE
                 ' Picked up! Activate power-up based on type
                 IF PowerUpType = 0 THEN
                     BeamTimer = 1
-                    RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0
+                    RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0
                     DEFINE GRAM_PWR1, 2, PowerupBeamGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF PowerUpType = 1 THEN
                     RapidTimer = 1
-                    BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : #MegaTimer = 0
+                    BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0
                     DEFINE GRAM_PWR1, 3, PowerupRapidGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF PowerUpType = 2 THEN
                     #GameFlags = #GameFlags OR FLAG_BOMB
-                    BeamTimer = 0 : RapidTimer = 0 : #MegaTimer = 0
+                    BeamTimer = 0 : RapidTimer = 0 : MegaTimer = 0
                     DEFINE GRAM_PWR1, 2, PowerupBombGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY bomb_phrase
                 ELSEIF PowerUpType = 3 THEN
-                    #MegaTimer = 120
+                    MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
                     DEFINE GRAM_PWR1, 2, PowerupMegaGfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase

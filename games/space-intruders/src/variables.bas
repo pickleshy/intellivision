@@ -14,14 +14,16 @@
 DIM #AlienRow(ALIEN_ROWS)       ' Bitmask of alive aliens per row (11 bits, needs 16-bit)
 DIM FlyColors(6)               ' Saucer color cycle (6 entries, indices 0-5)
 DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
-DIM StarPos(16)                 ' Star column position (0-19)
-DIM StarType(16)                ' Packed: bits 1-7 = row base offset (60/80/160/180/220), bit 0 = type (0=slow, 1=fast)
+' StarPos/StarType arrays REMOVED - replaced with hybrid static+animated (saves 32 slots!)
 
 ' -- Core State --
 #GameFlags  = 0                 ' Bit-packed booleans (see FLAG_* constants)
-#Score      = 0                 ' Player score
-#HighScore  = 0                 ' Session high score (persists until ROM reset)
+#Score      = 0                 ' Player score (lower 16 bits of 32-bit score)
+#ScoreHigh  = 0                 ' Player score (upper 16 bits, max 4.29 billion total)
+#HighScore  = 0                 ' Session high score (lower 16 bits, persists until ROM reset)
+#HighScoreHigh = 0              ' Session high score (upper 16 bits)
 #NextLife   = 1000              ' Score threshold for next extra life
+Points      = 0                 ' Temp variable for AddScore procedure (score delta)
 Level       = 1                 ' Current wave/level
 Lives       = STARTING_LIVES    ' Player lives remaining
 GameOver    = 0                 ' 0=playing, 3-6=game over phases
@@ -49,6 +51,7 @@ ShootCol    = 0                 ' Column to shoot from
 ' -- Alien Grid & March --
 AnimFrame   = 0                 ' Animation frame (0 or 1)
 ShimmerCount = 0                ' Frame counter for shimmer updates
+SubstepState = 0                ' Packed: ShiftPos (bits 0-1) + DefineStep*4 (bits 2-3)
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
 AlienOffsetY = 0                ' Alien grid Y offset (drops down)
 LastClearedY = 0                ' Last AlienOffsetY that had rows cleared above it
@@ -87,7 +90,7 @@ ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
 ChainTimer  = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
 #ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
 #ChainFreq2 = 0                ' Chain SFX channel C frequency (sub rumble)
-#ChainVol   = 0                ' Chain SFX shared volume
+ChainVol   = 0                 ' Chain SFX shared volume (0-15, converted from 16-bit to free slot)
 BombExpTimer = 0                ' Chain explosion countdown (0=inactive, 20=active)
 BombExpRow   = 0                ' Grid row of exploded bomb
 BombExpCol   = 0                ' Left grid column of exploded bomb
@@ -161,7 +164,7 @@ FireCooldown = 0                ' Frames until next shot allowed / [title: bolt 
 PowerUpY    = 0                 ' Power-up capsule Y position (separate from saucer FlyY)
 #PowerTimer = 0                 ' Landing timeout (counts down from 300)
 RapidTimer  = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
-#MegaTimer  = 0                 ' Mega beam countdown (120 frames = 2 sec, 0 = normal)
+MegaTimer  = 0                  ' Mega beam countdown (120 frames = 2 sec, 0 = normal, converted to 8-bit)
 MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
 ShieldHits  = 0                 ' Shield charges (0=none, 1=damaged, 2=full)
@@ -173,8 +176,7 @@ SfxType     = 0                 ' 0=none, 1=alien, 2=saucer, 3=death, 4=mega, 5=
 #SfxPitch   = 0                 ' Current tone period (16-bit for pitch values >255)
 
 ' -- Starfield & Parallax --
-StarTimer   = 0                 ' Frame counter for scroll updates
-StarTick    = 0                 ' Tick counter (for slow layer)
+StarTimer   = 0                 ' Frame counter: title star anim (5 frames) / gameplay silhouette scroll (10 frames)
 SilhOffset  = 0                 ' Silhouette scroll position (0 to SILH_MAP_LEN-1)
 
 ' -- Title Screen & Game Over --
@@ -274,14 +276,9 @@ GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2
     WAIT
     DEFINE GRAM_STAR2, 1, Star2Gfx
     WAIT
-    DEFINE GRAM_SAUCER, 1, SaucerGfx
+    DEFINE GRAM_SAUCER, 1, SaucerGfx      ' Single frame, animation via color shift
     WAIT
-    DEFINE GRAM_SAUCER_F2, 1, SaucerF2Gfx
-    WAIT
-    DEFINE GRAM_SAUCER_F3, 1, SaucerF3Gfx
-    WAIT
-    DEFINE GRAM_SAUCER_F4, 1, SaucerF4Gfx
-    WAIT
+    ' Cards 42-44: Freed for alien substep shift-2
     DEFINE GRAM_BEAM, 1, BeamGfx
     WAIT
     DEFINE GRAM_CAP_F1, 4, CapsuleF1Gfx

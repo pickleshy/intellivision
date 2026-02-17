@@ -12,6 +12,19 @@
     ' ============================================================
     SEGMENT 1
 
+' --- AddToScore: Add points to 32-bit score with carry propagation ---
+' Call with: Points = X : GOSUB AddToScore
+' Uses #Mask as temporary storage for overflow detection
+' PLACED FIRST to avoid forward reference issues across segments
+AddToScore: PROCEDURE
+    #Mask = #Score              ' Save old lower 16 bits
+    #Score = #Score + Points    ' Add points to lower 16 bits
+    IF #Score < #Mask THEN      ' If new < old, overflow occurred (carry)
+        #ScoreHigh = #ScoreHigh + 1   ' Increment upper 16 bits
+    END IF
+    RETURN
+END
+
 ' --- BootSplash: 1-second TinyFont developer URL at startup ---
 BootSplash: PROCEDURE
     ' Load TinyFont pairs into temporary GRAM cards 0-10 for URL line
@@ -53,15 +66,15 @@ END
 ' Label cards also write their BACKTAB entry (synced with GRAM update at VBLANK).
 UpdateScoreDisplay: PROCEDURE
     ScoreCard = ScoreCard + 1
-    IF ScoreCard > 7 THEN ScoreCard = 0
+    IF ScoreCard > 8 THEN ScoreCard = 0
 
     ' Guard: skip label cards during warp-in reveal (cards 34-36 in use)
-    IF ScoreCard < 3 THEN
+    IF ScoreCard < 4 THEN
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
-            ScoreCard = 3
+            ScoreCard = 4
         ELSEIF WaveEntrance = 1 THEN
             IF WaveRevealRow < ALIEN_ROWS - 1 THEN
-                ScoreCard = 3
+                ScoreCard = 4
             END IF
         END IF
     END IF
@@ -82,32 +95,32 @@ UpdateScoreDisplay: PROCEDURE
         #Mask = VARPTR TinyFontLabelData(0) + 8
         IF GameOver = 0 THEN PRINT AT 222, GRAM_WARP3 * 8 + COL_WHITE + $0800
     ELSEIF ScoreCard = 3 THEN
+        ' Card 32: hundred-thousands + ten-thousands (pair index 0-65) — NEW for extended display
+        ' TODO: Full 32-bit extraction when #ScoreHigh > 0 (currently only shows low 16 bits)
+        #Mask = #Score / 10000
+        POKE $0107, SCORE_CARD_M
+    ELSEIF ScoreCard = 4 THEN
         ' Card 61: ten-thousands + thousands (pair index 0-65)
         #Mask = #Score / 1000
         POKE $0107, SCORE_CARD0
-    ELSEIF ScoreCard = 4 THEN
+    ELSEIF ScoreCard = 5 THEN
         ' Card 62: hundreds + tens (pair index 0-99)
         #Mask = #Score / 1000
         #Mask = #Score - #Mask * 1000
         #Mask = #Mask / 10
         POKE $0107, SCORE_CARD1
-    ELSEIF ScoreCard = 5 THEN
+    ELSEIF ScoreCard = 6 THEN
         ' Card 63: ones + blank (pair index 100-109)
         #Mask = #Score / 10
         #Mask = #Score - #Mask * 10
         #Mask = #Mask + 100
         POKE $0107, SCORE_CARD2
-    ELSEIF ScoreCard = 6 THEN
+    ELSEIF ScoreCard = 7 THEN
         ' Card 28: chain digit (TinyFont via PackedPairs)
+        ' Shows "00" through "99" - leading zero for single digits
         POKE $0107, GRAM_CHAIN_DIG
-        IF ChainCount >= 10 THEN
-            ' Two-digit: PackedPairs index = ChainCount directly (tens*10+ones)
-            #Mask = ChainCount
-        ELSE
-            ' Single digit or zero: PackedPairs index 100+ (digit + blank)
-            #Mask = ChainCount + 100
-        END IF
-    ELSE
+        #Mask = ChainCount  ' PackedPairs index 0="00", 1="01", ..., 99="99"
+    ELSEIF ScoreCard = 8 THEN
         ' Card 29: lives digit (TinyFont via PackedPairs)
         POKE $0107, GRAM_LIVES_DIG
         IF Lives > 10 THEN
@@ -233,7 +246,7 @@ SkullBossDeath: PROCEDURE
     #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
     IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
     IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
-    #Score = #Score + BOSS_SCORE
+    Points = BOSS_SCORE : GOSUB AddToScore
     ExplosionTimer = 20
     IF #ExplosionPos < 220 THEN
         PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800

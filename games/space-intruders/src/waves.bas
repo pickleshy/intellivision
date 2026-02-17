@@ -193,22 +193,25 @@ END
 ' Called after CLS or screen clears. Shows current #Score and chain state.
 ' --------------------------------------------
 DrawHUD: PROCEDURE
-    ' Score: packed digits (223-225) in GRAM; label (220-222) set by round-robin
-    PRINT AT 223, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-    PRINT AT 224, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-    PRINT AT 225, GRAM_SCORE_E * 8 + COL_WHITE + $0800
-    PRINT AT 226, 0  ' Blank separator between score and chain
-    ' Chain label (227-229): static GRAM cards CH, AI, N: — grey when inactive
-    ' Chain digit (230): TinyFont card 28, updated by round-robin
-    PRINT AT 227, GRAM_CHAIN_CH * 8 + $1800
-    PRINT AT 228, GRAM_CHAIN_AI * 8 + $1800
-    PRINT AT 229, GRAM_CHAIN_N * 8 + $1800
-    PRINT AT 230, 0
+    ' Score: 7-digit display (223-227) using 4 packed digit cards (32, 61-63)
+    ' Label (220-222) set by round-robin during gameplay
+    PRINT AT 223, GRAM_SCORE_M * 8 + COL_WHITE + $0800   ' D6D5 (millions + hundred-thousands)
+    PRINT AT 224, GRAM_SCORE_SC * 8 + COL_WHITE + $0800  ' D4D3 (ten-thousands + thousands)
+    PRINT AT 225, GRAM_SCORE_OR * 8 + COL_WHITE + $0800  ' D2D1 (hundreds + tens)
+    PRINT AT 226, GRAM_SCORE_E * 8 + COL_WHITE + $0800   ' D0 (ones + blank)
+    PRINT AT 227, 0  ' Blank separator
+    ' Chain label (228-230): static GRAM cards CH, AI, N — grey when inactive
+    ' Position 231: TinyFont digit for chain 10+, updated by round-robin
+    ' Position 232: powerup area
+    PRINT AT 228, GRAM_CHAIN_CH * 8 + $1800
+    PRINT AT 229, GRAM_CHAIN_AI * 8 + $1800
+    PRINT AT 230, GRAM_CHAIN_N * 8 + $1800
+    PRINT AT 231, 0  ' Blank initially (digit shown when chain >= 10)
     ' Powerup indicator cleared (3 cells: 233-235)
     PRINT AT 233, 0 : PRINT AT 234, 0 : PRINT AT 235, 0
-    ' Lives: ship icon at 236, TinyFont digit at 238 (card 29, round-robin)
-    PRINT AT 236, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
-    PRINT AT 238, GRAM_LIVES_DIG * 8 + COL_WHITE + $0800
+    ' Lives: ship icon at 237, TinyFont digit at 239 (card 29, round-robin) — moved right +1
+    PRINT AT 237, (GRAM_SHIP_HUD * 8) + COL_WHITE + $0800
+    PRINT AT 239, GRAM_LIVES_DIG * 8 + COL_WHITE + $0800
     RETURN
 END
 
@@ -360,7 +363,8 @@ MegaBeamKill: PROCEDURE
         IF HitCol >= ALIEN_START_X + AlienOffsetX THEN
             IF HitCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
                 AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
-                IF AlienGridCol <= WaveRevealCol THEN
+                ' Only guard during active reveal animation, allow all columns otherwise
+                IF (#GameFlags AND FLAG_REVEAL) = 0 OR AlienGridCol <= WaveRevealCol THEN
                     ' Build bitmask for this column
                     #Mask = ColMaskData(AlienGridCol)
                     ' Kill alien in every row at this column
@@ -395,7 +399,7 @@ MegaBeamKill: PROCEDURE
                                         ELSE
                                             ' Skull boss dead!
                                             GOSUB SkullBossGridClear
-                                            #Score = #Score + BOSS_SCORE
+                                            Points = BOSS_SCORE : GOSUB AddToScore
                                         END IF
                                         ' Restore #Mask for current column iteration
                                         #Mask = ColMaskData(AlienGridCol)
@@ -406,10 +410,12 @@ MegaBeamKill: PROCEDURE
                                 #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
                                 GOSUB BumpChain
                                 IF ChainCount > 5 THEN
-                                    #Score = #Score + 50
+                                    Points = 50 : GOSUB AddToScore
                                 ELSE
-                                    #Score = #Score + ChainCount * 10
+                                    Points = ChainCount * 10 : GOSUB AddToScore
                                 END IF
+                                ' Restore #Mask - AddToScore clobbers it!
+                                #Mask = ColMaskData(AlienGridCol)
                             END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
                             GOSUB ShowChainExplosion
@@ -430,7 +436,7 @@ MegaBeamKill: PROCEDURE
                 GOSUB DeactivateSaucer
                 SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                 SOUND 2, 150, 15
-                #Score = #Score + 100
+                Points = 100 : GOSUB AddToScore
                 ' Drop power-up from saucer position
                 PowerUpState = 1
                 PowerUpX = FlyX
@@ -454,7 +460,7 @@ MegaBeamKill: PROCEDURE
                 RogueState = ROGUE_IDLE
                 RogueTimer = 0 : RogueDivePhase = 0
                 SPRITE SPR_FLYER, 0, 0, 0
-                #Score = #Score + 50
+                Points = 50 : GOSUB AddToScore
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
                 GOSUB BumpChain
                 SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
@@ -491,6 +497,10 @@ END
 ' --------------------------------------------
 LoadPatternB: PROCEDURE
     #GameFlags = #GameFlags OR FLAG_SUBWAVE
+
+    ' Clean ISR state before WAIT loops (prevents cumulative frame budget leak)
+    POKE $0345, 0    ' Clear _gram2_bitmap trigger
+    POKE $0108, 0    ' Clear _gram2_total counter
 
     ' Silence any lingering SFX
     SOUND 2, , 0
@@ -908,6 +918,11 @@ END
 ' --------------------------------------------
 ReloadHorde: PROCEDURE
     #GameFlags = #GameFlags OR FLAG_REINFORCE  ' Mark second horde
+
+    ' Clean ISR state before WAIT loops (prevents cumulative frame budget leak)
+    POKE $0345, 0    ' Clear _gram2_bitmap trigger
+    POKE $0108, 0    ' Clear _gram2_total counter
+
     ' Silence SFX
     GOSUB SilenceSfx
     POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
@@ -965,6 +980,10 @@ END
 ' StartNewWave - Reset aliens for next wave
 ' --------------------------------------------
 StartNewWave: PROCEDURE
+    ' Clean ISR state before WAIT loops (prevents cumulative frame budget leak)
+    POKE $0345, 0    ' Clear _gram2_bitmap trigger
+    POKE $0108, 0    ' Clear _gram2_total counter
+
     ' Silence any lingering SFX (game loop UpdateSfx won't run during transition)
     SOUND 2, , 0
     SfxVolume = 0
@@ -1021,7 +1040,7 @@ StartNewWave: PROCEDURE
         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
-    #MegaTimer = 0
+    MegaTimer = 0
     MegaBeamTimer = 0
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
@@ -1184,7 +1203,7 @@ StartNewWave: PROCEDURE
             DEFINE GRAM_PWR1, 2, PowerupRapidGfx
         ELSEIF #GameFlags AND FLAG_BOMB THEN
             DEFINE GRAM_PWR1, 2, PowerupBombGfx
-        ELSEIF #MegaTimer > 0 THEN
+        ELSEIF MegaTimer > 0 THEN
             DEFINE GRAM_PWR1, 2, PowerupMegaGfx
         END IF
         WAIT

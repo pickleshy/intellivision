@@ -14,6 +14,13 @@ PowerUpWeights:
 ColMaskData:
     DATA 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 
+' Substep march GRAM card lookup tables (constant-time vs IF/ELSEIF chains)
+Shift1CardData:
+    DATA 31, 32, 37, 38, 47  ' Non-contiguous shift-1 cards for rows 0-4
+
+Shift2CardData:
+    DATA 42, 43, 44, 38, 47  ' Shift-2 rows 0-2 (42-44), rows 3-4 reuse shift-1 (38,47)
+
 ' Row-to-BACKTAB-position lookup: Row20Data(n) = n * 20 (rows 0-11)
 ' Replaces software multiply in DrawAliens hot path (~20-50 cyc saved per use)
 Row20Data:
