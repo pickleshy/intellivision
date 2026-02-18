@@ -1212,6 +1212,55 @@ ColMaskData:
 
 **When to use:** Any repeated power-of-2 calculation, bitmask generation, or grid column addressing. Leave sequential shifts in place only when iterating columns in order (the shift is inherent to the loop).
 
+### IntyBASIC division is O(N/D) repeated subtraction — NOT binary division
+
+**This is the single most dangerous performance trap in IntyBASIC.** The `/` operator compiles to a software loop that repeatedly subtracts the divisor from the dividend, counting iterations. It is NOT binary long division.
+
+**Cost formula:** `A / B` takes approximately `(A / B) × 22` cycles. A large dividend with a small divisor is catastrophic:
+
+| Expression | Quotient (iterations) | Approx cycles | % of frame (NTSC) |
+|------------|----------------------|---------------|-------------------|
+| `#Score / 10` with #Score=64000 | 6,400 | ~140,800 | **~944%** (≈10 frames!) |
+| `#Score / 100` with #Score=64000 | 640 | ~14,080 | ~94% |
+| `#Score / 1000` with #Score=64000 | 64 | ~1,408 | ~9.4% |
+| `HitRow / 10` with HitRow=99 | 9 | ~198 | ~1.3% |
+
+**Real example (Space Intruders score display):**
+```basic
+' BAD — UpdateScoreDisplay ones-digit (ScoreCard=6):
+' With #Score=64000: 64000/10 = 6400 iterations × 22 cycles = ~140,800 cycles
+' That's ~10 frames of budget per call, running every 8 frames!
+#Mask = #Score / 10              ' ← CATASTROPHIC at high scores
+#Mask = #Score - #Mask * 10     ' ones digit (0-9)
+#Mask = #Mask + 100
+```
+
+```basic
+' GOOD — mod-100 trick cuts worst case by 10×:
+' #Score/100 max = 655 iters (~14,400 cycles); rem/10 max = 9 iters (~200 cycles)
+#Mask = #Score / 100
+#Mask = #Score - #Mask * 100       ' rem100 = #Score mod 100 (0-99)
+HitRow = #Mask / 10               ' tens of rem100 (max 9 iters, safe in 8-bit)
+#Mask = #Mask - HitRow * 10       ' ones digit (0-9)
+#Mask = #Mask + 100
+```
+
+**Observed symptom:** The game ran at normal speed when #Score was small (0-1000), but became dramatically slower as the score grew. After the score wrapped from 65,535 to 0, gameplay snapped back to normal speed — a clear sign that a division by the score was on the hot path.
+
+**General mitigation strategies:**
+
+1. **Shrink the dividend first** — instead of `A / D`, use `(A MOD M) / D` where M is smaller. The modulo itself costs `(A/M) × 22` cycles, so pick M to be at most 10× D.
+
+2. **Use lookup tables** — if the divisor is constant and the range of the dividend is bounded and small, a DATA table eliminates division entirely.
+
+3. **Cache the quotient** — if the value changes slowly (e.g., score), compute the quotient once, store in a variable, and reuse it across multiple display frames.
+
+4. **Bound your dividends** — use 8-bit variables (`HitRow`, `LoopVar`) for intermediate remainders. The 8-bit max (255) caps the worst case at ~22 × 25 = ~550 cycles.
+
+5. **Use powers of 2** — `A / 2`, `A / 4`, `A / 8` compile to shift right operations (much faster).
+
+**When to audit:** Any time you divide by a value that doesn't increase with the dividend. Scoring systems, timer displays, and HUD updates are common locations. Profile with the BORDER color band technique.
+
 ### CPU profiling with BORDER color band
 
 Use the STIC border color to visualize CPU usage per frame:

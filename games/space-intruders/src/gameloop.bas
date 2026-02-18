@@ -513,7 +513,7 @@ ChainDone:
                             SPRITE SPR_PBULLET, 0, 0, 0
                             SPRITE SPR_ABULLET, 0, 0, 0
                             ' Skill bonus for the risky parry
-                            Points = 25 : GOSUB AddToScore
+                            #Mask = 25 : GOSUB AddToScore
                             ' Bright zap SFX (type 6)
                             SfxType = 6 : SfxVolume = 15 : #SfxPitch = 60
                         END IF
@@ -535,7 +535,7 @@ ChainDone:
                             RogueState = ROGUE_IDLE
                             RogueTimer = 0 : RogueDivePhase = 0
                             SPRITE SPR_FLYER, 0, 0, 0
-                            Points = 50 : GOSUB AddToScore
+                            #Mask = 50 : GOSUB AddToScore
                             #GameFlags = #GameFlags OR FLAG_SHOTLAND
                             GOSUB BumpChain
                             SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180

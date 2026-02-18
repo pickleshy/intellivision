@@ -23,7 +23,6 @@ DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
 #HighScore  = 0                 ' Session high score (lower 16 bits, persists until ROM reset)
 #HighScoreHigh = 0              ' Session high score (upper 16 bits)
 #NextLife   = 1000              ' Score threshold for next extra life
-Points      = 0                 ' Temp variable for AddScore procedure (score delta)
 Level       = 1                 ' Current wave/level
 Lives       = STARTING_LIVES    ' Player lives remaining
 GameOver    = 0                 ' 0=playing, 3-6=game over phases
@@ -186,6 +185,7 @@ RevealCol   = 0                 ' Current letter revealing (0-14)
 VanishCol   = 255               ' Current letter vanishing (255=not started)
 GOAnimIdx    = 255               ' Game over: animating letter (255=none, 0-7=letter)
 GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2=edge, 3=done)
+ScorePairM   = 0                 ' Cached million+hundred-thousands pair from ScoreCard=4 computation
 
 ' --------------------------------------------
 ' Main Program

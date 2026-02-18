@@ -91,7 +91,7 @@ OrbiterHitEffect: PROCEDURE
     #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
     #GameFlags = #GameFlags OR FLAG_SHOTLAND
     GOSUB BumpChain
-    Points = 25 : GOSUB AddToScore
+    #Mask = 25 : GOSUB AddToScore
     SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
     SOUND 2, 200, 12
     RETURN
@@ -145,7 +145,7 @@ BombExplode: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                     END IF
-                    Points = 10 : GOSUB AddToScore
+                    #Mask = 10 : GOSUB AddToScore
                 END IF
                 END IF
             END IF
@@ -169,7 +169,7 @@ BombExplode: PROCEDURE
                             #Mask = ColMaskData(Col)
                             IF #AlienRow(Row) AND #Mask THEN
                                 #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                                Points = 10 : GOSUB AddToScore
+                                #Mask = 10 : GOSUB AddToScore
                             END IF
                         END IF
                     ELSE
@@ -177,7 +177,7 @@ BombExplode: PROCEDURE
                         #Mask = ColMaskData(Col)
                         IF #AlienRow(Row) AND #Mask THEN
                             #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                            Points = 10 : GOSUB AddToScore
+                            #Mask = 10 : GOSUB AddToScore
                         END IF
                     END IF
                 END IF
@@ -188,7 +188,7 @@ BombExplode: PROCEDURE
     NEXT Row
 
     ' Score for bomb itself
-    Points = BOMB_SCORE : GOSUB AddToScore
+    #Mask = BOMB_SCORE : GOSUB AddToScore
 
     ' Big SFX (white noise boom, same as ship explosion)
     SfxType = 5 : SfxVolume = 15 : #SfxPitch = 0
@@ -223,7 +223,7 @@ PlayerBombExplode: PROCEDURE
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
                     END IF
-                    Points = 10 : GOSUB AddToScore
+                    #Mask = 10 : GOSUB AddToScore
                 END IF
                 END IF
             END IF
@@ -241,7 +241,7 @@ PlayerBombExplode: PROCEDURE
                     #Mask = ColMaskData(Col)
                     IF #AlienRow(Row) AND #Mask THEN
                         #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                        Points = 10 : GOSUB AddToScore
+                        #Mask = 10 : GOSUB AddToScore
                     END IF
                 END IF
                 END IF
@@ -360,10 +360,11 @@ CheckOneColumn: PROCEDURE
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
                 GOSUB BumpChain
                 ' Bonus caps at 50 points (chain 5+), but chain counter keeps growing for display
+                ' Bonus caps at 50 points (chain 5+), but chain counter keeps growing for display
                 IF ChainCount <= 5 THEN
-                    Points = ChainCount * 10 : GOSUB AddToScore
+                    #Mask = ChainCount * 10 : GOSUB AddToScore
                 ELSE
-                    Points = 50 : GOSUB AddToScore
+                    #Mask = 50 : GOSUB AddToScore
                 END IF
 
                 ' Noise explosion SFX (short punchy crunch)

@@ -120,7 +120,7 @@ UpdateCapture: PROCEDURE
                                     #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                                     IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                                     #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
-                                    Points = 50 : GOSUB AddToScore
+                                    #Mask = 50 : GOSUB AddToScore
                                     #GameFlags = #GameFlags OR FLAG_SHOTLAND
                                     GOSUB BumpChain
                                     SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
@@ -205,7 +205,7 @@ CaptureHitscan: PROCEDURE
     END IF
 
     ' Score +10
-    Points = 10 : GOSUB AddToScore
+    #Mask = 10 : GOSUB AddToScore
 
     ' Deactivate bullet (it hit something)
     #GameFlags = #GameFlags AND $FFF7
@@ -839,7 +839,7 @@ SaucerHit: PROCEDURE
     SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
     SOUND 2, 150, 15  ' Immediate tone hit on channel 3
     ' Bonus points
-    Points = 10 : GOSUB AddToScore
+    #Mask = 10 : GOSUB AddToScore
     ' Drop power-up from saucer position
     PowerUpState = 1       ' Falling
     PowerUpX = FlyX        ' Drop from saucer X

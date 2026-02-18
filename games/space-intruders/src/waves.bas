@@ -399,7 +399,7 @@ MegaBeamKill: PROCEDURE
                                         ELSE
                                             ' Skull boss dead!
                                             GOSUB SkullBossGridClear
-                                            Points = BOSS_SCORE : GOSUB AddToScore
+                                            #Mask = BOSS_SCORE : GOSUB AddToScore
                                         END IF
                                         ' Restore #Mask for current column iteration
                                         #Mask = ColMaskData(AlienGridCol)
@@ -410,9 +410,9 @@ MegaBeamKill: PROCEDURE
                                 #AlienRow(LoopVar) = #AlienRow(LoopVar) XOR #Mask
                                 GOSUB BumpChain
                                 IF ChainCount > 5 THEN
-                                    Points = 50 : GOSUB AddToScore
+                                    #Mask = 50 : GOSUB AddToScore
                                 ELSE
-                                    Points = ChainCount * 10 : GOSUB AddToScore
+                                    #Mask = ChainCount * 10 : GOSUB AddToScore
                                 END IF
                                 ' Restore #Mask - AddToScore clobbers it!
                                 #Mask = ColMaskData(AlienGridCol)
@@ -436,7 +436,7 @@ MegaBeamKill: PROCEDURE
                 GOSUB DeactivateSaucer
                 SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
                 SOUND 2, 150, 15
-                Points = 100 : GOSUB AddToScore
+                #Mask = 100 : GOSUB AddToScore
                 ' Drop power-up from saucer position
                 PowerUpState = 1
                 PowerUpX = FlyX
@@ -460,7 +460,7 @@ MegaBeamKill: PROCEDURE
                 RogueState = ROGUE_IDLE
                 RogueTimer = 0 : RogueDivePhase = 0
                 SPRITE SPR_FLYER, 0, 0, 0
-                Points = 50 : GOSUB AddToScore
+                #Mask = 50 : GOSUB AddToScore
                 #GameFlags = #GameFlags OR FLAG_SHOTLAND
                 GOSUB BumpChain
                 SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180

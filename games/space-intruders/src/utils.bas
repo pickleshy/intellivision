@@ -13,13 +13,12 @@
     SEGMENT 1
 
 ' --- AddToScore: Add points to 32-bit score with carry propagation ---
-' Call with: Points = X : GOSUB AddToScore
-' Uses #Mask as temporary storage for overflow detection
+' Call with: #Mask = X : GOSUB AddToScore  (X is the amount to add, as 16-bit)
+' Carry detection: if result < addend, overflow occurred
 ' PLACED FIRST to avoid forward reference issues across segments
 AddToScore: PROCEDURE
-    #Mask = #Score              ' Save old lower 16 bits
-    #Score = #Score + Points    ' Add points to lower 16 bits
-    IF #Score < #Mask THEN      ' If new < old, overflow occurred (carry)
+    #Score = #Score + #Mask     ' Add points (in #Mask) to lower 16 bits
+    IF #Score < #Mask THEN      ' If result < addend, carry (unsigned overflow)
         #ScoreHigh = #ScoreHigh + 1   ' Increment upper 16 bits
     END IF
     RETURN
@@ -95,24 +94,56 @@ UpdateScoreDisplay: PROCEDURE
         #Mask = VARPTR TinyFontLabelData(0) + 8
         IF GameOver = 0 THEN PRINT AT 222, GRAM_WARP3 * 8 + COL_WHITE + $0800
     ELSEIF ScoreCard = 3 THEN
-        ' Card 32: hundred-thousands + ten-thousands (pair index 0-65) — NEW for extended display
-        ' TODO: Full 32-bit extraction when #ScoreHigh > 0 (currently only shows low 16 bits)
-        #Mask = #Score / 10000
+        ' Card SCORE_CARD_M: millions + hundred-thousands
+        ' ScorePairM is cached by ScoreCard=4 (runs 1 frame later in cycle, so first frame shows 0)
+        #Mask = ScorePairM
         POKE $0107, SCORE_CARD_M
     ELSEIF ScoreCard = 4 THEN
-        ' Card 61: ten-thousands + thousands (pair index 0-65)
-        #Mask = #Score / 1000
+        ' Card 61: ten-thousands + thousands (pair index 0-99)
+        ' 32-bit: 65536 = 65*1000 + 536, so total/1000 = H*65 + (H*536 + L mod 1000)/1000
+        #Mask = #Score / 1000               ' L_th: thousands in lower word (0-65, max 655 iters)
+        IF #ScoreHigh > 0 THEN
+            ' Save L_th, compute (H*536 + L mod 1000) for carry into thousands
+            #ScreenPos = #Mask              ' Preserve L_th in scratch 16-bit var
+            #Mask = #Score - #Mask * 1000  ' L_mod1000 (0-999)
+            #Mask = #Mask + #ScoreHigh * 536  ' Adjusted bucket (~80 cycle mul, safe H≤122)
+            LoopVar = #Mask / 1000         ' Carry from mod-1000 bucket (0-5 for H≤10)
+            #Mask = #ScreenPos + #ScoreHigh * 65 + LoopVar  ' Total thousands (0-999)
+            ScorePairM = #Mask / 100       ' Cache million+hundred-thousands pair index
+            #Mask = #Mask - ScorePairM * 100  ' Ten-thousands+thousands pair (0-99)
+        ELSE
+            ScorePairM = 0                 ' Score ≤ 65535: no hundred-thousands digits
+        END IF
         POKE $0107, SCORE_CARD0
     ELSEIF ScoreCard = 5 THEN
         ' Card 62: hundreds + tens (pair index 0-99)
+        ' 32-bit: (total mod 1000) / 10 = ((H*536 + L mod 1000) mod 1000) / 10
         #Mask = #Score / 1000
-        #Mask = #Score - #Mask * 1000
-        #Mask = #Mask / 10
+        #Mask = #Score - #Mask * 1000       ' L_mod1000 (0-999, needs 16-bit)
+        IF #ScoreHigh > 0 THEN
+            #Mask = #Mask + #ScoreHigh * 536  ' Adjusted bucket (~80 cycle mul, safe H≤122)
+            HitRow = #Mask / 1000            ' Carry (8-bit safe for H≤122: max 54)
+            #Mask = #Mask - HitRow * 1000    ' total mod 1000 (0-999)
+        END IF
+        #Mask = #Mask / 10                   ' Hundreds+tens pair (0-99, max 99 iters)
         POKE $0107, SCORE_CARD1
     ELSEIF ScoreCard = 6 THEN
         ' Card 63: ones + blank (pair index 100-109)
-        #Mask = #Score / 10
-        #Mask = #Score - #Mask * 10
+        ' PERF: Avoid #Score/10 (up to 6553 repeated-subtraction iters at max score).
+        ' Instead: #Score/100 (max 655 iters) → mod 100 (0-99) → mod 10 (max 9 iters).
+        ' 32-bit correction: 65536 mod 10 = 6, so ones digit += (H*6) mod 10
+        #Mask = #Score / 100
+        #Mask = #Score - #Mask * 100       ' rem100 = #Score mod 100 (0-99)
+        HitRow = #Mask / 10               ' tens of rem100 (0-9 iters, safe in 8-bit)
+        #Mask = #Mask - HitRow * 10       ' ones_L = L mod 10 (0-9)
+        IF #ScoreHigh > 0 THEN
+            ' Add H's contribution to ones: H * (65536 mod 10) = H * 6, then mod 10
+            #Card = #ScoreHigh * 6        ' H*6 (~80 cycle mul; ≤ 65535 for H ≤ 10922)
+            HitRow = #Card / 10           ' Tens of H*6 (max 60 iters for H≤100)
+            #Card = #Card - HitRow * 10   ' H*6 mod 10 (0-9)
+            #Mask = #Mask + #Card         ' ones_L + H_ones (0-18, fits in 16-bit)
+            IF #Mask >= 10 THEN #Mask = #Mask - 10  ' Final ones digit (0-9)
+        END IF
         #Mask = #Mask + 100
         POKE $0107, SCORE_CARD2
     ELSEIF ScoreCard = 7 THEN
@@ -246,7 +277,7 @@ SkullBossDeath: PROCEDURE
     #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + BossRow(FoundBoss)) * 20 + ALIEN_START_X + AlienOffsetX + BossCol(FoundBoss)
     IF #ExplosionPos < 220 THEN PRINT AT #ExplosionPos, 0
     IF #ExplosionPos + 1 < 220 THEN PRINT AT #ExplosionPos + 1, 0
-    Points = BOSS_SCORE : GOSUB AddToScore
+    #Mask = BOSS_SCORE : GOSUB AddToScore
     ExplosionTimer = 20
     IF #ExplosionPos < 220 THEN
         PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
