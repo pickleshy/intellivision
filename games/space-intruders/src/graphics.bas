@@ -986,6 +986,17 @@ MegaBeamGfx:
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
 
+' SOL-36 sputter phase — thin 2px center stripe, DEFINE-swapped into card 46
+SolSputterGfx:
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+    BITMAP "..XX...."
+
 ' (Card 47 freed — was QuadGfx)
 ' --- BOLT SPARK (above letter - points down) ---
 SparkUpGfx:
@@ -1403,24 +1414,36 @@ PowerupBombGfx:
     BITMAP "X.X.XX.."
     BITMAP "........"
 
-' === MEGA powerup TinyFont: "ME" + "GA" (2 cards, 3rd blank) ===
-PowerupMegaGfx:
+' === SOL-36 powerup TinyFont: "SO" + "L-" + "36" (3 cards) ===
+PowerupSol36Gfx:
+    ' Card 25: "SO" (S left + O right)
     BITMAP "........"
-    BITMAP "X.X.XXX."
-    BITMAP "XXX.X..."
-    BITMAP "XXX.XX.."
-    BITMAP "X.X.X..."
-    BITMAP "X.X.X..."
-    BITMAP "X.X.XXX."
+    BITMAP ".XX..X.."
+    BITMAP "X...X.X."
+    BITMAP ".XX.X.X."
+    BITMAP "..X.X.X."
+    BITMAP "..X.X.X."
+    BITMAP "XX...X.."
     BITMAP "........"
 
+    ' Card 26: "L-" (L left + dash right)
     BITMAP "........"
-    BITMAP ".X...X.."
-    BITMAP "X.X.X.X."
-    BITMAP "X...X.X."
-    BITMAP "X.X.XXX."
-    BITMAP "X.X.X.X."
-    BITMAP ".XX.X.X."
+    BITMAP "X......."
+    BITMAP "X......."
+    BITMAP "X...XX.."
+    BITMAP "X...XX.."
+    BITMAP "X......."
+    BITMAP "XXX....."
+    BITMAP "........"
+
+    ' Card 27: "36" (3 left + 6 right)
+    BITMAP "........"
+    BITMAP ".XX..XX."
+    BITMAP "..X.X..."
+    BITMAP ".XX.XX.."
+    BITMAP "..X.X.X."
+    BITMAP "..X.X.X."
+    BITMAP ".XX..XX."
     BITMAP "........"
 
 ' === SHIELD dome graphic (solid bar above ship) ===

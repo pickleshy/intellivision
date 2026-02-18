@@ -75,7 +75,7 @@ UpdatePowerUp: PROCEDURE
                 ELSEIF PowerUpType = 3 THEN
                     MegaTimer = 120
                     BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
-                    DEFINE GRAM_PWR1, 2, PowerupMegaGfx
+                    DEFINE GRAM_PWR1, 3, PowerupSol36Gfx
                     IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 ELSE
                     ' Shield - coexists with weapons, just set hits

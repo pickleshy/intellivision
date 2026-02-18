@@ -128,16 +128,22 @@ UpdateScoreDisplay: PROCEDURE
             HitRow = #Mask / 1000            ' Carry (8-bit safe for H≤122: max 54)
             #Mask = #Mask - HitRow * 1000    ' total mod 1000 (0-999)
         END IF
-        #Mask = #Mask / 10                   ' Hundreds+tens pair (0-99, max 99 iters)
+        ' PERF: /10 on 0-999 = 99 iters. Use /100 (9 iters) + /10 (9 iters) + mul.
+        HitRow = #Mask / 100               ' Hundreds digit (0-9, max 9 iters ~200 cycles)
+        #Mask = #Mask - HitRow * 100       ' L mod 100 (0-99)
+        Col = #Mask / 10                   ' Tens digit (0-9 iters ~200 cycles)
+        #Mask = HitRow * 10 + Col          ' Hundreds+tens pair (0-99)
         POKE $0107, SCORE_CARD1
     ELSEIF ScoreCard = 6 THEN
         ' Card 63: ones + blank (pair index 100-109)
-        ' PERF: Avoid #Score/10 (up to 6553 repeated-subtraction iters at max score).
-        ' Instead: #Score/100 (max 655 iters) → mod 100 (0-99) → mod 10 (max 9 iters).
+        ' PERF: Avoid #Score/100 (up to 655 iters at max score).
+        ' Use /1000 (max 65 iters) → mod1000 → /100 (max 9) → mod100 → /10 (max 9).
         ' 32-bit correction: 65536 mod 10 = 6, so ones digit += (H*6) mod 10
-        #Mask = #Score / 100
-        #Mask = #Score - #Mask * 100       ' rem100 = #Score mod 100 (0-99)
-        HitRow = #Mask / 10               ' tens of rem100 (0-9 iters, safe in 8-bit)
+        #Mask = #Score / 1000              ' Same budget as ScoreCard=4,5 (max 65 iters)
+        #Mask = #Score - #Mask * 1000     ' L_mod1000 (0-999)
+        HitRow = #Mask / 100              ' Hundreds (0-9 iters ~200 cycles)
+        #Mask = #Mask - HitRow * 100      ' L mod 100 (0-99)
+        HitRow = #Mask / 10               ' Tens (0-9 iters ~200 cycles)
         #Mask = #Mask - HitRow * 10       ' ones_L = L mod 10 (0-9)
         IF #ScoreHigh > 0 THEN
             ' Add H's contribution to ones: H * (65536 mod 10) = H * 6, then mod 10

@@ -168,6 +168,8 @@ MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
 MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
 ShieldHits  = 0                 ' Shield charges (0=none, 1=damaged, 2=full)
 TutorialTimer  = 0              ' First powerup hint: 255=ready, 1-180=showing, 0=done
+AutoFireFlash  = 0              ' Auto-fire status flash: 60→0 countdown (0=inactive)
+MegaSputterTimer = 0            ' SOL-36 sputter phase countdown (95→0, 0=inactive)
 
 ' -- Sound Effects --
 SfxVolume   = 0                 ' Current decay volume (0 = silent)

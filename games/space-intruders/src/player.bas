@@ -28,6 +28,7 @@ MovePlayer: PROCEDURE
         IF Key1Held = 0 THEN
             Key1Held = 1
             #GameFlags = #GameFlags XOR FLAG_AUTOFIRE
+            AutoFireFlash = 60  ' 1 second fast-blink flash at row 10
             IF #GameFlags AND FLAG_AUTOFIRE THEN
                 IF VOICE.AVAILABLE THEN VOICE PLAY auto_on_phrase
             ELSE
@@ -97,7 +98,7 @@ MovePlayer: PROCEDURE
                 SfxType = 7 : SfxVolume = 14 : #SfxPitch = 100
                 SOUND 2, 100, 14
             END IF
-        ELSE
+        ELSEIF MegaSputterTimer = 0 THEN
             ' Normal/beam/rapid: single center shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 IF FireCooldown = 0 THEN

@@ -314,6 +314,7 @@ GameLoop:
                         ' Clear power-ups, bullets, rogue, wingman
                         BeamTimer = 0 : RapidTimer = 0
                         #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
+                        GOSUB StopMegaSputter
                         #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                         RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
@@ -438,7 +439,7 @@ GameLoop:
         IF (ChainTimer AND 1) = 0 THEN
             IF ChainVol > 0 THEN ChainVol = ChainVol - 1
         END IF
-        POKE $1F7, 12 + (24 - ChainTimer) / 3
+        POKE $1F7, ChainNoiseFreq(ChainTimer)   ' Replaces /3 division (was 0-7 iters/frame)
         SOUND 0, #ChainFreq1, ChainVol
         SOUND 2, #ChainFreq2, ChainVol
         IF ChainTimer = 0 THEN
@@ -551,6 +552,7 @@ ChainDone:
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
+                GOSUB StopMegaSputter
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
                 ' Clear wingman and any active capsule (dies with player)
@@ -641,7 +643,7 @@ ChainDone:
                 ' Reload title font for game over screen (powerup HUD overwrote it)
                 DEFINE GRAM_FONT_S, 4, FontSGfx  ' Cards 25-28: S, P, A, C
                 WAIT
-                DEFINE GRAM_FONT_E, 4, FontEGfx  ' Cards 29-32: E, I, N, T
+                DEFINE GRAM_FONT_E, 3, FontEGfx  ' Cards 29-31: E, I, N  (skip card 32 = GRAM_SCORE_M digit; GRAM_FONT_T never used in game over)
                 WAIT
                 DEFINE GRAM_FONT_R, 4, FontRGfx  ' Cards 33-36: R, U, D, F
                 WAIT
@@ -683,7 +685,7 @@ ChainDone:
                 ' Load TinyFont labels for game over screen
                 DEFINE 9, 4, GOBatch1      ' Cards 9-12: SC, OR, E:, NE
                 WAIT
-                DEFINE 33, 1, GOEBlankGfx  ' Card 33: E_ (no colon, for SCORE!) — card 32 freed for millions digit; GRAM_SHIELD free during game over
+                DEFINE 57, 1, GOEBlankGfx  ' Card 57 (GRAM_BOMB2_F1): E_ (no colon, for SCORE!) — free during game over and title screen
                 WAIT
                 DEFINE 13, 3, GOBatch2     ' Cards 13-15: W_, HI, GH
                 WAIT
@@ -691,7 +693,7 @@ ChainDone:
                 WAIT
                 DEFINE 46, 1, GOBatch4     ' Card 46: N_ (clean, no colon)
                 WAIT
-                ' Reload Zod crab (cards 19-20) - no longer conflicts with GOEBlankGfx (now card 32)
+                ' Reload Zod crab (cards 19-20)
                 DEFINE GRAM_CRAB_F1, 2, SmallCrabF1Gfx
                 WAIT
                 ' Chain count digit: PackedPairs → card 47 via ISR POKE
@@ -737,7 +739,7 @@ ChainDone:
                     PRINT AT 130, 0                              ' Blank GROM space
                     PRINT AT 131, 9 * 8 + COL_YELLOW + $0800    ' SC
                     PRINT AT 132, 10 * 8 + COL_YELLOW + $0800   ' OR
-                    PRINT AT 133, 33 * 8 + COL_YELLOW + $0800   ' E_ (card 33)
+                    PRINT AT 133, 57 * 8 + COL_YELLOW + $0800   ' E_ (card 57)
                     PRINT AT 134 COLOR COL_YELLOW, "!"
                 ELSE
                     ' TinyFont "HIGH" + GROM digits
@@ -811,6 +813,12 @@ ChainDone:
     END IF
     IF MegaTimer > 0 THEN
         MegaTimer = MegaTimer - 1
+        IF MegaTimer = 0 AND MegaSputterTimer = 0 THEN
+            ' SOL-36 expired — enter sputter phase (thin beam flicker + 2 final spurts)
+            MegaBeamTimer = 0
+            DEFINE GRAM_MEGA_BEAM, 1, SolSputterGfx
+            MegaSputterTimer = 95
+        END IF
     END IF
 
     ' Update powerup HUD indicator (positions 233-235, yellow TinyFont)
@@ -818,7 +826,7 @@ ChainDone:
     IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR MegaTimer > 0 THEN
         PRINT AT 233, GRAM_PWR1 * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR2 * 8 + COL_YELLOW + $0800
-        IF RapidTimer > 0 THEN
+        IF RapidTimer > 0 OR MegaTimer > 0 THEN
             PRINT AT 235, GRAM_PWR3 * 8 + COL_YELLOW + $0800
         ELSE
             PRINT AT 235, 0
@@ -866,6 +874,11 @@ ChainDone:
         END IF
     END IF
 
+    ' SOL-36 sputter phase: thin beam flicker + 2 final kill spurts
+    IF MegaSputterTimer > 0 THEN
+        GOSUB MegaSputterUpdate
+    END IF
+
     ' Update sprites
     GOSUB DrawPlayer
     GOSUB DrawBullet
@@ -875,8 +888,13 @@ ChainDone:
     GOSUB UpdateScoreDisplay
 
     ' Extra life: first at 1000, then every 5000
+    ' Guard: #NextLife is 16-bit; after 13th extra life (score ~61000), adding 5000
+    ' wraps to a small value, firing every frame. Detect overflow like AddToScore carry.
     IF #Score >= #NextLife THEN
         #NextLife = #NextLife + 5000
+        IF #NextLife < 5000 THEN  ' Overflow: wrapped to small value — push to 65535
+            #NextLife = 65535
+        END IF
         IF Lives < 9 THEN
             Lives = Lives + 1
             ' Announce extra life
@@ -924,6 +942,23 @@ ChainDone:
             PRINT AT 229, GRAM_CHAIN_AI * 8 + COL_BLUE + $0800
             PRINT AT 230, GRAM_CHAIN_N * 8 + COL_BLUE + $0800
             PRINT AT 231, GRAM_CHAIN_DIG * 8 + COL_BLUE + $0800
+        END IF
+    END IF
+
+    ' Auto-fire status flash: row 10 center (positions 206-213), 1 second, fast blink
+    ' AND 4 = toggle every 4 frames; green = ON, yellow = OFF, black = blink-off or expired
+    IF AutoFireFlash > 0 THEN
+        AutoFireFlash = AutoFireFlash - 1
+        IF AutoFireFlash = 0 THEN
+            PRINT AT 206 COLOR COL_BLACK, "        "   ' Expired — clear row 10 flash area
+        ELSEIF (AutoFireFlash AND 4) THEN
+            IF #GameFlags AND FLAG_AUTOFIRE THEN
+                PRINT AT 206 COLOR COL_GREEN, "AUTO  ON"
+            ELSE
+                PRINT AT 206 COLOR COL_YELLOW, "AUTO OFF"
+            END IF
+        ELSE
+            PRINT AT 206 COLOR COL_BLACK, "        "   ' Blink-off phase
         END IF
     END IF
 

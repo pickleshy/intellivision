@@ -493,6 +493,94 @@ MegaBeamClear: PROCEDURE
 END
 
 ' --------------------------------------------
+' StopMegaSputter - Force-end sputter (death/wave transition)
+' Restores solid beam GRAM card and silences SFX
+' --------------------------------------------
+StopMegaSputter: PROCEDURE
+    MegaSputterTimer = 0
+    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+    SOUND 2, , 0
+    SfxType = 0 : SfxVolume = 0
+    RETURN
+END
+
+' --------------------------------------------
+' MegaSputterUpdate - SOL-36 fade-out: 60-frame thin sputter + 2 kill spurts
+'
+' Phase timing (MegaSputterTimer counts down from 95):
+'   94→35 (60 frames): continuous thin beam, flickers 3-on/1-off, RED
+'   34→30  (5 frames): gap 1 — beam off
+'   29→20 (10 frames): kill spurt 1 — fast alternating flicker, YELLOW
+'   19→15  (5 frames): gap 2 — beam off
+'   14→ 5 (10 frames): kill spurt 2 — fast alternating flicker, ORANGE
+'    4→ 1  (4 frames): fizzle — beam off
+'       0           : restore solid beam card, done
+'
+' Kill sweeps fire once at: T=94 (sputter start), T=29 (spurt 1), T=14 (spurt 2)
+' Beam column tracks player position every frame.
+' Card 46 (GRAM_MEGA_BEAM) holds SolSputterGfx thin stripe; restored to
+' MegaBeamGfx solid block at T=0 or via StopMegaSputter on force-clear.
+' --------------------------------------------
+MegaSputterUpdate: PROCEDURE
+    MegaSputterTimer = MegaSputterTimer - 1
+
+    ' Clear previous beam column
+    FOR LoopVar = 0 TO 9
+        #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
+        PRINT AT #ScreenPos, 0
+    NEXT LoopVar
+
+    ' Track beam column — follow player
+    MegaBeamCol = (PlayerX - 4) / 8
+    IF MegaBeamCol > 19 THEN MegaBeamCol = 19
+
+    ' Kill sweeps at start of sputter and each final spurt
+    IF MegaSputterTimer = 94 OR MegaSputterTimer = 29 OR MegaSputterTimer = 14 THEN
+        FOR Row = 0 TO MAX_BOSSES - 1
+            BossBeamHit(Row) = 0
+        NEXT Row
+        GOSUB MegaBeamKill
+    END IF
+
+    ' Determine beam color this frame (0 = off)
+    AlienColor = 0
+    IF MegaSputterTimer >= 35 THEN
+        ' Continuous sputter: on for 3 of every 4 frames (AND 3 = 0 is off)
+        IF (MegaSputterTimer AND 3) <> 0 THEN AlienColor = COL_RED
+    ELSEIF MegaSputterTimer >= 30 THEN
+        ' Gap 1: off
+    ELSEIF MegaSputterTimer >= 20 THEN
+        ' Spurt 1: rapid alternating flicker, yellow
+        IF (MegaSputterTimer AND 1) THEN AlienColor = COL_YELLOW
+    ELSEIF MegaSputterTimer >= 15 THEN
+        ' Gap 2: off
+    ELSEIF MegaSputterTimer >= 5 THEN
+        ' Spurt 2: rapid alternating flicker, orange
+        IF (MegaSputterTimer AND 1) THEN AlienColor = COL_ORANGE
+    END IF
+    ' T=4 to T=1: fizzle — AlienColor stays 0
+
+    ' Draw or silence based on beam state
+    IF AlienColor > 0 THEN
+        FOR LoopVar = 0 TO 9
+            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
+            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + AlienColor + $0800
+        NEXT LoopVar
+        SOUND 2, 0, 6
+    ELSE
+        SOUND 2, , 0
+    END IF
+
+    ' End of sputter: restore solid beam card
+    IF MegaSputterTimer = 0 THEN
+        DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+        SOUND 2, , 0
+        SfxType = 0 : SfxVolume = 0
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
 ' UpdatePowerUp - Handle falling/landed power-up capsule
 ' --------------------------------------------
 LoadPatternB: PROCEDURE
@@ -1042,6 +1130,7 @@ StartNewWave: PROCEDURE
     END IF
     MegaTimer = 0
     MegaBeamTimer = 0
+    IF MegaSputterTimer > 0 THEN GOSUB StopMegaSputter
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
@@ -1204,7 +1293,7 @@ StartNewWave: PROCEDURE
         ELSEIF #GameFlags AND FLAG_BOMB THEN
             DEFINE GRAM_PWR1, 2, PowerupBombGfx
         ELSEIF MegaTimer > 0 THEN
-            DEFINE GRAM_PWR1, 2, PowerupMegaGfx
+            DEFINE GRAM_PWR1, 3, PowerupSol36Gfx
         END IF
         WAIT
     SkipEscape:
@@ -1271,7 +1360,7 @@ bomb_phrase:
     VOICE BB1, AO, MM, BB2, PA1, 0
 
 mega_phrase:
-    VOICE MM, EH, GG2, AX, PA1, BB1, IY, MM, PA1, 0
+    VOICE SS, OW, LL, PA2, TH, ER1, TT2, IY, PA1, SS, IH, KK2, SS, PA1, 0
 
 shield_phrase:
     VOICE SH, IY, LL, DD1, PA1, AO, NN1, PA1, 0

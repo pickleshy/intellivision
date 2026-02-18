@@ -80,7 +80,7 @@ CONST GRAM_FONT_V = 41          ' Game over screen only
 ' Powerup HUD indicator GRAM slots (reuse title font cards 25-32)
 CONST GRAM_PWR1 = 25            ' Powerup tile 1 (dynamic, DEFINE'd per type)
 CONST GRAM_PWR2 = 26            ' Powerup tile 2 (dynamic, DEFINE'd per type)
-CONST GRAM_PWR3 = 27            ' Powerup tile 3 (dynamic, RAPID only)
+CONST GRAM_PWR3 = 27            ' Powerup tile 3 (dynamic, RAPID="D_" or SOL36="36")
 CONST GRAM_CHAIN_DIG = 28       ' Chain digit display (dynamic, round-robin)
 CONST GRAM_LIVES_DIG = 29       ' Lives digit display (dynamic, round-robin)
 ' Shield and remaining HUD slots (title font cards 33-36)

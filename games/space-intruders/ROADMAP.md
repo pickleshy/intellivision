@@ -7,10 +7,15 @@
 ## 1. Bugs (Known Issues)
 
 - [x] **Captured alien dive bomb behavior** — Rogue now dogfights both wingman and player ship with strafing passes, targeted firing, and body collision.
+- [x] **Game over score position 110 shows GROM 'T'** — GRAM card 32 was shared by `GRAM_SCORE_M` (millions digit) and `GRAM_FONT_T`. Game over `DEFINE GRAM_FONT_E, 4, FontEGfx` loaded cards 29-32 including 'T' into card 32, overwriting the millions digit. Fixed by reducing count 4→3 (skip card 32; GRAM_FONT_T is never rendered in game over text).
+- [x] **'R' in PRESS FIRE shows TinyFont 'E' on game over and title screen** — GRAM card 33 was shared by `GRAM_SHIELD` and `GRAM_FONT_R`. Game over loaded `GOEBlankGfx` into card 33 immediately after the font batch loaded 'R' there, destroying it. `LoadAnimatedFont` preserves cards 19-38 so the corruption persisted on title return. Fixed by moving `GOEBlankGfx` to card 57 (`GRAM_BOMB2_F1`, free during game over and title screen).
+- [x] **Lives counter shows 'E' on first wave** — GRAM card 29 is shared by `GRAM_LIVES_DIG` and `GRAM_FONT_E`. The `game_init.bas` pre-init loop fired 5 `UpdateScoreDisplay` calls (ScoreCard 3-7), stopping at the chain digit (card 28) and never reaching ScoreCard=8 (lives digit, card 29). Card 29 retained 'E' font data from boot. Fixed by adding a 6th pre-init call.
+- [x] **#NextLife overflow awards burst of extra lives at high scores** — `#NextLife` is 16-bit; after the 13th extra life (score ~61,000), adding 5,000 wraps to ~464. Every subsequent frame `#Score >= 464` is true, awarding 12+ lives in one burst. Fixed with unsigned overflow detection: `IF #NextLife < 5000 THEN #NextLife = 65535`.
 - [ ] **CONT.BUTTON bitmask breaks input** — Using `CONT.BUTTON AND bitmask` (e.g., `AND 3` to exclude bottom-right, `AND 4` to isolate bottom-right) causes all controller input to stop working in jzintv. Suspected IntyBASIC compilation quirk with bitwise AND on hardware register reads. Needs assembly listing investigation to see what instructions are generated. Capture currently uses keypad 0 as workaround. Removing `--ecsimg` from jzintv_run resolved ECS keyboard bleed-through into CONT.BUTTON but did not fix the bitmask issue.
 - [ ] **Dead alien pop-in during march** — A dead alien (cleared from `#AlienRow`) occasionally becomes visible for a frame or two when the grid marches. Suspected cause: `DRAW_ROW_FAST` writes the correct `0` to dead cells, but the march trail redraw (`NeedRedraw=3`) or a stale `BACKTAB` position is rendering the tile before the column bitmask is checked. Repro: watch a sparse grid march left/right after several kills, particularly near the boundary of a march step. Needs `NeedRedraw` logic audit and march trail clear ordering check.
 - [ ] **Skull boss split → rogue animation / orphan alien** — Skull boss occasionally triggers the rogue dive animation and leaves a small alien tile visible on the opposite side of the sprite pattern. Suspected double-XOR resurrection or a `BossHP` race with `RoguePickAlien` selecting the boss grid cell before `SkullBossGridClear` has run. Repro: kill skull boss at the exact frame a rogue selection fires. Check `RoguePickAlien` guard against boss-occupied cells.
-- [ ] **MEGA BEAM not added to auto-fire sequence** — When the mega beam powerup is active, it does not fire automatically alongside the player's normal bullet cadence. Needs investigation of `FLAG_MEGA` check placement in the fire logic path and whether `FireCooldown` is gating beam shots correctly.
+- [x] **Pea shooter fires during SOL-36 sputter phase** — When `MegaTimer` hits 0 and `MegaSputterTimer` is active, the `ELSE` branch in `player.bas` fire logic allowed normal pea shooter firing. Fixed by changing `ELSE` to `ELSEIF MegaSputterTimer = 0 THEN` so the player is locked out of all normal fire while the sputter countdown is running.
+- [ ] **SOL-36 not added to auto-fire sequence** — When SOL-36 (mega beam) powerup is active, it does not fire automatically alongside the player's normal bullet cadence. Needs investigation of `MegaTimer` check placement in the fire logic path and whether `FireCooldown` is gating beam shots correctly.
 - [ ] **Sprites not cleared on player death** — On player death, one or more sprite MOBs (suspected: `SPR_PBULLET`, `SPR_SHIP_ACCENT`, or `SPR_POWERUP`) remain visible during the death animation or respawn delay. Check death sequence in `gameloop.bas` to confirm `HideAllSprites` (or equivalent per-sprite zeroing) runs before the first WAIT of the death state.
 
 ---
@@ -151,11 +156,38 @@ _Document existing patterns here as reference._
 - [x] Variable audit: 187→183 8-bit vars (ABulletType packed, RowHasBoss/BossIdx/LaserColor eliminated)
 - [x] Rogue circle fire bug fix (condition was always true, wasting cycles)
 - [x] Debug mode (type "36"): BORDER color band shows CPU usage
+- [x] Score display division audit — replaced `#Score/10` (6553 iters worst case) with `/1000` + `/100` chain; vast improvement at high scores
+- [x] ScoreCard=6: `#Score/100` (655 iters = ~14K cycles) → `/1000` + `/100` + `/10` chain (max 65+9+9 iters = ~1830 cycles). Saves ~12,580 cycles/8-frame = ~1,572 cycles/frame (~11% of budget)
+- [x] ScoreCard=5: `#Mask/10` on L_mod1000 (99 iters = ~2178 cycles) → `/100` + `/10` chain (9+9 iters + mul = ~600 cycles). Saves ~210 cycles/frame amortized
+- [x] ChainTimer noise freq: `(24-ChainTimer)/3` (0-7 iters/frame) → 25-entry `ChainNoiseFreq` lookup. Constant ~31 cycles every frame during active chain
+
+### Division Audit Results (2026-02-18)
+All IntyBASIC `/2`, `/4`, `/8` operations compile to fast shifts — zero concern.
+
+**Remaining non-power-of-2 divisions in gameplay code (hot path):**
+
+| File | Line | Expression | Runs | Max iters | Cycles | Impact |
+|------|------|-----------|------|-----------|--------|--------|
+| `utils.bas` | 138 | `#Score / 100` | Every 8 frames (ScoreCard=6) | 655 | ~14,410 | **HIGH** — ~12% frame amortized |
+| `utils.bas` | 131 | `#Mask / 10` | Every 8 frames (ScoreCard=5) | 99 | ~2,178 | Medium — ~1.8% frame amortized |
+| `gameloop.bas` | 441 | `(24-ChainTimer) / 3` | Every frame during chain | 8 | ~176 | Low — 1.2% during chain only |
+
+**Wave-load / title-only (no concern):**
+- `waves.bas:108,828` — `#AlienRow / ColMaskData(HitRow)` — runs once at wave load
+- `waves.bas:997` — `(Level-1) / 6` — runs once at wave load (110 cycles)
+- `title.bas:168` — `FlyX / 5` — title screen only
+- `title_animation.bas:121` — `GOAnimFrame / 3` — title screen only
+
+**Proposed fixes (utils.bas ScoreCard=5 and ScoreCard=6):**
+- ScoreCard=6: Replace `#Score/100` (655 iters) → `#Score/1000` + `/100` + `/10` (≤65+9+9 iters). Saves ~12,580 cycles/8-frame = ~1,572 cycles/frame.
+- ScoreCard=5: Replace `#Mask/10` (99 iters) → `/100` + `/10` chain on L_mod1000 (9+9 iters). Saves ~1,678 cycles/8-frame = ~210 cycles/frame.
+- Net savings: ~1,782 cycles/frame amortized (~12% of frame budget freed).
 
 ### Remaining Optimization Targets
 | Routine | Priority | Notes |
 |---------|----------|-------|
 | SaucerAnimate | Medium | Suspected CPU spike, needs profiling |
+| ~~ChainTimer noise calc~~ | ~~Low~~ | ~~`(24-ChainTimer)/3` every frame; 25-entry lookup table~~ |
 | Collision detection loops | Low | Already optimized with lookup tables |
 
 ### Future: CP1610 Assembly Optimization
@@ -388,17 +420,20 @@ Depends on defining capture mechanic. Currently speculative.
 **Available for new features during gameplay:** 15 cards
 
 ### Variables
-**8-bit:** 183/187 used (4 free)
+**8-bit:** 157/187 used (30 free) — *updated 2026-02-18*
 **16-bit:** 25/25 used (0 free — use bit-packing in #GameFlags for new booleans)
-**#GameFlags:** All 16 bits allocated (FLAG_BULLET through FLAG_HASLARGE)
+**#GameFlags:** 15/16 bits used (bit 11 free)
 
-### ROM
-**Total:** 32,703 of 42,016 words used (9,713 available)
-**Seg 0:** 57 words free (tight — main loop)
-**Seg 1:** 1,299 words free (procedures)
-**Seg 2:** 1,199 words free (collision, music, DATA)
-**Seg 3:** 1,286 words free (title animation, music DATA)
-**Seg 4-5:** 5,872 words free (empty, available)
+### ROM — *updated 2026-02-18 (36,162 words)*
+**Total:** 36,403 of 42,016 words used (6,013 available)
+**Seg 0:** 2,035 words free (main loop + Intellivoice runtime)
+**Seg 1:** ~8 words free ⚠️ FULL — do not add procedures here; use `SEGMENT 2` (utilities + game loop inline)
+**Seg 2:** 1,369 words free (collision, alien drawing, DATA tables)
+**Seg 3:** 414 words free (title animation + music data)
+**Seg 4:** 917 words free (AI systems)
+**Seg 5:** 1,199 words free (compact_score + PackedPairs)
+
+**If Seg 1 overflows:** Move procedures to Seg 2 with `SEGMENT 2` directive; cross-segment GOSUB works with MAP 2.
 
 ### Sprites
 **8/8 allocated** — no free MOBs during gameplay

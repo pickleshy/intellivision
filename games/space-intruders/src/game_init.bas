@@ -87,12 +87,13 @@ StartGame:
     DEFINE GRAM_CHAIN_CH, 3, ChainCHGfx   ' Cards 58-60: Chain labels
     WAIT
     ' Initialize score digit display (skip label cards 0-2 during first wave reveal)
-    ScoreCard = 2    ' First call goes to 3 (digit card 61)
-    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 3 (D4D3)
-    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 4 (D2D1)
-    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 5 (D0)
-    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 6 (chain digit)
-    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 7 (lives digit)
+    ScoreCard = 2    ' First call goes to ScoreCard=3 (card 32 = GRAM_SCORE_M)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 3 (D6D5 millions, card 32)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 4 (D4D3 ten-thousands+thousands, card 61)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 5 (D2D1 hundreds+tens, card 62)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 6 (D0 ones, card 63)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 7 (chain digit, card 28 = GRAM_CHAIN_DIG)
+    GOSUB UpdateScoreDisplay : WAIT   ' ScoreCard = 8 (lives digit, card 29 = GRAM_LIVES_DIG)
 
     ' Initialize all aliens as alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1

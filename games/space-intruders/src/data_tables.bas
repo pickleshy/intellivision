@@ -6,6 +6,12 @@
 
     SEGMENT 2
 
+' Chain SFX noise frequency lookup (replaces (24-ChainTimer)/3 division in gameloop)
+' Index = ChainTimer after decrement (0-23 in practice; 0-24 for safety)
+' Value = 12 + (24 - idx) / 3  (integer division)
+ChainNoiseFreq:
+    DATA 20, 19, 19, 19, 18, 18, 18, 17, 17, 17, 16, 16, 16, 15, 15, 15, 14, 14, 14, 13, 13, 13, 12, 12, 12
+
 ' PowerUp weighted random selection
 PowerUpWeights:
     DATA 0, 0, 1, 1, 2, 2, 3, 4
