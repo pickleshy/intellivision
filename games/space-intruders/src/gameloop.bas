@@ -155,54 +155,45 @@ GameLoop:
         GOSUB MovePlayer
     END IF
 
-    ' Animate alien walk frames independently (every 24 frames ≈ 2.5/sec)
+    ' Animate alien walk frames independently (every 24 frames ≈ 2.5/sec, 3-frame cycle)
     NeedRedraw = 0
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 24 THEN
         ShimmerCount = 0
-        AnimFrame = AnimFrame XOR 1
-        NeedRedraw = 1  ' Animation changed, need redraw
-        SubstepState = (SubstepState AND 3) OR 4  ' DefineStep = 1, ShiftPos unchanged
+        AnimFrame = AnimFrame + 1
+        IF AnimFrame > 2 THEN AnimFrame = 0
+        NeedRedraw = 1
     END IF
 
-    ' DEFINE shift GRAM cards: DISABLED FOR PERFORMANCE TESTING
-    ' Substep animation (smooth march) costs ~6 DEFINE calls per cycle
-    ' Commenting out to test if this is the performance bottleneck
-    ' Uncomment to re-enable smooth march animation
-    '
-    ' IF (SubstepState / 4) = 1 THEN
-    '     ' Load shift-1 rows 0-2 (cards 31, 32, 37 - non-contiguous)
-    '     IF AnimFrame = 0 THEN
-    '         DEFINE GRAM_SHIFT1_R0, 1, Shift1F0Row0
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R1, 1, Shift1F0Row1
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R2, 1, Shift1F0Row2
-    '     ELSE
-    '         DEFINE GRAM_SHIFT1_R0, 1, Shift1F1Row0
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R1, 1, Shift1F1Row1
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R2, 1, Shift1F1Row2
-    '     END IF
-    '     SubstepState = (SubstepState AND 3) OR 8  ' DefineStep = 2
-    ' ELSEIF (SubstepState / 4) = 2 THEN
-    '     ' Load shift-1 rows 3-4 (cards 38, 47) + shift-2 rows 0-2 (cards 42-44)
-    '     IF AnimFrame = 0 THEN
-    '         DEFINE GRAM_SHIFT1_R3, 1, Shift1F0Row3       ' Card 38
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R4, 1, Shift1F0Row4       ' Card 47
-    '         WAIT
-    '         DEFINE GRAM_SHIFT2_BASE, 3, Shift2F0Rows0_2  ' Cards 42-44
-    '     ELSE
-    '         DEFINE GRAM_SHIFT1_R3, 1, Shift1F1Row3       ' Card 38
-    '         WAIT
-    '         DEFINE GRAM_SHIFT1_R4, 1, Shift1F1Row4       ' Card 47
-    '         WAIT
-    '         DEFINE GRAM_SHIFT2_BASE, 3, Shift2F1Rows0_2  ' Cards 42-44
-    '     END IF
-    '     SubstepState = SubstepState AND 3  ' DefineStep = 0
-    ' END IF
+    ' DEFINE-swap: pre-load card BASE bitmaps 3 frames before AnimFrame changes.
+    ' ShimmerCount 21/22/23 fire while the CURRENT frame is still displaying — GRAM is
+    ' fully loaded by the time the tick fires at 24 and AnimFrame changes.
+    ' AnimFrame=1 → about to enter F2: load F2 bitmaps.
+    ' AnimFrame=2 → about to re-enter F0: restore F0 bitmaps.
+    ' ShimmerCount doubles as the step counter — no extra variable needed.
+    IF ShimmerCount = 21 THEN
+        IF AnimFrame = 1 THEN
+            DEFINE GRAM_ALIEN1, 1, Alien1F2Gfx   ' Squid F2 → card 2
+            DEFINE GRAM_ALIEN2, 1, Alien2F2Gfx   ' Crab F2 → card 4
+        ELSEIF AnimFrame = 2 THEN
+            DEFINE GRAM_ALIEN1, 1, Alien1Gfx     ' Squid F0 restored → card 2
+            DEFINE GRAM_ALIEN2, 1, Alien2Gfx     ' Crab F0 restored → card 4
+        END IF
+    ELSEIF ShimmerCount = 22 THEN
+        IF AnimFrame = 1 THEN
+            DEFINE GRAM_ALIEN3, 1, Alien3F2Gfx   ' Octopus F2 → card 6
+            DEFINE GRAM_ALIEN4, 1, Alien4F2Gfx   ' Beetle F2 → card 19
+        ELSEIF AnimFrame = 2 THEN
+            DEFINE GRAM_ALIEN3, 1, Alien3Gfx     ' Octopus F0 restored → card 6
+            DEFINE GRAM_ALIEN4, 1, Alien4Gfx     ' Beetle F0 restored → card 19
+        END IF
+    ELSEIF ShimmerCount = 23 THEN
+        IF AnimFrame = 1 THEN
+            DEFINE GRAM_ALIEN5, 1, Alien5F2Gfx   ' Jellyfish F2 → card 30
+        ELSEIF AnimFrame = 2 THEN
+            DEFINE GRAM_ALIEN5, 1, Alien5Gfx     ' Jellyfish F0 restored → card 30
+        END IF
+    END IF
 
     ' Advance wave reveal
     IF WaveEntrance = 2 THEN
@@ -692,7 +683,7 @@ ChainDone:
                 ' Load TinyFont labels for game over screen
                 DEFINE 9, 4, GOBatch1      ' Cards 9-12: SC, OR, E:, NE
                 WAIT
-                DEFINE 32, 1, GOEBlankGfx  ' Card 32: E_ (no colon, for SCORE!) - moved from card 20 to avoid Zod conflict
+                DEFINE 33, 1, GOEBlankGfx  ' Card 33: E_ (no colon, for SCORE!) — card 32 freed for millions digit; GRAM_SHIELD free during game over
                 WAIT
                 DEFINE 13, 3, GOBatch2     ' Cards 13-15: W_, HI, GH
                 WAIT
@@ -729,13 +720,14 @@ ChainDone:
                 PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
                 PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
                 PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
-                ' Score at row 5: TinyFont label + packed digit cards
+                ' Score at row 5: TinyFont label + 7-digit zero-padded packed digit cards
                 FOR LoopVar = 0 TO 2
                     PRINT AT 107 + LoopVar, (9 + LoopVar) * 8 + COL_WHITE + $0800
                 NEXT LoopVar
-                PRINT AT 110, GRAM_SCORE_SC * 8 + COL_WHITE + $0800
-                PRINT AT 111, GRAM_SCORE_OR * 8 + COL_WHITE + $0800
-                PRINT AT 112, GRAM_SCORE_E * 8 + COL_WHITE + $0800
+                PRINT AT 110, GRAM_SCORE_M * 8 + COL_WHITE + $0800   ' D6D5 (millions + hundred-thousands)
+                PRINT AT 111, GRAM_SCORE_SC * 8 + COL_WHITE + $0800  ' D4D3 (ten-thousands + thousands)
+                PRINT AT 112, GRAM_SCORE_OR * 8 + COL_WHITE + $0800  ' D2D1 (hundreds + tens)
+                PRINT AT 113, GRAM_SCORE_E * 8 + COL_WHITE + $0800   ' D0 (ones + blank)
                 ' High score at row 6
                 IF #ScoreHigh > #HighScoreHigh OR (#ScoreHigh = #HighScoreHigh AND #Score >= #HighScore) THEN
                     ' New high: TinyFont "NEW HIGH SCORE!" (single space)
@@ -745,7 +737,7 @@ ChainDone:
                     PRINT AT 130, 0                              ' Blank GROM space
                     PRINT AT 131, 9 * 8 + COL_YELLOW + $0800    ' SC
                     PRINT AT 132, 10 * 8 + COL_YELLOW + $0800   ' OR
-                    PRINT AT 133, 32 * 8 + COL_YELLOW + $0800   ' E_ (card 32)
+                    PRINT AT 133, 33 * 8 + COL_YELLOW + $0800   ' E_ (card 33)
                     PRINT AT 134 COLOR COL_YELLOW, "!"
                 ELSE
                     ' TinyFont "HIGH" + GROM digits

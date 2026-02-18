@@ -68,7 +68,9 @@ UpdateScoreDisplay: PROCEDURE
     IF ScoreCard > 8 THEN ScoreCard = 0
 
     ' Guard: skip label cards during warp-in reveal (cards 34-36 in use)
-    IF ScoreCard < 4 THEN
+    ' Only applies to ScoreCards 0-2 (label cards that use cards 34-36).
+    ' ScoreCard=3 (GRAM_SCORE_M, card 32) is independent and must NOT be guarded.
+    IF ScoreCard < 3 THEN
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             ScoreCard = 4
         ELSEIF WaveEntrance = 1 THEN
@@ -95,7 +97,8 @@ UpdateScoreDisplay: PROCEDURE
         IF GameOver = 0 THEN PRINT AT 222, GRAM_WARP3 * 8 + COL_WHITE + $0800
     ELSEIF ScoreCard = 3 THEN
         ' Card SCORE_CARD_M: millions + hundred-thousands
-        ' ScorePairM is cached by ScoreCard=4 (runs 1 frame later in cycle, so first frame shows 0)
+        ' ScorePairM cached by ScoreCard=4 (1 frame earlier in cycle).
+        ' Always writes "00" when score < 100,000 → zero-padded 7-digit display.
         #Mask = ScorePairM
         POKE $0107, SCORE_CARD_M
     ELSEIF ScoreCard = 4 THEN

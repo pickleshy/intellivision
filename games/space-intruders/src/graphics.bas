@@ -171,6 +171,67 @@ Alien5Gfx:
     BITMAP "........"
 
 ' --------------------------------------------
+' Alien Frame 2 Bitmaps (DEFINE-swap 3rd animation frame)
+' Loaded into GRAM card BASE for each alien type when AnimFrame=2,
+' restored to F0 data when AnimFrame returns to 0.
+' Source: alien_test.bas cards 20-24.
+' --------------------------------------------
+Alien1F2Gfx:
+    ' Squid Frame 2 - arms mid-spread (between F0 and F1)
+    BITMAP "..XX...."
+    BITMAP ".XXXX..."
+    BITMAP "X.XX.X.."
+    BITMAP "XXXXXX.."
+    BITMAP ".X..X..."
+    BITMAP "X....X.."
+    BITMAP ".X..X..."
+    BITMAP "........"
+
+Alien2F2Gfx:
+    ' Crab Frame 2 - claws mid-position
+    BITMAP "X....X.."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".XXXX..."
+    BITMAP ".X..X..."
+    BITMAP ".X..X..."
+    BITMAP "........"
+
+Alien3F2Gfx:
+    ' Octopus Frame 2 - legs mid-spread
+    BITMAP "..XX...."
+    BITMAP ".XXXX..."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".XXXX..."
+    BITMAP "X....X.."
+    BITMAP "X....X.."
+    BITMAP "........"
+
+Alien4F2Gfx:
+    ' Beetle Frame 2 - antennae wide, legs shifted
+    BITMAP ".X..X..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP "X....X.."
+    BITMAP ".X..X..."
+    BITMAP "........"
+
+Alien5F2Gfx:
+    ' Jellyfish Frame 2 - tentacles curled up / body puffed
+    BITMAP "..XX...."
+    BITMAP ".XXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP ".X..X..."
+    BITMAP "X....X.."
+    BITMAP "........"
+
+' --------------------------------------------
 ' Shifted Alien Graphics (Substep March)
 ' --------------------------------------------
 ' Cards 34-38: Shift-1 all 5 rows (time-shared with warp-in + stars)

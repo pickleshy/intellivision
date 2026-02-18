@@ -25,6 +25,7 @@ ResetToTitle:
     #Score = 0
     #ScoreHigh = 0
     #NextLife = 1000
+    ScorePairM = 0
     PlayerX = 80
     AlienOffsetX = 0
     AlienOffsetY = 0

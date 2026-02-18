@@ -620,19 +620,20 @@ DrawAliens: PROCEDURE
         END IF
 
         ' Select card based on ShiftPos (substep march position)
-        ' SubstepState bits 0-1 = ShiftPos (0-2)
+        ' SubstepState bits 0-1 = ShiftPos (always 0 with march disabled)
+        ' AnimFrame AND 1: selects BASE (F0/F2) or BASE+1 (F1); DEFINE-swap provides F2 data in BASE
         IF (SubstepState AND 3) = 0 THEN
             ' Base position: use standard alien cards with animation
             IF Row = 0 THEN
-                AlienCard = GRAM_ALIEN1 + AnimFrame
+                AlienCard = GRAM_ALIEN1 + (AnimFrame AND 1)
             ELSEIF Row = 1 THEN
-                AlienCard = GRAM_ALIEN2 + AnimFrame
+                AlienCard = GRAM_ALIEN2 + (AnimFrame AND 1)
             ELSEIF Row = 2 THEN
-                AlienCard = GRAM_ALIEN3 + AnimFrame
+                AlienCard = GRAM_ALIEN3 + (AnimFrame AND 1)
             ELSEIF Row = 3 THEN
-                AlienCard = GRAM_ALIEN4 + AnimFrame
+                AlienCard = GRAM_ALIEN4 + (AnimFrame AND 1)
             ELSE
-                AlienCard = GRAM_ALIEN5 + AnimFrame
+                AlienCard = GRAM_ALIEN5 + (AnimFrame AND 1)
             END IF
         ELSEIF (SubstepState AND 3) = 1 THEN
             ' Shift-1 (+1px): lookup table (31,32,37,38,47) - constant time!

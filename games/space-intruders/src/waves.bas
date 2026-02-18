@@ -193,9 +193,9 @@ END
 ' Called after CLS or screen clears. Shows current #Score and chain state.
 ' --------------------------------------------
 DrawHUD: PROCEDURE
-    ' Score: 7-digit display (223-227) using 4 packed digit cards (32, 61-63)
+    ' Score: 7-digit zero-padded display (223-226) using 4 packed digit cards (32, 61-63)
     ' Label (220-222) set by round-robin during gameplay
-    PRINT AT 223, GRAM_SCORE_M * 8 + COL_WHITE + $0800   ' D6D5 (millions + hundred-thousands)
+    PRINT AT 223, GRAM_SCORE_M * 8 + COL_WHITE + $0800   ' D6D5 (millions + hundred-thousands, "00" when score < 100K)
     PRINT AT 224, GRAM_SCORE_SC * 8 + COL_WHITE + $0800  ' D4D3 (ten-thousands + thousands)
     PRINT AT 225, GRAM_SCORE_OR * 8 + COL_WHITE + $0800  ' D2D1 (hundreds + tens)
     PRINT AT 226, GRAM_SCORE_E * 8 + COL_WHITE + $0800   ' D0 (ones + blank)

@@ -48,9 +48,9 @@ ShootTimer  = 0                 ' Countdown to next alien shot
 ShootCol    = 0                 ' Column to shoot from
 
 ' -- Alien Grid & March --
-AnimFrame   = 0                 ' Animation frame (0 or 1)
+AnimFrame   = 0                 ' Animation frame (0, 1, or 2) — 3-frame walk cycle
 ShimmerCount = 0                ' Frame counter for shimmer updates
-SubstepState = 0                ' Packed: ShiftPos (bits 0-1) + DefineStep*4 (bits 2-3)
+SubstepState = 0                ' March sub-step position (0=base, 1=shift1, 2=shift2; disabled)
 AlienOffsetX = 0                ' Alien grid X offset (0 to ALIEN_MAX_X)
 AlienOffsetY = 0                ' Alien grid Y offset (drops down)
 LastClearedY = 0                ' Last AlienOffsetY that had rows cleared above it

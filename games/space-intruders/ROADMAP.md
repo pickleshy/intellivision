@@ -8,6 +8,27 @@
 
 - [x] **Captured alien dive bomb behavior** — Rogue now dogfights both wingman and player ship with strafing passes, targeted firing, and body collision.
 - [ ] **CONT.BUTTON bitmask breaks input** — Using `CONT.BUTTON AND bitmask` (e.g., `AND 3` to exclude bottom-right, `AND 4` to isolate bottom-right) causes all controller input to stop working in jzintv. Suspected IntyBASIC compilation quirk with bitwise AND on hardware register reads. Needs assembly listing investigation to see what instructions are generated. Capture currently uses keypad 0 as workaround. Removing `--ecsimg` from jzintv_run resolved ECS keyboard bleed-through into CONT.BUTTON but did not fix the bitmask issue.
+- [ ] **Dead alien pop-in during march** — A dead alien (cleared from `#AlienRow`) occasionally becomes visible for a frame or two when the grid marches. Suspected cause: `DRAW_ROW_FAST` writes the correct `0` to dead cells, but the march trail redraw (`NeedRedraw=3`) or a stale `BACKTAB` position is rendering the tile before the column bitmask is checked. Repro: watch a sparse grid march left/right after several kills, particularly near the boundary of a march step. Needs `NeedRedraw` logic audit and march trail clear ordering check.
+- [ ] **Skull boss split → rogue animation / orphan alien** — Skull boss occasionally triggers the rogue dive animation and leaves a small alien tile visible on the opposite side of the sprite pattern. Suspected double-XOR resurrection or a `BossHP` race with `RoguePickAlien` selecting the boss grid cell before `SkullBossGridClear` has run. Repro: kill skull boss at the exact frame a rogue selection fires. Check `RoguePickAlien` guard against boss-occupied cells.
+- [ ] **MEGA BEAM not added to auto-fire sequence** — When the mega beam powerup is active, it does not fire automatically alongside the player's normal bullet cadence. Needs investigation of `FLAG_MEGA` check placement in the fire logic path and whether `FireCooldown` is gating beam shots correctly.
+- [ ] **Sprites not cleared on player death** — On player death, one or more sprite MOBs (suspected: `SPR_PBULLET`, `SPR_SHIP_ACCENT`, or `SPR_POWERUP`) remain visible during the death animation or respawn delay. Check death sequence in `gameloop.bas` to confirm `HideAllSprites` (or equivalent per-sprite zeroing) runs before the first WAIT of the death state.
+
+---
+
+## 1b. Testing Harness & Regression Checklist
+
+### Score System Testing
+- [ ] **Score display regression harness** — Build a cheat-code-triggered score injection mode (e.g., keypad "99") that directly sets `#Score` and `#ScoreHigh` to boundary values and verifies HUD displays correctly. Test cases:
+  - `#Score=0, #ScoreHigh=0` → displays `0000000`
+  - `#Score=65535, #ScoreHigh=0` → displays `0065535`
+  - `#Score=0, #ScoreHigh=1` → displays `0065536` (seamless boundary crossing)
+  - `#Score=12345, #ScoreHigh=1` → displays `0077881`
+  - `#Score=0, #ScoreHigh=2` → displays `0131072`
+  - High-value: `#Score=0, #ScoreHigh=10` → displays `0655360`
+- [ ] **HUD score display** — Verify 7-digit zero-padded display (positions 223–226) updates correctly at each boundary. Confirm card 32 (millions/hundred-thousands) shows `00` at game start and updates correctly above 100,000.
+- [ ] **Game over score display** — Verify 7-digit score appears at positions 110–113 on the game over screen. Confirm the "NEW HIGH SCORE!" label at row 6 uses card 33 (not card 32) and does not corrupt the digit display.
+- [ ] **Score label corruption regression** — During warp-in reveal animation, confirm SCORE label cards (34–36) are stable and do not flash or corrupt. Guard (`ScoreCard < 3`) should prevent label round-robin during reveal; card 32 should still update.
+- [ ] **Round-robin order verification** — Step through a full 9-frame cycle (ScoreCard 0–8) and confirm each GRAM card (34, 35, 36, 32, 61, 62, 63, 28, 29) updates exactly once per cycle with correct data.
 
 ---
 
