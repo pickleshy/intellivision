@@ -1446,6 +1446,64 @@ PowerupSol36Gfx:
     BITMAP ".XX..XX."
     BITMAP "........"
 
+' === Y-axis spin frames for WAVE banner letters ===
+' Used during wave transition spin-out animation (WaveAnnouncerType=1, timer 1-20)
+' Card 32 (GRAM_FONT_T) cycles through these via DEFINE; card 47 (GRAM_ORBITER) = edge-on
+WaveSpinWGfx:
+    ' W at ~60 deg Y-axis rotation (narrow, columns 2-6, centered)
+    BITMAP "..X...X."
+    BITMAP "..X...X."
+    BITMAP "..X...X."
+    BITMAP "..X.X.X."
+    BITMAP "..XXXXX."
+    BITMAP "..XX.XX."
+    BITMAP "..X...X."
+    BITMAP "........"
+
+WaveSpinAGfx:
+    ' A at ~60 deg Y-axis rotation (narrow, columns 2-6)
+    BITMAP "...XX..."
+    BITMAP "..X..X.."
+    BITMAP "..X..X.."
+    BITMAP "..XXXXX."
+    BITMAP "..X..X.."
+    BITMAP "..X..X.."
+    BITMAP "..X..X.."
+    BITMAP "........"
+
+WaveSpinVGfx:
+    ' V at ~60 deg Y-axis rotation (narrow, columns 2-6)
+    BITMAP "..X...X."
+    BITMAP "..X...X."
+    BITMAP "..X...X."
+    BITMAP "..X...X."
+    BITMAP "..XX.XX."
+    BITMAP "..XXXXX."
+    BITMAP "...XXX.."
+    BITMAP "....X..."
+
+WaveSpinEGfx:
+    ' E at ~60 deg Y-axis rotation (narrow, columns 2-5)
+    BITMAP "..XXXX.."
+    BITMAP "..X....."
+    BITMAP "..X....."
+    BITMAP "..XXXX.."
+    BITMAP "..X....."
+    BITMAP "..X....."
+    BITMAP "..XXXX.."
+    BITMAP "........"
+
+WaveSpinEdgeGfx:
+    ' Edge-on frame shared by all letters (thin vertical bar, card 47)
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "........"
+
 ' === SHIELD dome graphic (solid bar above ship) ===
 ShieldArcGfx:
     BITMAP "..####.."

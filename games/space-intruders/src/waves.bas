@@ -1296,6 +1296,11 @@ StartNewWave: PROCEDURE
     END IF
     WaveAnnouncerTimer = 90
     WaveAnnouncerType = 1
+    ' Reset spin state and pre-load GRAM cards for WAVE spin-out animation
+    WaveBannerPhase = 0
+    WaveBannerFrame = 0
+    DEFINE GRAM_FONT_T, 1, WaveSpinWGfx     ' Card 32 = W narrow (first spin phase)
+    DEFINE GRAM_ORBITER, 1, WaveSpinEdgeGfx ' Card 47 = edge-on (shared all phases)
     ' Brief pause for CLS to settle before entrance animation begins
     FOR LoopVar = 0 TO 13
         WAIT

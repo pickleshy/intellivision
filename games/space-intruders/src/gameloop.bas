@@ -398,16 +398,33 @@ GameLoop:
     END IF
 
     ' Wave announcement overlay (banner displays DURING alien entrance animation)
-    ' DrawWaveBanner / ClearWaveBanner are in Seg 2 (cross-segment GOSUB OK with MAP 2)
+    ' DrawWaveBanner / ClearWaveBanner / SpinWaveBannerLetter in Seg 2 (cross-seg GOSUB OK)
     IF WaveAnnouncerTimer > 0 THEN
         WaveAnnouncerTimer = WaveAnnouncerTimer - 1
-        AlienCard = 0
-        IF WaveAnnouncerTimer > 20 THEN AlienCard = 1
-        IF WaveAnnouncerTimer AND 4 THEN AlienCard = 1
-        IF AlienCard THEN
+        IF WaveAnnouncerTimer > 20 THEN
+            ' Static display phase: show banner text
             GOSUB DrawWaveBanner
+        ELSEIF WaveAnnouncerType = 1 THEN
+            ' Spin-out phase (type 1 = WAVE X only): animate letters one by one
+            IF WaveAnnouncerTimer > 0 THEN
+                GOSUB SpinWaveBannerLetter
+                WaveBannerFrame = WaveBannerFrame + 1
+                IF WaveBannerFrame >= 4 THEN
+                    WaveBannerFrame = 0
+                    WaveBannerPhase = WaveBannerPhase + 1
+                END IF
+            ELSE
+                ' Timer expired: clear remaining text and restore card 47 for orbiter
+                PRINT AT 107, "       "
+                DEFINE GRAM_ORBITER, 1, SmallCrabF1Gfx
+            END IF
         ELSE
-            GOSUB ClearWaveBanner
+            ' Types 2/3 (ALERT! / INCOMING HORDE!): flash effect during exit window
+            IF WaveAnnouncerTimer AND 4 THEN
+                GOSUB DrawWaveBanner
+            ELSE
+                GOSUB ClearWaveBanner
+            END IF
         END IF
     END IF
 
@@ -879,7 +896,12 @@ ChainDone:
     GOSUB DrawAlienBullet
 
     ' Update score display — round-robin 1 GRAM card per frame via DEFINE ALTERNATE
+    ' Skip during WAVE X spin-out: card 32 (GRAM_SCORE_M) is repurposed for spin frames
+    IF WaveAnnouncerType = 1 AND WaveAnnouncerTimer > 0 AND WaveAnnouncerTimer <= 20 THEN
+        GOTO SkipScoreUpdate
+    END IF
     GOSUB UpdateScoreDisplay
+SkipScoreUpdate:
 
     ' Extra life: first at 1000, then every 5000
     ' Guard: #NextLife is 16-bit; after 13th extra life (score ~61000), adding 5000

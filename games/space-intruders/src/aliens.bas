@@ -883,6 +883,39 @@ ClearWaveBanner: PROCEDURE
 END
 
 ' --------------------------------------------
+' SpinWaveBannerLetter - Animate one frame of the spin-out
+' Called from game loop during WaveAnnouncerTimer 1-20 (type 1 only)
+' Phases 0-3 = W,A,V,E; 4 frames per phase (0=hold full, 1=narrow, 2=edge, 3=blank)
+' Card 32 (GRAM_FONT_T) pre-loaded at StartNewWave with WaveSpinWGfx
+' Card 47 (GRAM_ORBITER) pre-loaded at StartNewWave with WaveSpinEdgeGfx
+' --------------------------------------------
+SpinWaveBannerLetter: PROCEDURE
+    IF WaveBannerPhase >= 4 THEN RETURN     ' All letters done, no-op
+    Col = 107 + WaveBannerPhase             ' W=107, A=108, V=109, E=110
+    IF WaveBannerFrame = 1 THEN
+        ' Narrow frame: card 32 holds current phase's narrow bitmap
+        PRINT AT Col, GRAM_FONT_T * 8 + 6 + $0800
+        ' Pre-load NEXT phase's narrow bitmap into card 32 for next phase Frame 1
+        IF WaveBannerPhase = 0 THEN
+            DEFINE GRAM_FONT_T, 1, WaveSpinAGfx
+        ELSEIF WaveBannerPhase = 1 THEN
+            DEFINE GRAM_FONT_T, 1, WaveSpinVGfx
+        ELSEIF WaveBannerPhase = 2 THEN
+            DEFINE GRAM_FONT_T, 1, WaveSpinEGfx
+        END IF
+        ' No DEFINE at Phase 3 (E is the last)
+    ELSEIF WaveBannerFrame = 2 THEN
+        ' Edge-on: card 47 holds WaveSpinEdgeGfx (pre-loaded at StartNewWave)
+        PRINT AT Col, GRAM_ORBITER * 8 + 6 + $0800
+    ELSEIF WaveBannerFrame = 3 THEN
+        ' Blank: letter has spun away
+        PRINT AT Col, 0
+    END IF
+    ' Frame 0: do nothing, GROM character already showing from DrawWaveBanner
+    RETURN
+END
+
+' --------------------------------------------
 ' CheckWaveWin - Check if all aliens are dead
 ' --------------------------------------------
 ' --------------------------------------------

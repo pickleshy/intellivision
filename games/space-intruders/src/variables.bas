@@ -121,6 +121,8 @@ OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
 OrbiterDeathTimer = 0             ' Cleanup flag: set to 1 at kill, cleared after sprite hidden
 WaveAnnouncerTimer = 0            ' Wave banner countdown (0=inactive, 1-90=active)
 WaveAnnouncerType  = 0            ' Banner type: 0=none, 1=WAVE X, 2=ALERT!, 3=INCOMING HORDE!
+WaveBannerPhase    = 0            ' Spin phase: 0=W, 1=A, 2=V, 3=E (>=4 = done)
+WaveBannerFrame    = 0            ' Spin frame within phase (0-3)
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
 WaveColor1     = 1                 ' Crab color (row 1) — default blue
 WaveColor2     = 5                 ' Octopus color (row 2) — default green
