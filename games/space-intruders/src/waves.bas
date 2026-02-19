@@ -8,6 +8,38 @@
 
 ' === Wave Management ===
 
+' --------------------------------------------
+' ClearBulletsAndBeam - Clear bullet flags, capbullet tile, and beam timer
+' Called from LoadPatternB and ReloadHorde during wave transitions
+' --------------------------------------------
+ClearBulletsAndBeam: PROCEDURE
+    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
+    IF #GameFlags AND FLAG_CAPBULLET THEN
+        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
+        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
+        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
+    END IF
+    MegaBeamTimer = 0
+    RETURN
+END
+
+' --------------------------------------------
+' ClearWaveObjects - Hide enemy sprites and reset flight state for wave transitions
+' Called from LoadPatternB and StartNewWave
+' --------------------------------------------
+ClearWaveObjects: PROCEDURE
+    GOSUB ClearRogueOnly
+    SPRITE SPR_PBULLET, 0, 0, 0
+    SPRITE SPR_ABULLET, 0, 0, 0
+    SPRITE SPR_SAUCER, 0, 0, 0
+    SPRITE SPR_SAUCER2, 0, 0, 0
+    FlyState = 0
+    #FlyPhase = 0
+    PowerUpState = 0
+    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
+    RETURN
+END
+
 SetEntrancePattern: PROCEDURE
     ' Reset entrance mode (0=left sweep, 1=top-down, 2=fly-down)
     WaveEntrance = 0
@@ -457,17 +489,26 @@ MegaBeamKill: PROCEDURE
         IF #ScreenPos + 15 >= RogueX THEN
             IF #ScreenPos <= RogueX + 8 THEN
                 ' Destroy rogue
-                RogueState = ROGUE_IDLE
-                RogueTimer = 0 : RogueDivePhase = 0
-                SPRITE SPR_FLYER, 0, 0, 0
-                #Mask = 50 : GOSUB AddToScore
-                #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                GOSUB BumpChain
-                SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
-                SOUND 2, 180, 14
+                GOSUB DestroyRogue
             END IF
         END IF
     END IF
+    RETURN
+END
+
+' --------------------------------------------
+' DestroyRogue - Shared rogue alien kill sequence (score, SFX, state reset)
+' Called from MegaBeamKill and player-bullet rogue collision
+' --------------------------------------------
+DestroyRogue: PROCEDURE
+    RogueState = ROGUE_IDLE
+    RogueTimer = 0 : RogueDivePhase = 0
+    SPRITE SPR_FLYER, 0, 0, 0
+    #Mask = 50 : GOSUB AddToScore
+    #GameFlags = #GameFlags OR FLAG_SHOTLAND
+    GOSUB BumpChain
+    SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
+    SOUND 2, 180, 14
     RETURN
 END
 
@@ -597,25 +638,9 @@ LoadPatternB: PROCEDURE
     SfxType = 0
 
     ' Clear active bullets, rogue (but preserve wingman!)
-    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
-    ' Clear wingman bullet BACKTAB tile before deactivating
-    IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
-        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
-        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
-    END IF
-    MegaBeamTimer = 0
+    GOSUB ClearBulletsAndBeam
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_REINFORCE)
-    GOSUB ClearRogueOnly
-    SPRITE SPR_PBULLET, 0, 0, 0
-    SPRITE SPR_ABULLET, 0, 0, 0
-    SPRITE SPR_SAUCER, 0, 0, 0
-    SPRITE SPR_SAUCER2, 0, 0, 0
-    FlyState = 0
-    #FlyPhase = 0
-    PowerUpState = 0
-    ' Hide capsule sprite if no wingman using it
-    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
+    GOSUB ClearWaveObjects
 
     ' Reset alien positions (center the grid on screen)
     AlienOffsetX = 5
@@ -1015,13 +1040,7 @@ ReloadHorde: PROCEDURE
     GOSUB SilenceSfx
     POKE $1F8, PEEK($1F8) OR $20  ' Disable noise on channel C
     ' Clear bullets and rogue (preserve wingman)
-    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
-    IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
-        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
-        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
-    END IF
-    MegaBeamTimer = 0
+    GOSUB ClearBulletsAndBeam
     GOSUB ClearRogueOnly
     SPRITE SPR_PBULLET, 0, 0, 0
     SPRITE SPR_ABULLET, 0, 0, 0
@@ -1121,26 +1140,10 @@ StartNewWave: PROCEDURE
     ' Bosses only appear in Pattern B formations
 
     ' Clear any active bullets (power-ups AND wingman persist until death!)
-    #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
-    ' Clear wingman bullet BACKTAB tile before deactivating
-    IF #GameFlags AND FLAG_CAPBULLET THEN
-        #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
-        IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
-        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
-    END IF
+    GOSUB ClearBulletsAndBeam
     MegaTimer = 0
-    MegaBeamTimer = 0
     IF MegaSputterTimer > 0 THEN GOSUB StopMegaSputter
-    GOSUB ClearRogueOnly
-    SPRITE SPR_PBULLET, 0, 0, 0
-    SPRITE SPR_ABULLET, 0, 0, 0
-    SPRITE SPR_SAUCER, 0, 0, 0
-    SPRITE SPR_SAUCER2, 0, 0, 0
-    FlyState = 0
-    #FlyPhase = 0
-    PowerUpState = 0
-    ' Hide capsule sprite if no wingman using it
-    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN SPRITE SPR_POWERUP, 0, 0, 0
+    GOSUB ClearWaveObjects
     FireCooldown = 0
     WaveRevealRow = 0
     #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL

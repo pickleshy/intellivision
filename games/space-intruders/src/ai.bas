@@ -13,6 +13,23 @@
     SEGMENT 4
 
 ' --------------------------------------------
+' RogueFire - Rogue alien fires alien bullet at current position
+' Resets RogueTimer; fires only if no bullet active and saucer not chasing
+' --------------------------------------------
+RogueFire: PROCEDURE
+    RogueTimer = 0
+    IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
+        IF FlyState <> SAUCER_CHASE THEN
+            ABulletX = RogueX + 3
+            ABulletY = RogueY + 8
+            ABulFrame = ABulFrame AND 1
+            #GameFlags = #GameFlags OR FLAG_ABULLET
+        END IF
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
 ' UpdateCapture - Orbit captured wingman around player ship
 ' --------------------------------------------
 UpdateCapture: PROCEDURE
@@ -406,15 +423,7 @@ RogueUpdate: PROCEDURE
             IF RogueTimer >= 30 THEN
                 IF RogueX + 8 >= PlayerX THEN
                     IF RogueX <= PlayerX + 8 THEN
-                        RogueTimer = 0
-                        IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
-                            IF FlyState <> SAUCER_CHASE THEN
-                                ABulletX = RogueX + 3
-                                ABulletY = RogueY + 8
-                                ABulFrame = ABulFrame AND 1
-                                #GameFlags = #GameFlags OR FLAG_ABULLET
-                            END IF
-                        END IF
+                        GOSUB RogueFire
                     END IF
                 END IF
             END IF
@@ -425,15 +434,7 @@ RogueUpdate: PROCEDURE
                     IF #ScreenPos < 200 THEN
                         IF RogueX + 8 >= #ScreenPos THEN
                             IF RogueX <= #ScreenPos + 8 THEN
-                                RogueTimer = 0
-                                IF (#GameFlags AND FLAG_ABULLET) = 0 THEN
-                                    IF FlyState <> SAUCER_CHASE THEN
-                                        ABulletX = RogueX + 3
-                                        ABulletY = RogueY + 8
-                                        ABulFrame = ABulFrame AND 1
-                                        #GameFlags = #GameFlags OR FLAG_ABULLET
-                                    END IF
-                                END IF
+                                GOSUB RogueFire
                             END IF
                         END IF
                     END IF

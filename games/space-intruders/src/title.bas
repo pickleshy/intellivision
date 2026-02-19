@@ -263,13 +263,7 @@ TitleLoop:
     IF ShakeTimer > 0 THEN
         ShakeTimer = ShakeTimer - 1
         IF ShakeTimer > 0 THEN
-            IF ShakeTimer AND 2 THEN
-                SCROLL 1, 0
-            ELSEIF ShakeTimer AND 1 THEN
-                SCROLL 0, 1
-            ELSE
-                SCROLL -1, 0
-            END IF
+            GOSUB DoScreenShake
         ELSE
             SCROLL 0, 0  ' Reset to normal when done
         END IF
@@ -286,16 +280,7 @@ TitleLoop:
         IF PowerUpType >= 4 THEN PowerUpType = 0
         IF PowerUpType < 2 THEN
             ' Visible frame (grey = dim flash)
-            PRINT AT 205, GRAM_FONT_P * 8 + $1800
-            PRINT AT 206, GRAM_FONT_R * 8 + $1800
-            PRINT AT 207, GRAM_FONT_E * 8 + $1800
-            PRINT AT 208, GRAM_FONT_S * 8 + $1800
-            PRINT AT 209, GRAM_FONT_S * 8 + $1800
-            PRINT AT 210, 0
-            PRINT AT 211, GRAM_FONT_F * 8 + $1800
-            PRINT AT 212, GRAM_FONT_I * 8 + $1800
-            PRINT AT 213, GRAM_FONT_R * 8 + $1800
-            PRINT AT 214, GRAM_FONT_E * 8 + $1800
+            GOSUB DrawPressFire_Grey
         ELSE
             ' Invisible frame (clear)
             FOR LoopVar = 205 TO 214
@@ -346,38 +331,7 @@ TitleLoop:
         END IF
     ELSE
         ' Shimmer - cycle Grey/White every 12 frames
-        PowerUpType = PowerUpType + 1
-        IF PowerUpType >= 4 THEN
-            PowerUpType = 0
-            WavePhase = WavePhase + 1
-            IF WavePhase >= 4 THEN WavePhase = 0
-            ' WaveColors: 0=grey (use $1800), 7=white (use $0800+7)
-            IF WaveColors(WavePhase) = 0 THEN
-                ' Grey = color 8: GRAM card * 8 + $1800 (bit 12 set, low bits 0)
-                PRINT AT 205, GRAM_FONT_P * 8 + $1800
-                PRINT AT 206, GRAM_FONT_R * 8 + $1800
-                PRINT AT 207, GRAM_FONT_E * 8 + $1800
-                PRINT AT 208, GRAM_FONT_S * 8 + $1800
-                PRINT AT 209, GRAM_FONT_S * 8 + $1800
-                PRINT AT 210, 0  ' space
-                PRINT AT 211, GRAM_FONT_F * 8 + $1800
-                PRINT AT 212, GRAM_FONT_I * 8 + $1800
-                PRINT AT 213, GRAM_FONT_R * 8 + $1800
-                PRINT AT 214, GRAM_FONT_E * 8 + $1800
-            ELSE
-                ' White = color 7: GRAM card * 8 + 7 + $0800
-                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
-                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
-                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 210, 0  ' space
-                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
-                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
-                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
-            END IF
-        END IF
+        GOSUB ShimmerPressFire
     END IF
 SkipPressfire:
 

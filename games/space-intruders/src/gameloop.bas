@@ -31,13 +31,7 @@ GameLoop:
     IF ShakeTimer > 0 THEN
         ShakeTimer = ShakeTimer - 1
         ' Alternate between offset positions for shake
-        IF ShakeTimer AND 2 THEN
-            SCROLL 1, 0
-        ELSEIF ShakeTimer AND 1 THEN
-            SCROLL 0, 1
-        ELSE
-            SCROLL -1, 0
-        END IF
+        GOSUB DoScreenShake
     ELSE
         SCROLL 0, 0  ' Reset to normal when done
     END IF
@@ -77,35 +71,7 @@ GameLoop:
         END IF
 
         ' "PRESS FIRE" shimmer: alternate grey/white every 4 frames (GRAM font)
-        PowerUpType = PowerUpType + 1
-        IF PowerUpType >= 4 THEN
-            PowerUpType = 0
-            WavePhase = WavePhase + 1
-            IF WavePhase >= 4 THEN WavePhase = 0
-            IF WaveColors(WavePhase) = 0 THEN
-                ' Grey = color 8: GRAM card * 8 + $1800 (bit 12 set, low bits 0)
-                PRINT AT 205, GRAM_FONT_P * 8 + $1800
-                PRINT AT 206, GRAM_FONT_R * 8 + $1800
-                PRINT AT 207, GRAM_FONT_E * 8 + $1800
-                PRINT AT 208, GRAM_FONT_S * 8 + $1800
-                PRINT AT 209, GRAM_FONT_S * 8 + $1800
-                PRINT AT 211, GRAM_FONT_F * 8 + $1800
-                PRINT AT 212, GRAM_FONT_I * 8 + $1800
-                PRINT AT 213, GRAM_FONT_R * 8 + $1800
-                PRINT AT 214, GRAM_FONT_E * 8 + $1800
-            ELSE
-                ' White = color 7: GRAM card * 8 + 7 + $0800
-                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
-                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
-                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
-                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
-                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
-            END IF
-        END IF
+        GOSUB ShimmerPressFire
 
         ' --- Zod diamond orbit via flight engine ---
         GOSUB FlightTick
@@ -524,14 +490,7 @@ ChainDone:
                         IF BulletX <= RogueX + 10 THEN
                             #GameFlags = #GameFlags AND $FFFE
                             SPRITE SPR_PBULLET, 0, 0, 0
-                            RogueState = ROGUE_IDLE
-                            RogueTimer = 0 : RogueDivePhase = 0
-                            SPRITE SPR_FLYER, 0, 0, 0
-                            #Mask = 50 : GOSUB AddToScore
-                            #GameFlags = #GameFlags OR FLAG_SHOTLAND
-                            GOSUB BumpChain
-                            SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
-                            SOUND 2, 180, 14
+                            GOSUB DestroyRogue
                             ' Show explosion at rogue position
                             GOSUB ClearPrevExplosion
                             #ExplosionPos = (RogueY - 8) / 8 * 20 + (RogueX - 8) / 8
@@ -745,8 +704,37 @@ ChainDone:
                     ' TinyFont "HIGH" + GROM digits
                     PRINT AT 126, 14 * 8 + COL_YELLOW + $0800
                     PRINT AT 127, 15 * 8 + COL_YELLOW + $0800
-                    ' TODO: Show full 32-bit high score (#HighScoreHigh + #HighScore)
-                    PRINT AT 129 COLOR COL_YELLOW, <>#HighScore
+                    ' 7-digit 32-bit high score as GROM chars at positions 129-135
+                    ' Same 32-bit decomposition as UpdateScoreDisplay (safe for H <= 122)
+                    #Mask = #HighScore / 1000            ' L_th (0-65)
+                    HitRow = #Mask                       ' 8-bit save (max 65)
+                    #Mask = #HighScore - #Mask * 1000    ' L_mod1000 (0-999)
+                    IF #HighScoreHigh > 0 THEN
+                        #Mask = #Mask + #HighScoreHigh * 536
+                        Col = #Mask / 1000               ' carry (0-5)
+                        #Mask = #Mask - Col * 1000       ' total_mod1000 (0-999)
+                        #ScreenPos = HitRow + #HighScoreHigh * 65 + Col  ' total/1000 (0-9999)
+                    ELSE
+                        #ScreenPos = HitRow
+                    END IF
+                    ' D6D5D4D3 from #ScreenPos (total/1000), D2D1D0 from #Mask (total mod 1000)
+                    Col = #ScreenPos / 1000
+                    PRINT AT 129, (16 + Col) * 8 + COL_YELLOW
+                    #ScreenPos = #ScreenPos - Col * 1000
+                    Col = #ScreenPos / 100
+                    PRINT AT 130, (16 + Col) * 8 + COL_YELLOW
+                    #ScreenPos = #ScreenPos - Col * 100
+                    Col = #ScreenPos / 10
+                    PRINT AT 131, (16 + Col) * 8 + COL_YELLOW
+                    Col = #ScreenPos - Col * 10
+                    PRINT AT 132, (16 + Col) * 8 + COL_YELLOW
+                    Col = #Mask / 100
+                    PRINT AT 133, (16 + Col) * 8 + COL_YELLOW
+                    #Mask = #Mask - Col * 100
+                    Col = #Mask / 10
+                    PRINT AT 134, (16 + Col) * 8 + COL_YELLOW
+                    Col = #Mask - Col * 10
+                    PRINT AT 135, (16 + Col) * 8 + COL_YELLOW
                 END IF
                 ' Top chain at row 7 (if achieved a chain)
                 IF ChainMax > 1 THEN
@@ -758,15 +746,7 @@ ChainDone:
                     PRINT AT 152, 47 * 8 + COL_BLUE + $0800   ' digit
                 END IF
                 ' "PRESS FIRE" at row 10, centered using custom font
-                PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
-                PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
-                PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
-                PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
-                PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
-                PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
-                PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
+                GOSUB DrawPressFire_White
                 ' Voice announcement
                 IF VOICE.AVAILABLE THEN
                     VOICE PLAY game_over_phrase
@@ -946,12 +926,12 @@ ChainDone:
     END IF
 
     ' Auto-fire status flash: row 10 center (positions 206-213), 1 second, fast blink
-    ' AND 4 = toggle every 4 frames; green = ON, yellow = OFF, black = blink-off or expired
+    ' AND 2 = toggle every 2 frames (15 Hz); green = ON, yellow = OFF, black = blink-off or expired
     IF AutoFireFlash > 0 THEN
         AutoFireFlash = AutoFireFlash - 1
         IF AutoFireFlash = 0 THEN
             PRINT AT 206 COLOR COL_BLACK, "        "   ' Expired — clear row 10 flash area
-        ELSEIF (AutoFireFlash AND 4) THEN
+        ELSEIF (AutoFireFlash AND 2) THEN
             IF #GameFlags AND FLAG_AUTOFIRE THEN
                 PRINT AT 206 COLOR COL_GREEN, "AUTO  ON"
             ELSE

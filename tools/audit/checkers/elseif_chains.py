@@ -74,8 +74,9 @@ def run(source, lst_info):
             findings.append(Finding(
                 checker=NAME,
                 severity=severity,
-                line=chain_start,
-                end_line=lines[min(j - 1, len(lines) - 1)].number,
+                filename=sl.filename,
+                line=sl.file_line,
+                end_line=lines[min(j - 1, len(lines) - 1)].file_line,
                 message=f'{chain_count}-branch IF/ELSEIF chain on {chain_var}',
                 suggestion=f'Consider ON {chain_var} GOTO/GOSUB or DATA table lookup',
             ))

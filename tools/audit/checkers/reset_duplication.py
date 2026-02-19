@@ -64,10 +64,12 @@ def _check_sprite_hide_blocks(source, findings):
     if len(blocks) >= 2:
         locations = ', '.join(f'L{b[0]}({b[2]} sprites)' for b in blocks)
         severity = SEVERITY_WARN if len(blocks) >= 3 else SEVERITY_INFO
+        first_sl = source.get_line(blocks[0][0])
         findings.append(Finding(
             checker=NAME,
             severity=severity,
-            line=blocks[0][0],
+            filename=first_sl.filename if first_sl else '',
+            line=first_sl.file_line if first_sl else blocks[0][0],
             message=f'{len(blocks)} sprite-hide blocks found: {locations}',
             suggestion='Consider extracting into a HideAllSprites procedure',
         ))
@@ -97,19 +99,23 @@ def _check_sfx_resets(source, findings):
 
     if len(clusters) >= 3:
         locations = ', '.join(f'L{c[0]}' for c in clusters[:5])
+        first_sl = source.get_line(clusters[0][0])
         findings.append(Finding(
             checker=NAME,
             severity=SEVERITY_WARN,
-            line=clusters[0][0],
+            filename=first_sl.filename if first_sl else '',
+            line=first_sl.file_line if first_sl else clusters[0][0],
             message=f'{len(clusters)} SFX reset sequences found: {locations}',
             suggestion='Consider extracting into a SilenceSfx procedure if not already done',
         ))
     elif len(clusters) >= 2:
         locations = ', '.join(f'L{c[0]}' for c in clusters)
+        first_sl = source.get_line(clusters[0][0])
         findings.append(Finding(
             checker=NAME,
             severity=SEVERITY_INFO,
-            line=clusters[0][0],
+            filename=first_sl.filename if first_sl else '',
+            line=first_sl.file_line if first_sl else clusters[0][0],
             message=f'{len(clusters)} SFX reset sequences found: {locations}',
             suggestion='May be worth extracting if pattern grows',
         ))

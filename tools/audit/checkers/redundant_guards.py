@@ -47,7 +47,8 @@ def _check_bosscount_guards(source, findings):
                 findings.append(Finding(
                     checker=NAME,
                     severity=SEVERITY_INFO,
-                    line=sl.number,
+                    filename=sl.filename,
+                    line=sl.file_line,
                     message='BossCount > 0 guard before FOR 0 TO BossCount-1 (FOR handles empty range)',
                     suggestion='The FOR loop body is skipped when BossCount=0; guard is redundant but harmless',
                 ))
@@ -71,15 +72,17 @@ def _check_duplicate_conditions(source, findings):
             if m:
                 cond = m.group(1).strip().lower()
                 cond = re.sub(r'\s+', ' ', cond)
-                conditions.setdefault(cond, []).append(line_num)
+                conditions.setdefault(cond, []).append((line_num, sl.filename, sl.file_line))
 
-        for cond, lines in conditions.items():
-            if len(lines) >= 3:
-                locations = ', '.join(f'L{n}' for n in lines)
+        for cond, line_infos in conditions.items():
+            if len(line_infos) >= 3:
+                locations = ', '.join(f'L{n}' for n, _, _ in line_infos)
+                first_fname, first_fline = line_infos[0][1], line_infos[0][2]
                 findings.append(Finding(
                     checker=NAME,
                     severity=SEVERITY_WARN,
-                    line=lines[0],
-                    message=f'Condition "{cond}" repeated {len(lines)}x in {proc_name} ({locations})',
+                    filename=first_fname,
+                    line=first_fline,
+                    message=f'Condition "{cond}" repeated {len(line_infos)}x in {proc_name} ({locations})',
                     suggestion='Consider restructuring to test this condition once',
                 ))

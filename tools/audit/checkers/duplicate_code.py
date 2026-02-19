@@ -48,7 +48,7 @@ def run(source, lst_info):
             continue
         if RE_SKIP.match(sl.code):
             continue
-        code_lines.append((sl.number, _normalize(sl.code)))
+        code_lines.append((sl.number, sl.filename, sl.file_line, _normalize(sl.code)))
 
     if len(code_lines) < MIN_DUPLICATE_LINES:
         return findings
@@ -60,7 +60,7 @@ def run(source, lst_info):
         seen = defaultdict(list)
 
         for i in range(len(code_lines) - block_size + 1):
-            block = tuple(code_lines[i + j][1] for j in range(block_size))
+            block = tuple(code_lines[i + j][3] for j in range(block_size))
             key = hash(block)
             seen[key].append(i)
 
@@ -80,19 +80,21 @@ def run(source, lst_info):
                 continue
 
             # Verify actual content match (hash collision check)
-            first_block = tuple(code_lines[non_overlapping[0] + j][1]
+            first_block = tuple(code_lines[non_overlapping[0] + j][3]
                                 for j in range(block_size))
             matches = []
             for idx in non_overlapping:
-                block = tuple(code_lines[idx + j][1] for j in range(block_size))
+                block = tuple(code_lines[idx + j][3] for j in range(block_size))
                 if block == first_block:
                     matches.append(idx)
 
             if len(matches) < MIN_DUPLICATE_COUNT:
                 continue
 
-            line_nums = [code_lines[idx][0] for idx in matches]
-            all_duplicates.append((block_size, line_nums))
+            # Store (global_line, filename, file_line) for each match start
+            loc_tuples = [(code_lines[idx][0], code_lines[idx][1], code_lines[idx][2])
+                          for idx in matches]
+            all_duplicates.append((block_size, loc_tuples))
 
     # Deduplicate: keep only the largest blocks per location
     findings = _build_findings(source, all_duplicates)
@@ -111,35 +113,36 @@ def _build_findings(source, all_duplicates):
     covered = set()
     findings = []
 
-    for block_size, line_nums in all_duplicates:
-        # Check if the first occurrence is already covered
-        first_ln = line_nums[0]
-        if first_ln in covered:
+    for block_size, loc_tuples in all_duplicates:
+        # loc_tuples: list of (global_line, filename, file_line)
+        first_gln, first_fname, first_fline = loc_tuples[0]
+        if first_gln in covered:
             continue
 
-        # Mark all lines in all occurrences as covered
-        for ln in line_nums:
+        # Mark all lines in all occurrences as covered (by global line)
+        for gln, _, _ in loc_tuples:
             for offset in range(block_size):
-                covered.add(ln + offset)
+                covered.add(gln + offset)
 
         # Build finding
-        if block_size >= 6 or len(line_nums) >= 4:
+        if block_size >= 6 or len(loc_tuples) >= 4:
             severity = SEVERITY_ERROR
         else:
             severity = SEVERITY_WARN
 
-        first_sl = source.get_line(line_nums[0])
+        first_sl = source.get_line(first_gln)
         first_line_text = first_sl.code if first_sl else ''
         if len(first_line_text) > 60:
             first_line_text = first_line_text[:57] + '...'
 
-        locations = ', '.join(f'L{n}' for n in line_nums)
+        locations = ', '.join(f'{fn}:L{fl}' for _, fn, fl in loc_tuples)
         findings.append(Finding(
             checker=NAME,
             severity=severity,
-            line=line_nums[0],
-            end_line=line_nums[0] + block_size - 1,
-            message=f'{block_size}-line block repeated {len(line_nums)}x at {locations}',
+            filename=first_fname,
+            line=first_fline,
+            end_line=first_fline + block_size - 1,
+            message=f'{block_size}-line block repeated {len(loc_tuples)}x at {locations}',
             suggestion=f'First line: {first_line_text}',
         ))
 

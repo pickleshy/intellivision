@@ -9,10 +9,11 @@ from config import SEVERITY_ORDER
 class Finding:
     checker: str
     severity: str
-    line: int = 0          # 0 means no specific line
+    line: int = 0          # 0 means no specific line (per-file line number)
     end_line: int = 0      # 0 means single line
     message: str = ''
     suggestion: str = ''
+    filename: str = ''     # Short filename (e.g. "player.bas"), empty = unknown
 
 
 # ANSI color codes
@@ -65,6 +66,8 @@ def format_text(findings, use_color=True):
                     loc = f':L{f.line}-{f.end_line}'
                 else:
                     loc = f':L{f.line}'
+            if f.filename:
+                loc = f'  [{f.filename}{loc}]'
 
             lines.append(f'  {sev_tag} {f.message}{loc}')
             if f.suggestion:

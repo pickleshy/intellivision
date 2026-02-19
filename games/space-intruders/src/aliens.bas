@@ -98,6 +98,110 @@ OrbiterHitEffect: PROCEDURE
 END
 
 ' --------------------------------------------
+' KillBossesInBlast - Kill all bosses in 4-wide × 3-tall blast radius
+' Prereq: BombExpRow/BombExpCol set to grid center of explosion
+' --------------------------------------------
+KillBossesInBlast: PROCEDURE
+    FOR LoopVar = 0 TO BossCount - 1
+        IF BossHP(LoopVar) > 0 THEN
+            IF BossRow(LoopVar) >= BombExpRow - 1 THEN
+            IF BossRow(LoopVar) <= BombExpRow + 1 THEN
+                IF BossCol(LoopVar) + 1 >= BombExpCol - 1 THEN
+                IF BossCol(LoopVar) <= BombExpCol + 2 THEN
+                    Row = BossRow(LoopVar)
+                    Col = BossCol(LoopVar)
+                    BossHP(LoopVar) = 0
+                    #Mask = ColMaskData(Col)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
+                    #Mask = ColMaskData(Col + 1)
+                    IF #AlienRow(Row) AND #Mask THEN
+                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                    END IF
+                    #Mask = 10 : GOSUB AddToScore
+                END IF
+                END IF
+            END IF
+            END IF
+        END IF
+    NEXT LoopVar
+    RETURN
+END
+
+' --------------------------------------------
+' TriggerPlayerBomb - Trigger area bomb explosion from player weapon
+' Prereq: AlienGridRow/AlienGridCol set to hit grid position
+' --------------------------------------------
+TriggerPlayerBomb: PROCEDURE
+    IF #GameFlags AND FLAG_BOMB THEN
+        #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
+        IF BombExpTimer = 0 THEN
+            BombExpRow = AlienGridRow
+            BombExpCol = AlienGridCol
+            GOSUB PlayerBombExplode
+        END IF
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' DrawPressFire_Grey - Draw "PRESS FIRE" text in grey (color 8 / $1800)
+' Used on title screen and game-over screen
+' --------------------------------------------
+DrawPressFire_Grey: PROCEDURE
+    PRINT AT 205, GRAM_FONT_P * 8 + $1800
+    PRINT AT 206, GRAM_FONT_R * 8 + $1800
+    PRINT AT 207, GRAM_FONT_E * 8 + $1800
+    PRINT AT 208, GRAM_FONT_S * 8 + $1800
+    PRINT AT 209, GRAM_FONT_S * 8 + $1800
+    PRINT AT 210, 0
+    PRINT AT 211, GRAM_FONT_F * 8 + $1800
+    PRINT AT 212, GRAM_FONT_I * 8 + $1800
+    PRINT AT 213, GRAM_FONT_R * 8 + $1800
+    PRINT AT 214, GRAM_FONT_E * 8 + $1800
+    RETURN
+END
+
+' --------------------------------------------
+' DrawPressFire_White - Draw "PRESS FIRE" text in white (color 7 / COL_WHITE)
+' Used on title screen and game-over screen
+' --------------------------------------------
+DrawPressFire_White: PROCEDURE
+    PRINT AT 205, GRAM_FONT_P * 8 + COL_WHITE + $0800
+    PRINT AT 206, GRAM_FONT_R * 8 + COL_WHITE + $0800
+    PRINT AT 207, GRAM_FONT_E * 8 + COL_WHITE + $0800
+    PRINT AT 208, GRAM_FONT_S * 8 + COL_WHITE + $0800
+    PRINT AT 209, GRAM_FONT_S * 8 + COL_WHITE + $0800
+    PRINT AT 210, 0
+    PRINT AT 211, GRAM_FONT_F * 8 + COL_WHITE + $0800
+    PRINT AT 212, GRAM_FONT_I * 8 + COL_WHITE + $0800
+    PRINT AT 213, GRAM_FONT_R * 8 + COL_WHITE + $0800
+    PRINT AT 214, GRAM_FONT_E * 8 + COL_WHITE + $0800
+    RETURN
+END
+
+' --------------------------------------------
+' ShimmerPressFire - Advance shimmer counter and draw PRESS FIRE in grey or white
+' Uses PowerUpType as counter (0-3), WavePhase for palette index
+' Called every frame from title screen and game-over screen
+' --------------------------------------------
+ShimmerPressFire: PROCEDURE
+    PowerUpType = PowerUpType + 1
+    IF PowerUpType >= 4 THEN
+        PowerUpType = 0
+        WavePhase = WavePhase + 1
+        IF WavePhase >= 4 THEN WavePhase = 0
+        IF WaveColors(WavePhase) = 0 THEN
+            GOSUB DrawPressFire_Grey
+        ELSE
+            GOSUB DrawPressFire_White
+        END IF
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
 ' BombExplode - Chain explosion when bomb alien dies
 ' Expects: FoundBoss = the bomb's slot index (already HP=0)
 ' Kills all aliens in 4-wide × 3-tall blast radius
@@ -121,37 +225,8 @@ BombExplode: PROCEDURE
         #AlienRow(BombExpRow) = #AlienRow(BombExpRow) XOR #Mask
     END IF
 
-    ' --- OPTIMIZATION: Pre-scan bosses in blast radius (4 checks vs 48) ---
-    ' Check each boss once; if in blast radius, kill it now
-    FOR LoopVar = 0 TO BossCount - 1
-        IF BossHP(LoopVar) > 0 THEN
-            ' Check if boss row is in blast radius (BombExpRow-1 to BombExpRow+1)
-            IF BossRow(LoopVar) >= BombExpRow - 1 THEN
-            IF BossRow(LoopVar) <= BombExpRow + 1 THEN
-                ' Check if boss columns overlap blast radius (BombExpCol-1 to BombExpCol+2)
-                ' Boss occupies BossCol and BossCol+1
-                IF BossCol(LoopVar) + 1 >= BombExpCol - 1 THEN
-                IF BossCol(LoopVar) <= BombExpCol + 2 THEN
-                    ' Boss is in blast radius - kill it
-                    Row = BossRow(LoopVar)
-                    Col = BossCol(LoopVar)
-                    BossHP(LoopVar) = 0
-                    ' Clear both boss columns (guarded to prevent resurrection)
-                    #Mask = ColMaskData(Col)
-                    IF #AlienRow(Row) AND #Mask THEN
-                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                    END IF
-                    #Mask = ColMaskData(Col + 1)
-                    IF #AlienRow(Row) AND #Mask THEN
-                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                    END IF
-                    #Mask = 10 : GOSUB AddToScore
-                END IF
-                END IF
-            END IF
-            END IF
-        END IF
-    NEXT LoopVar
+    ' Kill all bosses in blast radius
+    GOSUB KillBossesInBlast
 
     ' XOR out all regular aliens in blast radius (no FindBoss needed now)
     FOR Row = BombExpRow - 1 TO BombExpRow + 1
@@ -205,31 +280,8 @@ END
 PlayerBombExplode: PROCEDURE
     BombExpTimer = 20
 
-    ' Kill bosses in blast radius (4-wide x 3-tall)
-    FOR LoopVar = 0 TO BossCount - 1
-        IF BossHP(LoopVar) > 0 THEN
-            IF BossRow(LoopVar) >= BombExpRow - 1 THEN
-            IF BossRow(LoopVar) <= BombExpRow + 1 THEN
-                IF BossCol(LoopVar) + 1 >= BombExpCol - 1 THEN
-                IF BossCol(LoopVar) <= BombExpCol + 2 THEN
-                    Row = BossRow(LoopVar)
-                    Col = BossCol(LoopVar)
-                    BossHP(LoopVar) = 0
-                    #Mask = ColMaskData(Col)
-                    IF #AlienRow(Row) AND #Mask THEN
-                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                    END IF
-                    #Mask = ColMaskData(Col + 1)
-                    IF #AlienRow(Row) AND #Mask THEN
-                        #AlienRow(Row) = #AlienRow(Row) XOR #Mask
-                    END IF
-                    #Mask = 10 : GOSUB AddToScore
-                END IF
-                END IF
-            END IF
-            END IF
-        END IF
-    NEXT LoopVar
+    ' Kill all bosses in blast radius
+    GOSUB KillBossesInBlast
 
     ' Kill regular aliens in blast radius
     FOR Row = BombExpRow - 1 TO BombExpRow + 1
@@ -304,14 +356,7 @@ CheckOneColumn: PROCEDURE
                         SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
                         SOUND 2, 120, 14
                         ' Bomb weapon: area explosion even on non-kill hit
-                        IF #GameFlags AND FLAG_BOMB THEN
-                            #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
-                            IF BombExpTimer = 0 THEN
-                                BombExpRow = AlienGridRow
-                                BombExpCol = AlienGridCol
-                                GOSUB PlayerBombExplode
-                            END IF
-                        END IF
+                        GOSUB TriggerPlayerBomb
                         RETURN
                     ELSE
                         ' Boss dead! Check type
@@ -377,14 +422,7 @@ CheckOneColumn: PROCEDURE
                 #ExplosionPos = HitRow * 20 + HitCol
                 GOSUB ShowChainExplosion
                 ' Bomb weapon: area explosion on alien kill
-                IF #GameFlags AND FLAG_BOMB THEN
-                    #GameFlags = #GameFlags AND $FFFE  ' Kill bullet
-                    IF BombExpTimer = 0 THEN
-                        BombExpRow = AlienGridRow
-                        BombExpCol = AlienGridCol
-                        GOSUB PlayerBombExplode
-                    END IF
-                END IF
+                GOSUB TriggerPlayerBomb
             END IF
         END IF
     END IF

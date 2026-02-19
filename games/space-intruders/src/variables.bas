@@ -22,7 +22,18 @@ DIM WaveColors(4)               ' 4-color cycle for title screen wave effect
 #ScoreHigh  = 0                 ' Player score (upper 16 bits, max 4.29 billion total)
 #HighScore  = 0                 ' Session high score (lower 16 bits, persists until ROM reset)
 #HighScoreHigh = 0              ' Session high score (upper 16 bits)
+' UNSIGNED on score vars: AddToScore carry detection uses IF #Score < #Mask (unsigned compare
+' needed). Without UNSIGNED, IntyBASIC emits BGE (signed) which fires false carries whenever
+' #Score >= 32768, inflating the display by ~65K per kill after the first 32K points.
+UNSIGNED #Score
+UNSIGNED #ScoreHigh
+UNSIGNED #HighScore
+UNSIGNED #HighScoreHigh
 #NextLife   = 1000              ' Score threshold for next extra life
+' UNSIGNED #NextLife: overflow guard IF #NextLife < 5000 is unsigned; without it, once
+' #NextLife exceeds 32767 (after 7 extra lives) signed comparison treats it as negative
+' and incorrectly caps it at 65535, stopping further extra lives.
+UNSIGNED #NextLife
 Level       = 1                 ' Current wave/level
 Lives       = STARTING_LIVES    ' Player lives remaining
 GameOver    = 0                 ' 0=playing, 3-6=game over phases

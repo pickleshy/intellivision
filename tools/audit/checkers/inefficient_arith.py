@@ -45,7 +45,8 @@ def run(source, lst_info):
             findings.append(Finding(
                 checker=NAME,
                 severity=severity,
-                line=sl.number,
+                filename=sl.filename,
+                line=sl.file_line,
                 message=f'{var} = {var} * 2 — software multiply (~50 cycles)',
                 suggestion=f'Use {var} = {var} + {var} instead (single ADD, ~6 cycles)',
             ))

@@ -315,4 +315,17 @@ FindBossAtCell: PROCEDURE
     RETURN
 END
 
+' --- DoScreenShake: Apply scroll offset based on ShakeTimer bits ---
+' Call while ShakeTimer > 0 (after decrement) to produce shake pattern
+DoScreenShake: PROCEDURE
+    IF ShakeTimer AND 2 THEN
+        SCROLL 1, 0
+    ELSEIF ShakeTimer AND 1 THEN
+        SCROLL 0, 1
+    ELSE
+        SCROLL -1, 0
+    END IF
+    RETURN
+END
+
     ' ============================================================

@@ -63,7 +63,8 @@ def _check_goto_in_loops(source, sl, target_label, target_line, loop_ranges, fin
                 findings.append(Finding(
                     checker=NAME,
                     severity=SEVERITY_WARN,
-                    line=sl.number,
+                    filename=sl.filename,
+                    line=sl.file_line,
                     message=f'GOTO {target_label} inside FOR {var} (L{start}) — target not found, verify manually',
                     suggestion='Ensure the GOTO target is before NEXT (within the loop body)',
                 ))
@@ -72,7 +73,8 @@ def _check_goto_in_loops(source, sl, target_label, target_line, loop_ranges, fin
                 findings.append(Finding(
                     checker=NAME,
                     severity=SEVERITY_CRITICAL,
-                    line=sl.number,
+                    filename=sl.filename,
+                    line=sl.file_line,
                     message=f'GOTO {target_label} exits FOR {var} loop (L{start}-L{end}) — R4 stack leak!',
                     suggestion='Use a sentinel variable and let the FOR loop complete naturally',
                 ))
@@ -86,7 +88,8 @@ def _check_return_in_loops(source, sl, loop_ranges, findings):
             findings.append(Finding(
                 checker=NAME,
                 severity=SEVERITY_CRITICAL,
-                line=sl.number,
+                filename=sl.filename,
+                line=sl.file_line,
                 message=f'RETURN inside FOR {var} loop (L{start}-L{end}) — R4 stack leak!',
                 suggestion='Use a sentinel variable and let the FOR loop complete naturally',
             ))
