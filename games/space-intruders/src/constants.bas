@@ -31,7 +31,7 @@ CONST GRAM_SHIFT1_R0 = 31       ' Shift-1 row 0 (title font N, free during gamep
 CONST GRAM_SHIFT1_R1 = 32       ' Shift-1 row 1 (title font T, free during gameplay)
 CONST GRAM_SHIFT1_R2 = 37       ' Shift-1 row 2 (star 1, title only)
 CONST GRAM_SHIFT1_R3 = 38       ' Shift-1 row 3 (star 2, title only)
-CONST GRAM_SHIFT1_R4 = 47       ' Shift-1 row 4 (free slot)
+CONST GRAM_ORBITER   = 47       ' Orbiter sprite card (SmallCrabF1Gfx, defined at StartGame)
 ' Shift-2: Limited to rows 0-2 only (rows 3-4 use shift-1 or snap)
 CONST GRAM_SHIFT2_BASE = 42     ' Shift-2 rows 0-2 in cards 42-44 (saucer freed!)
 CONST GRAM_BULLET   = 8         ' Bullet graphic

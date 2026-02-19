@@ -145,10 +145,9 @@ END
 ' MoveBullet - Update bullet position and check collisions
 ' --------------------------------------------
 MoveBullet: PROCEDURE
-    ' Check collision FIRST at current position (so bullet is visible at hit point)
-    GOSUB CheckBulletHit
-
-    ' Check orbiter collisions (both slots, shared effect handler)
+    ' Check orbiter collisions FIRST (orbiters intercept bullets before the alien grid does,
+    ' because the orbit path often overlaps formation cells — prioritizing orbiters ensures
+    ' the visible sprite, not a hidden alien, receives the hit)
     IF OrbitStep < 10 THEN
     IF #GameFlags AND FLAG_BULLET THEN
         Col = BossCol(0) + OrbitDX(OrbitStep) - 1
@@ -158,6 +157,7 @@ MoveBullet: PROCEDURE
         IF HitCol = ALIEN_START_X + AlienOffsetX + Col THEN
             IF HitRow = ALIEN_START_Y + AlienOffsetY + Row THEN
                 GOSUB OrbiterHitEffect
+                OrbiterDeathTimer = 1
                 OrbitStep = 255
             END IF
         END IF
@@ -172,11 +172,16 @@ MoveBullet: PROCEDURE
         IF HitCol = ALIEN_START_X + AlienOffsetX + Col THEN
             IF HitRow = ALIEN_START_Y + AlienOffsetY + Row THEN
                 GOSUB OrbiterHitEffect
+                OrbiterDeathTimer = 1
                 OrbitStep2 = 255
             END IF
         END IF
     END IF
     END IF
+
+    ' Check alien grid collision (after orbiters, so their sprite takes priority over any
+    ' alien sharing the same grid cell)
+    GOSUB CheckBulletHit
 
     ' Then move bullet up (rapid fire = 3px, bomb/beam = 2px, normal = 1.25px)
     IF #GameFlags AND FLAG_BULLET THEN

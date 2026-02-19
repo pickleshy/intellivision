@@ -118,6 +118,7 @@ RowBoss2       = 255               ' Cached: 2nd boss index on current row (255=
 DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each beam activation)
 OrbitStep      = 255               ' Orbiter path index (0-9 = active, 255 = inactive)
 OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
+OrbiterDeathTimer = 0             ' Cleanup flag: set to 1 at kill, cleared after sprite hidden
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
 WaveColor1     = 1                 ' Crab color (row 1) — default blue
 WaveColor2     = 5                 ' Octopus color (row 2) — default green

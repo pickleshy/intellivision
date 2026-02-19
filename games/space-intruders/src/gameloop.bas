@@ -317,7 +317,7 @@ GameLoop:
     ' Single DrawAliens call per frame (shimmer, reveal, or march)
     IF NeedRedraw THEN GOSUB DrawAliens
     ' Orbiter draws on top of grid (after DrawAliens clears empty cells)
-    IF OrbitStep < 10 OR OrbitStep2 < 10 THEN GOSUB UpdateOrbiter
+    IF OrbitStep < 10 OR OrbitStep2 < 10 OR OrbiterDeathTimer > 0 THEN GOSUB UpdateOrbiter
 
     ' (Relentless wave mechanic is now handled in CheckWaveWin → ReloadHorde)
 

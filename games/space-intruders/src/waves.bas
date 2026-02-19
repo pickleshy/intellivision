@@ -684,10 +684,11 @@ LoadPatternB: PROCEDURE
         BossCol(1) = 5 : BossRow(1) = 2
         BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ELSEIF LoopVar = 2 THEN
-        ' Wave 3: 1 bomb boss
+        ' Wave 3: 1 bomb boss + 1 orbiter
         BossCount = 1
         BossCol(0) = 3 : BossRow(0) = 1
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
+        OrbitStep = 0
     ELSEIF LoopVar = 3 THEN
         ' Wave 4: 2 bomb bosses + 2 orbiters
         BossCount = 2

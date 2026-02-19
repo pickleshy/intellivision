@@ -74,6 +74,8 @@ StartGame:
     WAIT
     DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx ' Card 46
     WAIT
+    DEFINE GRAM_ORBITER, 1, SmallCrabF1Gfx ' Card 47: orbiter sprite (small crab)
+    WAIT
     DEFINE GRAM_CAP_F1, 4, CapsuleF1Gfx   ' Cards 48-51
     WAIT
     DEFINE GRAM_ZIGZAG1, 2, ZigzagF1Gfx   ' Cards 52-53

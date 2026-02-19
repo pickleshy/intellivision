@@ -9,69 +9,51 @@
 ' === Alien Grid System ===
 
 ' --------------------------------------------
-' UpdateOrbiter - Move BACKTAB alien around bomb boss in square path
-' Draws after DrawAliens so it overwrites the 0 that DrawAliens puts there
+' UpdateOrbiter - Sprite crab orbiting bomb boss (SPR_FLYER, GRAM_ORBITER card 47)
+' SmallCrabF1Gfx defined on card 47 at StartGame.
+' Both orbiters alternate SPR_FLYER each frame (30fps each) when both active.
+' Path: 10-step clockwise square around the 2-wide boss. OrbitDX/OrbitDY biased +1.
 ' --------------------------------------------
 UpdateOrbiter: PROCEDURE
-    ' Process both orbiters via shared helper (FoundBoss=slot, HitRow=step temp)
+    ' Advance OrbitStep every 8 frames; deactivate when boss is dead
     IF OrbitStep < 10 THEN
-        FoundBoss = 0 : HitRow = OrbitStep
-        GOSUB ProcessOneOrbiter
-        OrbitStep = HitRow
+        IF BossHP(0) = 0 THEN
+            OrbitStep = 255
+        ELSEIF ShimmerCount = 0 OR ShimmerCount = 8 THEN
+            OrbitStep = OrbitStep + 1
+            IF OrbitStep >= 10 THEN OrbitStep = 0
+        END IF
     END IF
+    ' Advance OrbitStep2 every 8 frames; deactivate when boss is dead
     IF OrbitStep2 < 10 THEN
-        FoundBoss = 1 : HitRow = OrbitStep2
-        GOSUB ProcessOneOrbiter
-        OrbitStep2 = HitRow
+        IF BossHP(1) = 0 THEN
+            OrbitStep2 = 255
+        ELSEIF ShimmerCount = 0 OR ShimmerCount = 8 THEN
+            OrbitStep2 = OrbitStep2 + 1
+            IF OrbitStep2 >= 10 THEN OrbitStep2 = 0
+        END IF
     END IF
-    RETURN
-END
-
-' --------------------------------------------
-' ProcessOneOrbiter - Shared orbiter update logic
-' Input: FoundBoss = boss slot (0 or 1), HitRow = orbit step
-' Output: HitRow = updated orbit step (255 = deactivated)
-' --------------------------------------------
-ProcessOneOrbiter: PROCEDURE
-    IF BossHP(FoundBoss) = 0 THEN
-        ' Clear last drawn position before deactivating
-        Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
-        Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-        LoopVar = ALIEN_START_Y + AlienOffsetY + Row
-        IF LoopVar <= 12 THEN
-            #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
-            IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
+    ' Position SPR_FLYER; alternate between orbiters each frame when both active
+    IF OrbitStep < 10 THEN
+        IF OrbitStep2 < 10 AND (ShimmerCount AND 1) THEN
+            ' Both active, odd frame: show orbiter 1
+            Col = AlienOffsetX + BossCol(1) + OrbitDX(OrbitStep2) - 1
+            Row = AlienOffsetY + BossRow(1) + OrbitDY(OrbitStep2)
+        ELSE
+            ' Orbiter 0 only, or even frame: show orbiter 0
+            Col = AlienOffsetX + BossCol(0) + OrbitDX(OrbitStep) - 1
+            Row = AlienOffsetY + BossRow(0) + OrbitDY(OrbitStep)
         END IF
-        HitRow = 255
+        SPRITE SPR_FLYER, Col * 8 + 8 + SPR_VISIBLE, Row * 8 + 8, GRAM_ORBITER * 8 + COL_YELLOW + $0800
+    ELSEIF OrbitStep2 < 10 THEN
+        ' Only orbiter 1 active
+        Col = AlienOffsetX + BossCol(1) + OrbitDX(OrbitStep2) - 1
+        Row = AlienOffsetY + BossRow(1) + OrbitDY(OrbitStep2)
+        SPRITE SPR_FLYER, Col * 8 + 8 + SPR_VISIBLE, Row * 8 + 8, GRAM_ORBITER * 8 + COL_YELLOW + $0800
     ELSE
-        ' Advance orbit every 8 frames (piggyback on ShimmerCount)
-        IF ShimmerCount = 0 OR ShimmerCount = 8 THEN
-            Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
-            Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-            LoopVar = ALIEN_START_Y + AlienOffsetY + Row
-            IF LoopVar <= 12 THEN
-                #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
-                IF #ScreenPos < 220 THEN PRINT AT #ScreenPos, 0
-            END IF
-            HitRow = HitRow + 1
-            IF HitRow >= 10 THEN HitRow = 0
-        END IF
-        ' Draw orbiter at current position
-        Col = BossCol(FoundBoss) + OrbitDX(HitRow) - 1
-        Row = BossRow(FoundBoss) + OrbitDY(HitRow) - 1
-        LoopVar = ALIEN_START_Y + AlienOffsetY + Row
-        IF LoopVar <= 12 THEN
-            #ScreenPos = Row20Data(LoopVar) + ALIEN_START_X + AlienOffsetX + Col
-            IF #ScreenPos < 220 THEN
-                ' Use alien type matching boss row (crab for rows 0-2, beetle for 3-4)
-                IF BossRow(FoundBoss) < 3 THEN
-                    #Card = (GRAM_ALIEN2 + AnimFrame) * 8 + BossColor(FoundBoss) + $0800
-                ELSE
-                    #Card = (GRAM_ALIEN4 + AnimFrame) * 8 + BossColor(FoundBoss) + $0800
-                END IF
-                PRINT AT #ScreenPos, #Card
-            END IF
-        END IF
+        ' Both orbiters inactive — hide sprite and clear cleanup flag
+        SPRITE SPR_FLYER, 0, 0, 0
+        OrbiterDeathTimer = 0
     END IF
     RETURN
 END
@@ -79,8 +61,27 @@ END
 ' --------------------------------------------
 ' OrbiterHitEffect - Shared explosion/score/chain/SFX for orbiter kills
 ' Input: HitRow, HitCol = grid position of hit
+' Shows same BACKTAB explosion flash as regular alien deaths.
 ' --------------------------------------------
 OrbiterHitEffect: PROCEDURE
+    ' Kill any alive alien at this grid position so the cell stays blank after
+    ' the explosion fades (otherwise DrawAliens redraws the alive alien every frame,
+    ' making it look like the orbiter survived the hit).
+    IF HitRow >= ALIEN_START_Y + AlienOffsetY THEN
+        IF HitRow < ALIEN_START_Y + AlienOffsetY + ALIEN_ROWS THEN
+            IF HitCol >= ALIEN_START_X + AlienOffsetX THEN
+                IF HitCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
+                    AlienGridRow = HitRow - ALIEN_START_Y - AlienOffsetY
+                    AlienGridCol = HitCol - ALIEN_START_X - AlienOffsetX
+                    #Mask = ColMaskData(AlienGridCol)
+                    IF #AlienRow(AlienGridRow) AND #Mask THEN
+                        #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+    ' Explosion flash
     #ScreenPos = HitRow * 20 + HitCol
     IF #ScreenPos < 220 THEN
         GOSUB ClearPrevExplosion
