@@ -854,6 +854,35 @@ DrawAliens: PROCEDURE
 END
 
 ' --------------------------------------------
+' DrawWaveBanner - Render wave announcement text
+' Called from game loop banner overlay block
+' WaveAnnouncerType: 1=WAVE X, 2=ALERT!, 3=INCOMING HORDE!
+' --------------------------------------------
+DrawWaveBanner: PROCEDURE
+    IF WaveAnnouncerType = 1 THEN
+        PRINT AT 107 COLOR 6, "WAVE "
+        PRINT AT 112 COLOR 6, <> Level
+    ELSEIF WaveAnnouncerType = 2 THEN
+        PRINT AT 107 COLOR COL_RED, "ALERT!"
+    ELSE
+        PRINT AT 103 COLOR 6, "INCOMING HORDE!"
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
+' ClearWaveBanner - Erase wave announcement text
+' --------------------------------------------
+ClearWaveBanner: PROCEDURE
+    IF WaveAnnouncerType = 3 THEN
+        PRINT AT 103, "               "
+    ELSE
+        PRINT AT 107, "       "
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
 ' CheckWaveWin - Check if all aliens are dead
 ' --------------------------------------------
 ' --------------------------------------------

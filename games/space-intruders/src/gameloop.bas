@@ -397,6 +397,20 @@ GameLoop:
         NEXT Row
     END IF
 
+    ' Wave announcement overlay (banner displays DURING alien entrance animation)
+    ' DrawWaveBanner / ClearWaveBanner are in Seg 2 (cross-segment GOSUB OK with MAP 2)
+    IF WaveAnnouncerTimer > 0 THEN
+        WaveAnnouncerTimer = WaveAnnouncerTimer - 1
+        AlienCard = 0
+        IF WaveAnnouncerTimer > 20 THEN AlienCard = 1
+        IF WaveAnnouncerTimer AND 4 THEN AlienCard = 1
+        IF AlienCard THEN
+            GOSUB DrawWaveBanner
+        ELSE
+            GOSUB ClearWaveBanner
+        END IF
+    END IF
+
     ' Chain reaction laser SFX decay (takes priority over regular SFX)
     IF ChainTimer > 0 THEN
         ChainTimer = ChainTimer - 1

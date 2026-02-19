@@ -119,6 +119,8 @@ DIM BossBeamHit(MAX_BOSSES)        ' Beam damage tracker per boss (reset each be
 OrbitStep      = 255               ' Orbiter path index (0-9 = active, 255 = inactive)
 OrbitStep2     = 255               ' Second orbiter path index (boss slot 1)
 OrbiterDeathTimer = 0             ' Cleanup flag: set to 1 at kill, cleared after sprite hidden
+WaveAnnouncerTimer = 0            ' Wave banner countdown (0=inactive, 1-90=active)
+WaveAnnouncerType  = 0            ' Banner type: 0=none, 1=WAVE X, 2=ALERT!, 3=INCOMING HORDE!
 WaveColor0     = 6                 ' Squid color (row 0) — default yellow
 WaveColor1     = 1                 ' Crab color (row 1) — default blue
 WaveColor2     = 5                 ' Octopus color (row 2) — default green

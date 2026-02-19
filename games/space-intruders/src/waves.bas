@@ -964,30 +964,14 @@ LoadPatternB: PROCEDURE
     ' Redraw HUD (cleared by above loop at row 11)
     GOSUB DrawHUD
 
-    ' Visual/audio cue: "ALERT!" flash
-    PRINT AT 107 COLOR COL_RED, "ALERT!"
+    ' Brief audio cue + banner overlay (displays during fly-down entrance animation)
     SOUND 2, 200, 12
-    FOR LoopVar = 0 TO 20
-        WAIT
-    NEXT LoopVar
-    SOUND 2, 100, 14
-    FOR LoopVar = 0 TO 15
+    FOR LoopVar = 0 TO 3
         WAIT
     NEXT LoopVar
     SOUND 2, , 0
-
-    ' Flash-off
-    FOR LoopVar = 0 TO 5
-        IF (LoopVar AND 1) = 0 THEN
-            PRINT AT 107, "      "
-        ELSE
-            PRINT AT 107 COLOR COL_RED, "ALERT!"
-        END IF
-        FOR Row = 0 TO 3
-            WAIT
-        NEXT Row
-    NEXT LoopVar
-    PRINT AT 107, "      "
+    WaveAnnouncerTimer = 50
+    WaveAnnouncerType = 2
 
     RETURN
 END
@@ -1068,19 +1052,12 @@ ReloadHorde: PROCEDURE
     WaveRevealRow = 6  ' Rows hidden above (counts DOWN to 0)
     RightRevealCol = ALIEN_COLS - 1
     NeedRedraw = 0  ' Reset reveal-complete gate
-    ' Announcement: "INCOMING HORDE!" — rapid flash + Intellivoice
+    ' Fire-and-forget voice, banner overlay drives display during entrance animation
     IF VOICE.AVAILABLE THEN
         VOICE PLAY reinforce_phrase
     END IF
-    FOR LoopVar = 0 TO 47
-        WAIT
-        IF (LoopVar AND 4) = 0 THEN
-            PRINT AT 103 COLOR 6, "INCOMING HORDE!"  ' Row 5 col 3, yellow
-        ELSE
-            PRINT AT 103, "               "           ' 15 spaces
-        END IF
-    NEXT LoopVar
-    PRINT AT 103, "               "                   ' Final clear
+    WaveAnnouncerTimer = 50
+    WaveAnnouncerType = 3
     RETURN
 END
 
@@ -1307,42 +1284,22 @@ StartNewWave: PROCEDURE
     DEFINE GRAM_WARP1, 3, WarpInGfx1    ' Cards 34-36: Warp-in animation
     WAIT
 
-    ' Phase A: Breather pause (blank screen + HUD only)
-    FOR LoopVar = 0 TO 30
-        WAIT
-    NEXT LoopVar
-
-    ' Phase B: Voice announcement + Banner display
-    ' Fire-and-forget voice (VOICE WAIT hangs on MiSTer FPGA hardware)
+    ' Fire-and-forget voice + music, then launch banner overlay (displays during entrance)
     IF VOICE.AVAILABLE THEN
         VOICE PLAY wave_phrase        ' Say "WAVE"
         VOICE NUMBER Level            ' Say the number
     END IF
-    PRINT AT 107 COLOR 6, "WAVE "     ' Yellow, centered row 5 col 7
-    PRINT AT 112, <> Level
-    ' Start music for new wave (speech finishes during 90-frame pause below)
     IF MusicGear >= 1 THEN
         PLAY si_bg_mid
     ELSE
         PLAY si_bg_slow
     END IF
-    FOR LoopVar = 0 TO 90
+    WaveAnnouncerTimer = 90
+    WaveAnnouncerType = 1
+    ' Brief pause for CLS to settle before entrance animation begins
+    FOR LoopVar = 0 TO 13
         WAIT
     NEXT LoopVar
-
-    ' Phase C: Flash-off (blink then vanish)
-    FOR LoopVar = 0 TO 7
-        IF (LoopVar AND 1) = 0 THEN
-            PRINT AT 107, "       "   ' Hide
-        ELSE
-            PRINT AT 107 COLOR 6, "WAVE "
-            PRINT AT 112, <> Level
-        END IF
-        FOR Row = 0 TO 4
-            WAIT
-        NEXT Row
-    NEXT LoopVar
-    PRINT AT 107, "       "           ' Final clear
 
     RETURN
 END
