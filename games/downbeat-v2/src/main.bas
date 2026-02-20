@@ -18,7 +18,7 @@
     CONST NOTE_SPAWN_X = 168    ' Just off right edge
     CONST SCROLL_FRAC = 171     ' Fractional speed per frame (171/256)
                                 ' Total: 1 + 171/256 = 1.668 px/frame = 100 px/sec
-    CONST MAX_HITS = 3
+    CONST MAX_HITS = 5
     CONST FRAMES_PER_NOTE = 9   ' 16th note at 100 BPM (150ms per position)
     CONST MELODY_LENGTH = 128   ' Total 16th-note positions in full A strain (16 bars)
     CONST NOTE_VOLUME = 10      ' Background melody volume
@@ -27,13 +27,17 @@
 
     ' Sprite register flags
     CONST SPR_VISIBLE = $0200
-    CONST SPR_YRES    = $0080   ' True 8x16 (two consecutive GRAM cards)
+    CONST SPR_YSIZE   = $0100   ' Double-height (stretches 8x8 to 8x16)
 
     ' --- Variables ---
     PlayerY = GROUND_Y
     JumpActive = 0
     JumpFrame = 0
-    HitCount = 0
+    FloatUsed = 0
+    FloatActive = 0
+    FloatTimer = 0
+    HitCount = MAX_HITS - 3     ' Start with 3 of 5 hearts
+    DamageTaken = 0
     GameOver = 0
     SfxTimer = 0
     ButtonReleased = 1
@@ -49,15 +53,36 @@
     #PrevPSG = 0
     MelodyMute = 0
 
-    ' Note arrays (7 slots for MOBs 1-7)
-    DIM NoteActive(7)
-    DIM NoteX(7)
-    DIM NoteFrac(7)
-    DIM NoteCleared(7)
-    DIM #NotePitch(7)           ' PSG period for each obstacle (16-bit)
-    DIM NoteColor(7)            ' Color per note slot (for varied colors)
+    ' Note arrays (4 slots for MOBs 1-4; MOB 5=flower, MOBs 6-7=pencils)
+    DIM NoteActive(4)
+    DIM NoteX(4)
+    DIM NoteFrac(4)
+    DIM NoteCleared(4)
+    DIM #NotePitch(4)           ' PSG period for each obstacle (16-bit)
+    DIM NoteColor(4)            ' Color per note slot (for varied colors)
     DIM JumpMap(128)            ' Rehearsal: record jump positions
-    NoteColorIdx = 0            ' Cycling index into NoteColorPalette
+
+
+    ' Pencil system (Level 2: falling pencils)
+    DIM PencilState(2)          ' 0=inactive, 1=falling
+    DIM PencilX(2)
+    DIM PencilY(2)
+    DIM PencilFrac(2)           ' Fall tick (falling) / scroll fraction (grounded)
+    DIM PencilCleared(2)        ' Collision flag
+    PencilSpawnTimer = 0
+    PencilsSpawned = 0
+
+    ' Flower system (Level 2: healing power-up)
+    FlowerState = 0             ' 0=inactive, 1=drifting
+    FlowerX = 0
+    FlowerY = 0
+    FlowerDriftY = 0            ' Fractional Y accumulator (slow vertical drift)
+    FlowerSpawnTimer = 0
+    FlowersSpawned = 0
+
+    ' Level selector
+    CurrentLevel = 0
+    #LevelOffset = 0
 
     ' --- Color Stack mode: all black ---
     MODE 0, 0, 0, 0, 0
@@ -68,7 +93,11 @@ RestartGame:
     PlayerY = GROUND_Y
     JumpActive = 0
     JumpFrame = 0
-    HitCount = 0
+    FloatUsed = 0
+    FloatActive = 0
+    FloatTimer = 0
+    HitCount = MAX_HITS - 3     ' Start with 3 of 5 hearts
+    DamageTaken = 0
     GameOver = 0
     SfxTimer = 0
     ButtonReleased = 1
@@ -79,7 +108,6 @@ RestartGame:
     #CurPSG = 0
     #PrevPSG = 0
     MelodyMute = 0
-    NoteColorIdx = 0
     SOUND 0, 0, 0
     SOUND 1, 0, 0
 
@@ -87,24 +115,12 @@ RestartGame:
     CLS
     WAIT
 
-    ' --- Define GRAM cards 0-6 (player x2, ground, note, heart) ---
-    DEFINE 0, 4, GramPlayerData     ' Cards 0-3: standing + jumping
+    ' --- Define GRAM cards 0-6 (player, ground, note, heart, celebration, pencil, flower) ---
+    DEFINE 0, 7, GramData
     WAIT
-    DEFINE 4, 3, GramWorldData      ' Cards 4-6: ground, note, heart
-    WAIT
-
-    ' --- Draw HUD: 3 red hearts at top-right ---
-    FOR Col = 0 TO 2
-        PRINT AT 17 + Col, 6 * 8 + 2 + $0800  ' GRAM card 6, RED
-    NEXT Col
-
-    ' --- Draw ground line (Row 7, positions 140-159) ---
-    FOR Col = 0 TO 19
-        PRINT AT 140 + Col, 4 * 8 + 7 + $0800 ' GRAM card 4, WHITE
-    NEXT Col
 
     ' --- Initialize all note slots ---
-    FOR Slot = 0 TO 6
+    FOR Slot = 0 TO 3
         NoteActive(Slot) = 0
         NoteCleared(Slot) = 0
         #NotePitch(Slot) = 0
@@ -112,17 +128,56 @@ RestartGame:
         SPRITE Slot + 1, 0, 0, 0
     NEXT Slot
 
+    ' --- Initialize pencil slots ---
+    PencilSpawnTimer = RANDOM(120) + 150
+    PencilsSpawned = 0
+    FOR Slot = 0 TO 1
+        PencilState(Slot) = 0
+        PencilCleared(Slot) = 0
+        SPRITE Slot + 6, 0, 0, 0
+    NEXT Slot
+
+    ' --- Initialize flower ---
+    FlowerState = 0
+    FlowerSpawnTimer = RANDOM(120) + 60
+    FlowersSpawned = 0
+    SPRITE 5, 0, 0, 0
+
     ' --- Initialize jump recording ---
     FOR Slot = 0 TO 127
         JumpMap(Slot) = 0
     NEXT Slot
 
-    ' --- Wait for player to start ---
-    PRINT AT 104 COLOR 7, "PRESS BUTTON"
-WaitStart:
+    ' --- Hide player sprite for level selector ---
+    SPRITE 0, 0, 0, 0
+
+    ' --- Level selector ---
+    PRINT AT 25 COLOR 7, "DOWNBEAT!"
+    PRINT AT 85 COLOR 5, "SELECT LEVEL"
+    PRINT AT 102 COLOR 6, "1 MAPLE LEAF RAG"
+    PRINT AT 122 COLOR 3, "2 PENCIL DROP"
+    PRINT AT 142 COLOR 3, "3 LEVEL 3"
+
+LevelSelect:
     WAIT
-    IF CONT.BUTTON = 0 THEN GOTO WaitStart
-    PRINT AT 104, "            "
+    IF CONT.key = 1 THEN CurrentLevel = 0 : GOTO LevelConfirm
+    IF CONT.key = 2 THEN CurrentLevel = 1 : GOTO LevelConfirm
+    IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO LevelConfirm
+    GOTO LevelSelect
+
+LevelConfirm:
+    #LevelOffset = LevelOffsets(CurrentLevel)
+    CLS
+    WAIT
+    ' Redraw HUD after CLS — only show hearts the player has
+    FOR Col = 0 TO MAX_HITS - 1
+        IF Col < MAX_HITS - HitCount THEN
+            PRINT AT HeartPositions(Col), 3 * 8 + 4 + $0800 + $1000
+        END IF
+    NEXT Col
+    FOR Col = 0 TO 19
+        PRINT AT 140 + Col, 1 * 8 + 7 + $0800
+    NEXT Col
 
     ' ==========================================
     ' Main loop
@@ -150,7 +205,7 @@ MainLoop:
             SpawnCountdown = FRAMES_PER_NOTE
 
             ' Layer A: Background melody (always plays)
-            #CurPSG = MelodyPSG(BeatCounter)
+            #CurPSG = AllMelodyData(#LevelOffset + BeatCounter)
             IF #CurPSG > 0 THEN
                 IF #CurPSG = #PrevPSG THEN
                     SOUND 0, , 0           ' Mute 1 frame for retrigger
@@ -168,10 +223,10 @@ MainLoop:
             ' Spawn early so obstacle arrives at player when melody beat plays
             SpawnBeat = BeatCounter + SPAWN_OFFSET
             IF SpawnBeat < MELODY_LENGTH THEN
-                CurObstacle = ObstacleMap(SpawnBeat)
+                CurObstacle = AllObstacleData(#LevelOffset + SpawnBeat)
                 IF CurObstacle = 1 THEN
                     FreeSlot = 255
-                    FOR Slot = 0 TO 6
+                    FOR Slot = 0 TO 3
                         IF NoteActive(Slot) = 0 THEN
                             IF FreeSlot = 255 THEN FreeSlot = Slot
                         END IF
@@ -182,11 +237,8 @@ MainLoop:
                         NoteFrac(FreeSlot) = 0
                         NoteCleared(FreeSlot) = 0
                         ' Pitch from arrival beat (what player hears)
-                        #NotePitch(FreeSlot) = MelodyPSG(SpawnBeat)
-                        ' Assign cycling color from palette
-                        NoteColor(FreeSlot) = NoteColorPalette(NoteColorIdx)
-                        NoteColorIdx = NoteColorIdx + 1
-                        IF NoteColorIdx >= 5 THEN NoteColorIdx = 0
+                        #NotePitch(FreeSlot) = AllMelodyData(#LevelOffset + SpawnBeat)
+                        NoteColor(FreeSlot) = 1  ' Cyan (pastel 9) — low 3 bits
                     END IF
                 END IF
             END IF
@@ -196,16 +248,90 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Input: jump (require button release between jumps) ---
+    ' --- Pencil spawn (Level 2 only) ---
+    IF CurrentLevel = 1 THEN
+        IF PencilsSpawned < 2 AND SongDone = 0 THEN
+            IF BeatCounter >= 20 AND BeatCounter < 108 THEN
+                IF PencilSpawnTimer > 0 THEN
+                    PencilSpawnTimer = PencilSpawnTimer - 1
+                END IF
+                IF PencilSpawnTimer = 0 THEN
+                    ' Don't spawn while another pencil is falling
+                    IF PencilState(0) = 1 OR PencilState(1) = 1 THEN
+                        PencilSpawnTimer = 15  ' Retry shortly
+                    ELSE
+                    FreeSlot = 255
+                    FOR Slot = 0 TO 1
+                        IF PencilState(Slot) = 0 THEN
+                            IF FreeSlot = 255 THEN FreeSlot = Slot
+                        END IF
+                    NEXT Slot
+                    IF FreeSlot < 255 THEN
+                        PencilState(FreeSlot) = 1
+                        PencilX(FreeSlot) = RANDOM(60) + 100
+                        PencilY(FreeSlot) = 0
+                        PencilFrac(FreeSlot) = 0
+                        PencilCleared(FreeSlot) = 0
+                        PencilsSpawned = PencilsSpawned + 1
+                        PencilSpawnTimer = RANDOM(180) + 300
+                    ELSE
+                        PencilSpawnTimer = 30  ' Retry in 0.5 sec
+                    END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' --- Flower spawn (Level 2 only) ---
+    IF CurrentLevel = 1 THEN
+        IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 THEN
+            IF BeatCounter >= 55 AND BeatCounter < 95 THEN
+                IF FlowerSpawnTimer > 0 THEN
+                    FlowerSpawnTimer = FlowerSpawnTimer - 1
+                END IF
+                IF FlowerSpawnTimer = 0 THEN
+                    ' Don't spawn while a pencil is falling
+                    IF PencilState(0) = 1 OR PencilState(1) = 1 THEN
+                        FlowerSpawnTimer = 30
+                    ELSE
+                        FlowerState = 1
+                        FlowerX = RANDOM(60) + 80
+                        FlowerY = 0
+                        FlowerDriftY = 0
+                        FlowersSpawned = FlowersSpawned + 1
+                        FlowerSpawnTimer = RANDOM(180) + 300
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' --- Input: jump + peak float ---
+    ' First press starts jump. Second press near peak (frames 15-20)
+    ' triggers float: snap to peak height, hang 10 frames, then descend.
     IF CONT.BUTTON THEN
         IF ButtonReleased THEN
             IF JumpActive = 0 THEN
                 JumpActive = 1
                 JumpFrame = 0
+                FloatUsed = 0
                 ButtonReleased = 0
                 ' Record jump position for rehearsal
                 IF BeatCounter < MELODY_LENGTH THEN
                     JumpMap(BeatCounter) = 1
+                END IF
+            ELSEIF FloatUsed < 3 THEN
+                IF FloatActive = 0 THEN
+                    IF JumpFrame >= 15 THEN
+                        IF JumpFrame <= 20 THEN
+                            ' Trigger float: hang at peak (up to 3 per jump)
+                            FloatActive = 1
+                            FloatTimer = 10
+                            FloatUsed = FloatUsed + 1
+                            ButtonReleased = 0
+                        END IF
+                    END IF
                 END IF
             END IF
         END IF
@@ -213,29 +339,40 @@ MainLoop:
         ButtonReleased = 1
     END IF
 
-    ' --- Update jump ---
+    ' --- Update jump (with peak float) ---
     IF JumpActive THEN
-        PlayerY = GROUND_Y - JumpArc(JumpFrame)
-        JumpFrame = JumpFrame + 1
-        IF JumpFrame >= JUMP_FRAMES THEN
-            JumpActive = 0
-            PlayerY = GROUND_Y
+        IF FloatActive THEN
+            ' Hanging at peak height
+            PlayerY = GROUND_Y - 20
+            FloatTimer = FloatTimer - 1
+            IF FloatTimer = 0 THEN
+                FloatActive = 0
+                JumpFrame = 18     ' Resume descent from here
+            END IF
+        ELSE
+            PlayerY = GROUND_Y - JumpArc(JumpFrame)
+            JumpFrame = JumpFrame + 1
+            IF JumpFrame >= JUMP_FRAMES THEN
+                JumpActive = 0
+                FloatActive = 0
+                PlayerY = GROUND_Y
+            END IF
         END IF
     END IF
 
-    ' --- Update player sprite (8x16 via YRES: cards 0-1 stand, 2-3 jump) ---
-    IF JumpActive THEN
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YRES, 2 * 8 + 2 + $0800
+    ' --- Update player sprite (8x8 stretched to 8x16 via YSIZE) ---
+    IF SongEndTimer > 0 AND DamageTaken = 0 THEN
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 4 * 8 + 2 + $0800
     ELSE
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YRES, 0 * 8 + 2 + $0800
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 0 * 8 + 2 + $0800
     END IF
 
     ' --- Scroll obstacles ---
     ' Fixed-point scrolling: each frame adds SCROLL_FRAC (171) to NoteFrac.
     ' When NoteFrac overflows 256, move 2px instead of 1px.
     ' Effective speed: 1 + 171/256 = 1.668 px/frame ≈ 100 px/sec.
-    ' 7 sprite slots (MOBs 1-7) are recycled as notes scroll off-screen.
-    FOR Slot = 0 TO 6
+    ' 5 sprite slots (MOBs 1-5) are recycled as notes scroll off-screen.
+    FOR Slot = 0 TO 3
         IF NoteActive(Slot) THEN
             NoteFrac(Slot) = NoteFrac(Slot) + SCROLL_FRAC
             IF NoteFrac(Slot) >= 256 THEN
@@ -250,24 +387,128 @@ MainLoop:
                 NoteActive(Slot) = 0
                 SPRITE Slot + 1, 0, 0, 0
             ELSE
-                SPRITE Slot + 1, NoteX(Slot) + SPR_VISIBLE, NOTE_Y, 5 * 8 + NoteColor(Slot) + $0800
+                SPRITE Slot + 1, NoteX(Slot) + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
             END IF
         END IF
     NEXT Slot
+
+    ' --- Update pencils (Level 2 only) ---
+    ' Pencils fall through the ground and off-screen. They only hurt
+    ' the player by landing on them mid-fall — no grounded obstacles.
+    IF CurrentLevel = 1 THEN
+        FOR Slot = 0 TO 1
+            IF PencilState(Slot) = 1 THEN
+                ' Scroll left with the world
+                PencilFrac(Slot) = PencilFrac(Slot) + SCROLL_FRAC
+                IF PencilFrac(Slot) >= 256 THEN
+                    PencilFrac(Slot) = PencilFrac(Slot) - 256
+                    IF PencilX(Slot) >= 4 THEN
+                        PencilX(Slot) = PencilX(Slot) - 2
+                    ELSE
+                        PencilState(Slot) = 0
+                        SPRITE Slot + 6, 0, 0, 0
+                    END IF
+                ELSE
+                    IF PencilX(Slot) >= 3 THEN
+                        PencilX(Slot) = PencilX(Slot) - 1
+                    ELSE
+                        PencilState(Slot) = 0
+                        SPRITE Slot + 6, 0, 0, 0
+                    END IF
+                END IF
+                ' Fall downward — through ground and off screen
+                IF PencilState(Slot) = 1 THEN
+                    PencilY(Slot) = PencilY(Slot) + 2
+                    IF PencilY(Slot) > 96 THEN
+                        ' Off the bottom of the screen
+                        PencilState(Slot) = 0
+                        SPRITE Slot + 6, 0, 0, 0
+                    ELSE
+                        SPRITE Slot + 6, PencilX(Slot) + SPR_VISIBLE, PencilY(Slot), 5 * 8 + 6 + $0800
+                    END IF
+                END IF
+            END IF
+        NEXT Slot
+    END IF
+
+    ' --- Update flower (Level 2 only) ---
+    IF CurrentLevel = 1 THEN
+        IF FlowerState = 1 THEN
+            ' Slow diagonal drift: ~0.5px left per frame, ~1px down every 3 frames
+            FlowerDriftY = FlowerDriftY + 1
+            ' Horizontal: move 1px every 2 frames
+            IF FlowerDriftY AND 1 THEN
+                IF FlowerX >= 3 THEN
+                    FlowerX = FlowerX - 1
+                ELSE
+                    FlowerState = 0
+                    SPRITE 5, 0, 0, 0
+                END IF
+            END IF
+            ' Vertical: move 1px every 3 frames
+            IF FlowerState = 1 THEN
+                IF FlowerDriftY >= 3 THEN
+                    FlowerDriftY = 0
+                    FlowerY = FlowerY + 1
+                END IF
+                ' Off bottom of screen — missed it
+                IF FlowerY > 90 THEN
+                    FlowerState = 0
+                    SPRITE 5, 0, 0, 0
+                ELSE
+                    SPRITE 5, FlowerX + SPR_VISIBLE, FlowerY, 6 * 8 + 4 + $0800 + $1000
+                END IF
+            END IF
+
+            ' --- Flower collection (must be jumping/floating) ---
+            IF FlowerState = 1 AND JumpActive THEN
+                ' Check overlap: player at (PLAYER_X, PlayerY) 8x16
+                ' Flower at (FlowerX, FlowerY) 8x8
+                IF FlowerX + 8 > PLAYER_X THEN
+                    IF FlowerX < PLAYER_X + 8 THEN
+                        IF FlowerY + 8 > PlayerY THEN
+                            IF FlowerY < PlayerY + 16 THEN
+                                ' Collected! Heal 2 hearts
+                                FlowerState = 0
+                                SPRITE 5, 0, 0, 0
+                                IF HitCount > 1 THEN
+                                    HitCount = HitCount - 2
+                                ELSE
+                                    HitCount = 0
+                                END IF
+                                ' Redraw hearts
+                                FOR Col = 0 TO MAX_HITS - 1
+                                    IF Col < MAX_HITS - HitCount THEN
+                                        PRINT AT HeartPositions(Col), 3 * 8 + 4 + $0800 + $1000
+                                    ELSE
+                                        PRINT AT HeartPositions(Col), 0
+                                    END IF
+                                NEXT Col
+                                ' Tinkle SFX on Ch1 (very high, short)
+                                SOUND 1, 80, 10
+                                SfxTimer = 4
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
 
     ' --- Check collisions (crossing-point detection) ---
     ' Fires once when obstacle crosses PLAYER_X (NoteCleared prevents re-fire).
     ' Vertical check: if PlayerY + 12 > NOTE_Y, player's feet are below the
     ' note top = HIT. The 12px offset gives a 4px grace zone at the feet.
     ' On hit: detuned "dud" SFX on Ch1 (period + period/16 ≈ 1 semitone flat).
-    FOR Slot = 0 TO 6
+    FOR Slot = 0 TO 3
         IF NoteActive(Slot) THEN
             IF NoteCleared(Slot) = 0 THEN
                 IF NoteX(Slot) < PLAYER_X THEN
-                    NoteCleared(Slot) = 1
                     ' Vertical: player body > note top = HIT (4px grace at feet)
                     IF PlayerY + 12 > NOTE_Y THEN
                         HitCount = HitCount + 1
+                        DamageTaken = 1
+                        NoteCleared(Slot) = 1
                         NoteActive(Slot) = 0
                         SPRITE Slot + 1, 0, 0, 0
                         ' Dud sound: flat by ~1 semitone on Channel B
@@ -278,13 +519,45 @@ MainLoop:
                         END IF
                         SfxTimer = 6
                         ' Remove a heart (rightmost first)
-                        PRINT AT 17 + (MAX_HITS - HitCount), 0
+                        PRINT AT HeartPositions(MAX_HITS - HitCount), 0
                         IF HitCount >= MAX_HITS THEN GameOver = 1
                     END IF
+                    ' Only mark cleared once note is well past player
+                    IF NoteX(Slot) < PLAYER_X - 10 THEN NoteCleared(Slot) = 1
                 END IF
             END IF
         END IF
     NEXT Slot
+
+    ' --- Pencil collision (Level 2 only) ---
+    ' Pencils hurt the player by falling on them (overlap check while falling).
+    IF CurrentLevel = 1 THEN
+        FOR Slot = 0 TO 1
+            IF PencilState(Slot) = 1 THEN
+                IF PencilCleared(Slot) = 0 THEN
+                    ' Check X overlap: pencil 8px wide vs player 8px wide
+                    IF PencilX(Slot) + 8 > PLAYER_X THEN
+                        IF PencilX(Slot) < PLAYER_X + 8 THEN
+                            ' Check Y overlap: pencil 8px tall vs player 16px tall
+                            IF PencilY(Slot) + 8 > PlayerY THEN
+                                IF PencilY(Slot) < PlayerY + 16 THEN
+                                    HitCount = HitCount + 1
+                                    DamageTaken = 1
+                                    PencilCleared(Slot) = 1
+                                    PencilState(Slot) = 0
+                                    SPRITE Slot + 6, 0, 0, 0
+                                    SOUND 1, 200, 12
+                                    SfxTimer = 6
+                                    PRINT AT HeartPositions(MAX_HITS - HitCount), 0
+                                    IF HitCount >= MAX_HITS THEN GameOver = 1
+                                END IF
+                            END IF
+                        END IF
+                    END IF
+                END IF
+            END IF
+        NEXT Slot
+    END IF
 
     ' --- SFX timer (dud sound on Channel B) ---
     IF SfxTimer > 0 THEN
@@ -297,44 +570,52 @@ MainLoop:
     ' obstacles to scroll off-screen, then pause 0.5 sec before ending.
     IF SongDone THEN
         ActiveCount = 0
-        FOR Slot = 0 TO 6
+        FOR Slot = 0 TO 3
             IF NoteActive(Slot) THEN ActiveCount = ActiveCount + 1
         NEXT Slot
+        IF CurrentLevel = 1 THEN
+            FOR Slot = 0 TO 1
+                IF PencilState(Slot) THEN ActiveCount = ActiveCount + 1
+            NEXT Slot
+            IF FlowerState THEN ActiveCount = ActiveCount + 1
+        END IF
         IF ActiveCount = 0 THEN
             SongEndTimer = SongEndTimer + 1
-            IF SongEndTimer >= 30 THEN GameOver = 2  ' 0.5 sec pause
+            IF SongEndTimer >= 30 THEN GameOver = 2  ' Brief pause then end
         END IF
     END IF
 
     GOTO MainLoop
 
     ' ==========================================
-    ' End Screen
+    ' End Screen (overlaid on game area)
     ' ==========================================
 GameOverScreen:
     SOUND 0, 0, 0
     SOUND 1, 0, 0
-    FOR Slot = 0 TO 7
+    ' Hide all sprites except player (MOB 0)
+    FOR Slot = 1 TO 7
         SPRITE Slot, 0, 0, 0
     NEXT Slot
+    ' Clear play area (rows 1-6) but keep row 0 (hearts) and row 7 (ground)
+    FOR Col = 20 TO 139
+        PRINT AT Col, 0
+    NEXT Col
+    WAIT
     IF GameOver = 2 THEN
-        CLS
-        WAIT
-        PRINT AT 22 COLOR 5, "SONG COMPLETE!"
-        ' Display 8 rows of 16 positions (0=no jump, 1=jump)
-        FOR MapRow = 0 TO 7
-            FOR Col = 0 TO 15
-                IF JumpMap(MapRow * 16 + Col) THEN
-                    PRINT AT 80 + MapRow * 20 + Col + 2, 142
-                ELSE
-                    PRINT AT 80 + MapRow * 20 + Col + 2, 135
-                END IF
-            NEXT Col
-        NEXT MapRow
-        PRINT AT 42 COLOR 7, "PRESS TO REPLAY"
+        ' Song complete — celebration pose
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
+        IF DamageTaken = 0 THEN
+            PRINT AT 163 COLOR 6, "PERFECT RUN!"
+        ELSE
+            PRINT AT 162 COLOR 5, "SONG COMPLETE!"
+        END IF
+        PRINT AT 183 COLOR 7, "PRESS TO REPLAY"
     ELSE
-        PRINT AT 105 COLOR 2, "GAME OVER!"
-        PRINT AT 125 COLOR 7, "PRESS TO RETRY"
+        ' Game over — normal pose
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 0 * 8 + 2 + $0800
+        PRINT AT 164 COLOR 2, "GAME OVER!"
+        PRINT AT 183 COLOR 7, "PRESS TO RETRY"
     END IF
 
     ' --- Wait for button release then press ---
@@ -374,7 +655,8 @@ JumpArc:
     ' M25-M32 = octave-lower reprise + final cadence.
     ' ============================================
 
-MelodyPSG:
+AllMelodyData:
+    ' === Level 0: Maple Leaf Rag ===
     ' --- First half: Theme + Contrast + Arpeggio (bars 1-8) ---
     ' Beat 1                              Beat 2
     DATA 1438,    0, 1077,  539           ' M1: D#3  ---  G#3  G#4
@@ -411,6 +693,74 @@ MelodyPSG:
     DATA  855,  539,  428,  539           ' M31: C4   G#4  C5   G#4
     DATA  480,    0,  539,    0           ' M32: A#4  ---  G#4  ---  (final cadence)
 
+    ' === Level 1: Same melody as Maple Leaf Rag (obstacles differ) ===
+    DATA 1438,    0, 1077,  539
+    DATA  360,  539,  428,  360
+    DATA 1017,  571,  360,  571
+    DATA  480,  360,  807,    0
+    DATA 1438,    0, 1077,  539
+    DATA  360,  539,  428,  360
+    DATA 1017,  571,  360,  571
+    DATA  480,  360,  807,    0
+    DATA 1438,  360, 1357,  539
+    DATA  453,  339, 1438,  360
+    DATA 1438,  360, 1357,  539
+    DATA  453,  339, 1438,  360
+    DATA    0,    0, 2155, 2155
+    DATA 1812, 1077, 2155, 1077
+    DATA  906,  539, 1077,  539
+    DATA  453,  269,  539,  269
+    DATA  226,  135,  135,    0
+    DATA  135,    0,  135,    0
+    DATA  135,  135,  428,  180
+    DATA  160,  214,  180,  160
+    DATA  428,  269,  453,  240
+    DATA  226,  269,  240,  214
+    DATA  428,  269,  214,  269
+    DATA  240,    0,  269,    0
+    DATA    0,  269,  906,    0
+    DATA  269,    0,  269,    0
+    DATA  269,  269,  855,  360
+    DATA  320,  428,  360,  320
+    DATA  855,  539,  906,  480
+    DATA  453,  539,  480,  428
+    DATA  855,  539,  428,  539
+    DATA  480,    0,  539,    0
+
+    ' === Level 2: Same melody as Maple Leaf Rag (obstacles differ) ===
+    DATA 1438,    0, 1077,  539
+    DATA  360,  539,  428,  360
+    DATA 1017,  571,  360,  571
+    DATA  480,  360,  807,    0
+    DATA 1438,    0, 1077,  539
+    DATA  360,  539,  428,  360
+    DATA 1017,  571,  360,  571
+    DATA  480,  360,  807,    0
+    DATA 1438,  360, 1357,  539
+    DATA  453,  339, 1438,  360
+    DATA 1438,  360, 1357,  539
+    DATA  453,  339, 1438,  360
+    DATA    0,    0, 2155, 2155
+    DATA 1812, 1077, 2155, 1077
+    DATA  906,  539, 1077,  539
+    DATA  453,  269,  539,  269
+    DATA  226,  135,  135,    0
+    DATA  135,    0,  135,    0
+    DATA  135,  135,  428,  180
+    DATA  160,  214,  180,  160
+    DATA  428,  269,  453,  240
+    DATA  226,  269,  240,  214
+    DATA  428,  269,  214,  269
+    DATA  240,    0,  269,    0
+    DATA    0,  269,  906,    0
+    DATA  269,    0,  269,    0
+    DATA  269,  269,  855,  360
+    DATA  320,  428,  360,  320
+    DATA  855,  539,  906,  480
+    DATA  453,  539,  480,  428
+    DATA  855,  539,  428,  539
+    DATA  480,    0,  539,    0
+
     ' ============================================
     ' Obstacle Map
     ' 128 entries (one per 16th-note position).
@@ -423,74 +773,66 @@ MelodyPSG:
     ' jump timing using the JumpMap recording feature.
     ' ============================================
 
-ObstacleMap:
-    ' --- First half (bars 1-8): 8 obstacles ---
+AllObstacleData:
+    ' === Level 0: Maple Leaf Rag ===
+    ' --- First half (bars 1-8): 9 obstacles (1 double) ---
     DATA 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0     ' M1-4:   pos 10 (D#5)
     DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0     ' M5-8:   pos 20,26 (D#5,D#5)
-    DATA 0,1,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,1     ' M9-12:  pos 33,41,47 (D#5,D#5,D#5)
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1     ' M9-12:  pos 33,35,41,47 (D#5,D#5,D#5,D#5) DOUBLE
     DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 1,0,0,0     ' M13-16: pos 53,60 (G#3,B4 arpeggio)
-    ' --- Second half (bars 9-16): 8 obstacles ---
-    DATA 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0     ' M17-20: pos 68,76 (G#6,F6)
-    DATA 0,0,1,0, 0,0,0,0, 0,0,0,1, 0,0,0,0     ' M21-24: pos 82,91 (B4,G#5)
-    DATA 0,1,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M25-28: pos 97,105 (G#5,G#5)
-    DATA 1,0,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M29-32: pos 112,121 (C4,G#4)
+    ' --- Second half (bars 9-16): 12 obstacles (4 doubles) ---
+    DATA 0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0     ' M17-20: pos 68,70,76 (G#6,G#6,F6) DOUBLE
+    DATA 0,0,1,0, 1,0,0,0, 0,0,0,1, 0,0,0,0     ' M21-24: pos 82,84,91 (B4,B5,G#5) DOUBLE
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M25-28: pos 97,99,105 (G#5,B3,G#5) DOUBLE
+    DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M29-32: pos 112,114,121 (C4,B3,G#4) DOUBLE
+
+    ' === Level 1: Same obstacles as Level 0 (will be modified) ===
+    DATA 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0
+    DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 1,0,0,0
+    DATA 0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0
+    DATA 0,0,1,0, 1,0,0,0, 0,0,0,1, 0,0,0,0
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0
+    DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0
+
+    ' === Level 2: Same obstacles as Level 0 (will be modified) ===
+    DATA 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0
+    DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 1,0,0,0
+    DATA 0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0
+    DATA 0,0,1,0, 1,0,0,0, 0,0,0,1, 0,0,0,0
+    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0
+    DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0
 
     ' ============================================
     ' Note Color Palette (5 cycling colors)
     ' ============================================
 
-NoteColorPalette:
-    DATA 6, 5, 7, 1, 3         ' Yellow, Green, White, Blue, Tan
+HeartPositions:
+    DATA 19, 18, 17, 16, 15    ' Right-anchored: index 0=rightmost, fills leftward
+
+
+LevelOffsets:
+    DATA 0, 128, 256
 
     ' ============================================
-    ' Graphics Data (GRAM cards 0-6)
+    ' Graphics Data (GRAM cards 0-5, contiguous)
     ' ============================================
 
-    ' --- Player sprites (cards 0-3, loaded with first DEFINE) ---
-GramPlayerData:
-    ' Card 0: Player standing - top half (hat, face, shoulders)
+GramData:
+    ' Card 0: Player (original alien — 8x8 stretched to 8x16 via YSIZE)
+    BITMAP "..XXXX.."
     BITMAP ".XXXXXX."
-    BITMAP ".XXXXXX."
+    BITMAP "XX.XX.XX"
     BITMAP "XXXXXXXX"
     BITMAP "..XXXX.."
-    BITMAP "...XX..."
-    BITMAP "..XXXX.."
-    BITMAP ".XX..XX."
-    BITMAP ".XX..XX."
-
-    ' Card 1: Player standing - bottom half (jacket, legs, shoes)
-    BITMAP ".XX..XX."
     BITMAP ".XXXXXX."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..X..X.."
-    BITMAP "..X..X.."
-    BITMAP ".XX..XX."
-    BITMAP "........"
-
-    ' Card 2: Player jumping - top half (same hat, arms spread)
-    BITMAP ".XXXXXX."
-    BITMAP ".XXXXXX."
-    BITMAP "XXXXXXXX"
-    BITMAP "..XXXX.."
-    BITMAP "...XX..."
-    BITMAP "..XXXX.."
-    BITMAP ".XXXXXX."
-    BITMAP "X..XX..X"
-
-    ' Card 3: Player jumping - bottom half (legs tucked, feet wide)
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..XXXX.."
-    BITMAP "..X..X.."
+    BITMAP ".X.XX.X."
     BITMAP ".X....X."
-    BITMAP "........"
-    BITMAP "........"
-    BITMAP "........"
 
-    ' --- World sprites (cards 4-6, loaded with second DEFINE) ---
-GramWorldData:
-    ' Card 4: Ground line
+    ' Card 1: Ground line
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
     BITMAP "........"
@@ -500,22 +842,52 @@ GramWorldData:
     BITMAP "........"
     BITMAP "........"
 
-    ' Card 5: Musical note (eighth note shape)
-    BITMAP "...XX..."
-    BITMAP "...XXXX."
+    ' Card 2: Note obstacle (bold quarter note)
     BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "...XX..."
     BITMAP "..XXXX.."
     BITMAP ".XXXXXX."
+    BITMAP "XXXXXXXX"
+    BITMAP ".XXXXXX."
     BITMAP "..XXXX.."
 
-    ' Card 6: Heart
-    BITMAP ".XX..XX."
-    BITMAP "XXXXXXXX"
-    BITMAP "XXXXXXXX"
+    ' Card 3: Heart (small, centered in card)
+    BITMAP "........"
+    BITMAP "..X..X.."
+    BITMAP ".XXXXXX."
     BITMAP ".XXXXXX."
     BITMAP "..XXXX.."
     BITMAP "...XX..."
     BITMAP "........"
+    BITMAP "........"
+
+    ' Card 4: Player celebration (hands up!)
+    BITMAP "X..XX..X"
+    BITMAP ".XXXXXX."
+    BITMAP "XX.XX.XX"
+    BITMAP "XXXXXXXX"
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP "..XXXX.."
+    BITMAP "..X..X.."
+
+    ' Card 5: Pencil (skinny symmetrical, point down)
+    BITMAP "..XXXX.."
+    BITMAP "..XXXX.."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+    BITMAP "...XX..."
+
+    ' Card 6: Flower (healing power-up)
+    BITMAP "..X.X..."
+    BITMAP ".XXXXX.."
+    BITMAP ".XXXXX.."
+    BITMAP "..XXX..."
+    BITMAP "...X...."
+    BITMAP "...X...."
+    BITMAP "..XX...."
     BITMAP "........"

@@ -43,9 +43,10 @@ games/downbeat-v2/
 ### GRAM Cards
 | Card | Use | Description |
 |------|-----|-------------|
-| 0 | Player | Humanoid figure, 8x8 (rendered 8x16 with SPR_YSIZE) |
+| 0 | Player | Original alien, 8x8 (rendered 8x16 with SPR_YSIZE stretch) |
 | 1 | Ground | Solid top 2 rows, drawn across row 7 |
-| 2 | Note | Diamond shape, used for all obstacles |
+| 2 | Note | Bold quarter note (stem + oval head, looks like spaceship) |
+| 3 | Heart | Small centered heart for HUD lives display |
 
 ### Key Constants
 | Constant | Value | Description |
@@ -127,12 +128,95 @@ The "highest note per tick" approach faithfully captures Joplin's voicing, inclu
 - Obstacles arrive at player X when that beat's melody note plays (via SPAWN_OFFSET)
 - 16 total obstacles across the full A strain, gaps of 6-10 beats
 
-### Design Process
-1. Play the game with no obstacles, listen to the melody
-2. Use JumpMap recording to capture natural jump timing
-3. Place obstacles on melodic accent beats (strong notes, phrase starts)
-4. Ensure gaps are 6+ beats apart (player needs time to land + react)
-5. Gradually increase density in second half for difficulty curve
+### Design Process: Rehearsal Mode (Jump Recording)
+
+The obstacle pattern was designed using an in-game recording workflow. This is a reusable level design tool — document it fully so it can be reproduced in future sessions.
+
+#### Step 1: Create a blank runner
+
+Temporarily set all ObstacleMap entries to 0 so no obstacles spawn. The player can't die and will always reach "SONG COMPLETE":
+
+```basic
+ObstacleMap:
+    DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0   ' repeat for all 128 entries
+    ' ... (8 lines of all zeros)
+```
+
+Build and run. The melody plays normally, the player runs with no obstacles.
+
+#### Step 2: Record natural jump timing
+
+The game has a built-in `JumpMap(128)` array. Every time the player jumps, the current `BeatCounter` position is recorded:
+
+```basic
+' In the input handler (already in main.bas):
+IF BeatCounter < MELODY_LENGTH THEN
+    JumpMap(BeatCounter) = 1
+END IF
+```
+
+Play through the entire song, jumping wherever feels natural with the music. Jump on strong beats, accents, and phrase starts. Don't overthink it — feel the rhythm.
+
+#### Step 3: Capture the JumpMap from the completion screen
+
+After the song finishes, the "SONG COMPLETE" screen displays the JumpMap as an 8×16 grid (8 rows of 16 beat positions). Each `1` (highlighted character) = a beat where you jumped.
+
+To capture this screen for analysis, use jzIntv's AVI recording:
+
+1. Create a keyboard hack file mapping F10 to AVI toggle:
+   ```bash
+   echo -e "MAP 0\nF10 AVI" > /tmp/jzintv_keys.kbd
+   ```
+
+2. Launch with recording enabled:
+   ```bash
+   arch -x86_64 ~/jzintv/bin/jzintv \
+       --execimg=$HOME/jzintv/bin/exec.bin \
+       --gromimg=$HOME/jzintv/bin/grom.bin \
+       --kbdhackfile=/tmp/jzintv_keys.kbd \
+       --avirate=1 -z3 build/downbeat2.rom
+   ```
+
+3. Press F10 to start recording, play through the song, let the completion screen appear.
+
+4. Quit jzIntv (Escape). AVI file saves as `avi_0001.avi` in the working directory.
+
+5. Extract the completion screen frame:
+   ```bash
+   # Extract last frames (completion screen)
+   ffmpeg -i avi_0001.avi -vf "select='gte(n\,LAST_100)'" -vsync vfr /tmp/end_%04d.png
+   ```
+
+6. Read the JumpMap grid from the screenshot. Each highlighted position = a beat number:
+   ```
+   Row 0: beats 0-15
+   Row 1: beats 16-31
+   ...
+   Row 7: beats 112-127
+   ```
+
+#### Step 4: Convert JumpMap to ObstacleMap
+
+Take the beat positions where jumps occurred and place them into the ObstacleMap DATA table. Apply these constraints:
+
+- **Minimum gap of 6 beats** between obstacles (player needs time to land + react)
+- **Prefer melodic accents** — if two jumps are close together, keep the one on the stronger beat
+- **Ramp difficulty** — fewer obstacles in the first half, more in the second
+- **16 total obstacles** for the current A strain (adjustable)
+
+Example: if the JumpMap shows jumps at beats 8, 10, 15, 20, 22, 26, 30, 33...
+- Keep 10 (drop 8, too close), keep 20 (drop 15 and 22, too close to neighbors), keep 26, keep 33
+- Result: 10, 20, 26, 33 for that section
+
+#### Step 5: Playtest and iterate
+
+Restore the ObstacleMap with the designed pattern. Play the game normally and verify:
+- Obstacles feel synchronized with the melody
+- Gaps give enough reaction time
+- Difficulty ramps appropriately
+- The "dud" SFX sounds on missed notes (confirms pitch alignment)
+
+Repeat Steps 1-4 if the pattern needs adjustment.
 
 ### Current Obstacle Placement
 ```
@@ -153,6 +237,52 @@ Uses crossing-point detection rather than bounding box or hardware COL registers
 4. The 12px offset provides a 4px grace zone at the player's feet for near-misses
 
 **Why not hardware collision?** Hardware COL registers can't distinguish "jumped over" from "hit" — we need the vertical position check.
+
+## Peak Float Mechanic
+
+Adds skill expression to jumping. A second button press near the peak of a jump triggers a "float" — the player snaps to peak height and hangs for extra frames before descending.
+
+### How It Works
+1. **First press**: Starts normal jump (36-frame parabolic arc via JumpArc lookup)
+2. **Second press** during frames 15-20 (the float window, near peak): Triggers float
+3. **Float phase**: Player snaps to `GROUND_Y - 20` (peak height), holds for 10 frames
+4. **Descent**: After float timer expires, `JumpFrame` resumes at 18 (start of descent arc)
+5. **One float per jump**: `FloatUsed` flag prevents re-triggering; resets when a new jump starts
+
+### State Variables
+- `FloatUsed`: 0/1, prevents multiple floats per jump. Reset to 0 at jump start.
+- `FloatActive`: 0/1, true during the hang phase
+- `FloatTimer`: Counts down from 10 during hang phase
+
+### Timing
+- Normal jump: 36 frames (600ms)
+- Float jump: ~46 frames (18 up + 10 hang + 18 down = ~767ms)
+- Float window: frames 15-20 (~100ms window, requires release+press)
+- JumpArc values at frames 15-20 are all 20 (peak), so float snap is visually seamless
+
+### Why Frame 18 for Descent Resume
+JumpArc frame 18 has value 20 (still at peak). This means the transition from float to descent is smooth — no visual snap. The actual descent curve begins at frame 21 (value 19).
+
+## Visual Polish
+
+### Hearts HUD (replaces text "HITS: 0/3")
+- 3 small heart icons at BACKTAB positions 16, 17, 18 (top row, right of center)
+- GRAM card 3, Pink color (12) via extended FG bit: `3 * 8 + 4 + $0800 + $1000`
+- Removed rightmost-first on hit: `PRINT AT HeartPositions(MAX_HITS - HitCount), 0`
+- Heart positions stored in `HeartPositions` DATA table for easy adjustment
+
+### Note Color Cycling
+- 5-color palette: Yellow(6), Green(5), White(7), Blue(1), Tan(3)
+- `NoteColorIdx` cycles through `NoteColorPalette` DATA table on each spawn
+- Each note slot stores its color in `NoteColor(Slot)` array
+- Sprite rendered with per-slot color: `2 * 8 + NoteColor(Slot) + $0800`
+
+### Design Iterations (lessons learned)
+- Sprite colors 0-7 only — color 2 "Red" appears orange on Intellivision
+- BACKTAB extended colors (bit 12) enable Pink for hearts but not for sprites
+- Adjacent hearts at 8px size merge visually; smaller 6x5 heart design solved this
+- The original alien sprite was strongly preferred over custom musician designs
+- The bold quarter note obstacle reads as a "spaceship" which fits the alien theme
 
 ## Sprite Pool Management
 
@@ -204,11 +334,55 @@ Both end screens wait for button release then press, then jump to `RestartGame` 
 
 | Resource | Used | Available | Headroom |
 |----------|------|-----------|----------|
-| 8-bit variables | 175 | 228 | 53 |
+| 8-bit variables | 186 | 228 | 42 |
 | 16-bit variables | 9 | 55 | 46 |
-| GRAM cards | 3 | 64 | 61 |
+| GRAM cards | 4 | 64 | 60 |
 | MOB sprites | 8 | 8 | 0 |
-| ROM | ~2.3K | 8K | ~5.7K |
+| ROM | ~2.5K | 8K | ~5.5K |
+
+## Visual Verification via AVI Recording
+
+jzIntv can record gameplay to AVI files for frame-by-frame analysis. This is essential for verifying timing, collision, and animation behavior.
+
+### Setup
+```bash
+# Create keyboard hack file (one-time)
+echo -e "MAP 0\nF9 SHOT\nF10 AVI" > /tmp/jzintv_keys.kbd
+
+# Launch with recording support
+arch -x86_64 ~/jzintv/bin/jzintv \
+    --execimg=$HOME/jzintv/bin/exec.bin \
+    --gromimg=$HOME/jzintv/bin/grom.bin \
+    --kbdhackfile=/tmp/jzintv_keys.kbd \
+    --avirate=1 -z3 build/downbeat2.rom
+```
+
+### Recording
+- **F10**: Toggle AVI recording on/off (saves to `avi_NNNN.avi` in working directory)
+- **F9**: Single screenshot (saves to working directory)
+- **Escape**: Quit jzIntv (finalizes AVI file)
+
+### Extracting Frames
+```bash
+# Extract every frame (full 60fps)
+ffmpeg -i avi_0001.avi /tmp/frames/f_%04d.png
+
+# Extract 2 frames per second (overview)
+ffmpeg -i avi_0001.avi -vf "fps=2" /tmp/frames/f_%04d.png
+
+# Extract specific frame range (e.g., frames 400-500)
+ffmpeg -i avi_0001.avi -vf "select='between(n\,400\,500)'" -vsync vfr /tmp/frames/f_%04d.png
+
+# Get total frame count
+ffprobe -v error -count_frames -show_entries stream=nb_read_frames avi_0001.avi
+```
+
+### What to Check
+- Player Y position during jumps (peak should be well above ground line)
+- Float hang duration (player should stay at peak for ~10 visible frames)
+- Obstacle-melody sync (notes should cross player X when melody beat plays)
+- Heart removal on collision
+- End screen JumpMap grid accuracy
 
 ## IntyBASIC Gotchas Encountered
 
