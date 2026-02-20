@@ -516,8 +516,10 @@ RogueDiveRender:
                                     GOSUB HitShield
                                 ELSE
                                     #GameFlags = #GameFlags OR FLAG_PLAYERHIT
-                                    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 100
-                                    SOUND 2, 100, 15
+                                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                                    SOUND 2, 0, 15
+                                    POKE $1F9, 14
+                                    POKE $1F8, PEEK($1F8) AND $DF
                                 END IF
                                 ' Either way, destroy rogue
                                 RogueState = ROGUE_IDLE
@@ -678,6 +680,10 @@ UpdateSaucer: PROCEDURE
                         GOSUB HitShield
                     ELSE
                         #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+                        SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                        SOUND 2, 0, 15
+                        POKE $1F9, 14
+                        POKE $1F8, PEEK($1F8) AND $DF
                     END IF
                 END IF
             END IF

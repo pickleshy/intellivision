@@ -40,6 +40,7 @@ MovePlayer: PROCEDURE
     END IF
 
     ' Keypad 0: capture rogue alien during dogfight (with debounce)
+    ' On keyboard: numpad 0 (see intruders.kbd — KP0 PD0L_KP0)
     IF CONT.KEY = 0 THEN
         IF (#GameFlags AND FLAG_KEY0HELD) = 0 THEN
             #GameFlags = #GameFlags OR FLAG_KEY0HELD
@@ -63,7 +64,7 @@ MovePlayer: PROCEDURE
         END IF
     END IF
     IF CONT.KEY <> 0 THEN
-        #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD
+        #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD when key released
     END IF
 
     ' Fire: side buttons (not keypad) or auto-fire
@@ -84,7 +85,7 @@ MovePlayer: PROCEDURE
                 ' SFX: loud crackle blast
                 SfxType = 4 : SfxVolume = 15 : #SfxPitch = 0
                 SOUND 2, 0, 15
-                POKE $1F7, 8
+                POKE $1F9, 8
                 POKE $1F8, PEEK($1F8) AND $DF
             END IF
         ELSEIF #GameFlags AND FLAG_BOMB THEN
@@ -119,7 +120,7 @@ MovePlayer: PROCEDURE
                         #ChainFreq1 = 150
                         #ChainFreq2 = 80
                         ChainVol = 15
-                        POKE $1F7, 12
+                        POKE $1F9, 12
                         POKE $1F8, $18
                         SOUND 0, 150, 14
                         SOUND 2, 80, 15

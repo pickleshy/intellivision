@@ -191,25 +191,16 @@ END
 ' Called after each AlienOffsetY increment
 ' --------------------------------------------
 UpdateMusicGear: PROCEDURE
-    ' Calculate target gear from descent + wave
-    IF Level >= 2 THEN
-        ' Wave 2+: start at mid, escalate faster
-        LoopVar = 1 + AlienOffsetY / 2
-    ELSE
-        ' Wave 1: start at slow, gradual buildup
-        LoopVar = AlienOffsetY / 2
-    END IF
-    IF LoopVar > 3 THEN LoopVar = 3
+    ' Calculate target gear: 0=mid, 1=fast, 2=panic
+    LoopVar = AlienOffsetY / 2
+    IF LoopVar > 2 THEN LoopVar = 2
 
     ' Only switch if gear changed
     IF LoopVar = MusicGear THEN RETURN
     MusicGear = LoopVar
 
-    ON MusicGear GOTO GearMid, GearFast, GearPanic
-    ' Gear 0 = slow (fallthrough)
-    PLAY si_bg_slow
-    RETURN
-GearMid:
+    ON MusicGear GOTO GearFast, GearPanic
+    ' Gear 0 = mid (fallthrough)
     PLAY si_bg_mid
     RETURN
 GearFast:
@@ -294,9 +285,9 @@ UpdateSfx: PROCEDURE
                     END IF
                 END IF
                 ' Noise period deepens over time (14 → ~31)
-                POKE $1F7, 14 + (75 - DeathTimer) / 4
+                POKE $1F9, 14 + (75 - DeathTimer) / 4
             ELSE
-                POKE $1F7, 14
+                POKE $1F9, 14
             END IF
         ELSE
             SfxVolume = 0
@@ -312,7 +303,7 @@ UpdateSfx: PROCEDURE
             IF (MegaBeamTimer AND 3) = 0 THEN
                 IF SfxVolume > 1 THEN SfxVolume = SfxVolume - 1
             END IF
-            POKE $1F7, 8 + (20 - MegaBeamTimer) / 2
+            POKE $1F9, 8 + (20 - MegaBeamTimer) / 2
             POKE $1F8, PEEK($1F8) AND $DF
         ELSE
             SfxVolume = 0
@@ -327,8 +318,8 @@ UpdateSfx: PROCEDURE
                     SfxVolume = SfxVolume - 1
                 END IF
             END IF
-            ' Noise period deepens over time (14 → ~24)
-            POKE $1F7, 14 + (20 - BombExpTimer) / 2
+            ' Noise period deepens over time (14 → ~23), BombExpTimer starts at 30
+            POKE $1F9, 14 + (30 - BombExpTimer) / 3
         ELSE
             SfxVolume = 0
         END IF
@@ -540,8 +531,13 @@ END
 StopMegaSputter: PROCEDURE
     MegaSputterTimer = 0
     DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
-    SOUND 2, , 0
-    SfxType = 0 : SfxVolume = 0
+    ' Only silence SFX if mega beam was actually playing (SfxType=4).
+    ' Do NOT clear SfxType=3 (death explosion) — that was set by the collision
+    ' code on this same frame and must sustain through the death animation.
+    IF SfxType = 4 THEN
+        SOUND 2, , 0
+        SfxType = 0 : SfxVolume = 0
+    END IF
     RETURN
 END
 
@@ -684,11 +680,10 @@ LoadPatternB: PROCEDURE
         BossCol(1) = 5 : BossRow(1) = 2
         BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ELSEIF LoopVar = 2 THEN
-        ' Wave 3: 1 bomb boss + 1 orbiter
+        ' Wave 3: 1 bomb boss (no orbiter — conflicts with surrounding alien sprites)
         BossCount = 1
         BossCol(0) = 3 : BossRow(0) = 1
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        OrbitStep = 0
     ELSEIF LoopVar = 3 THEN
         ' Wave 4: 2 bomb bosses + 2 orbiters
         BossCount = 2
@@ -1089,12 +1084,8 @@ StartNewWave: PROCEDURE
     ' March speed: same starting speed every wave (challenge comes from level variety)
     CurrentMarchSpeed = MARCH_SPEED_START
 
-    ' Set initial music gear (music starts AFTER voice announcement below)
-    IF Level >= 2 THEN
-        MusicGear = 1
-    ELSE
-        MusicGear = 0
-    END IF
+    ' Set initial music gear: always start at 0 (mid) — slow gear removed
+    MusicGear = 0
 
     ' Reset alien positions
     AlienOffsetX = 0
@@ -1289,11 +1280,7 @@ StartNewWave: PROCEDURE
         VOICE PLAY wave_phrase        ' Say "WAVE"
         VOICE NUMBER Level            ' Say the number
     END IF
-    IF MusicGear >= 1 THEN
-        PLAY si_bg_mid
-    ELSE
-        PLAY si_bg_slow
-    END IF
+    PLAY si_bg_mid
     WaveAnnouncerTimer = 90
     WaveAnnouncerType = 1
     ' Reset spin state and pre-load GRAM cards for WAVE spin-out animation

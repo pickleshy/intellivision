@@ -109,7 +109,7 @@ MoveAlienBullet: PROCEDURE
                                 #GameFlags = #GameFlags OR FLAG_PLAYERHIT
                                 SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
                                 SOUND 2, 0, 15
-                                POKE $1F7, 14
+                                POKE $1F9, 14
                                 POKE $1F8, PEEK($1F8) AND $DF
                             END IF
                             ' Either way, destroy the bullet

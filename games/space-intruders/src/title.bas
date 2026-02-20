@@ -199,7 +199,7 @@ TitleLoop:
             ' Wipe complete - transition to gameplay
             SOUND 0, , 0 : SOUND 1, , 0 : SOUND 2, , 0
             POKE $1F8, $3F
-            PLAY SIMPLE : PLAY VOLUME 12 : PLAY si_bg_slow
+            PLAY SIMPLE : PLAY VOLUME 12 : PLAY si_bg_mid
             GOTO StartGame
         END IF
     END IF

@@ -245,7 +245,7 @@ CONST FLAG_DEBUG     = 128      ' Bit 7: DebugMode
 CONST FLAG_REVEAL    = 256      ' Bit 8: RevealMode (pincer)
 CONST FLAG_ANGRY     = 512      ' Bit 9: FlyAngry
 ' Bits 10-11: FREE (was FLAG_TOPDOWN/FLAG_FLYDOWN, replaced by WaveEntrance variable)
-CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Keypad 0 debounce (capture)
+CONST FLAG_KEY0HELD  = 4096     ' Bit 12: Capture button debounce (lower-right action)
 CONST FLAG_BOMB      = 8192     ' Bit 13: Bomb weapon active
 CONST FLAG_SUBWAVE   = 16384    ' Bit 14: SubWave (1=Pattern B formation)
 CONST FLAG_REINFORCE = 32768    ' Bit 15: Reinforcement already triggered this wave

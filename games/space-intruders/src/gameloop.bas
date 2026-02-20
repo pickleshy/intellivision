@@ -285,6 +285,11 @@ GameLoop:
                         RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                         GOSUB SilenceSfx
+                        ' Invasion death explosion (aliens crushed the ship)
+                        SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+                        SOUND 2, 0, 15
+                        POKE $1F9, 14
+                        POKE $1F8, PEEK($1F8) AND $DF
                         SPRITE SPR_PLAYER, 0, 0, 0
                         SPRITE SPR_SHIP_ACCENT, 0, 0, 0
                         SPRITE SPR_PBULLET, 0, 0, 0
@@ -364,9 +369,9 @@ GameLoop:
     IF BombExpTimer > 0 THEN
         BombExpTimer = BombExpTimer - 1
         ' Determine explosion frame — flash red/white every frame
-        IF BombExpTimer > 13 THEN
+        IF BombExpTimer > 20 THEN
             AlienCard = GRAM_EXPLOSION
-        ELSEIF BombExpTimer > 6 THEN
+        ELSEIF BombExpTimer > 9 THEN
             AlienCard = GRAM_EXPLOSION2
         ELSE
             AlienCard = GRAM_EXPLOSION3
@@ -436,7 +441,7 @@ GameLoop:
         IF (ChainTimer AND 1) = 0 THEN
             IF ChainVol > 0 THEN ChainVol = ChainVol - 1
         END IF
-        POKE $1F7, ChainNoiseFreq(ChainTimer)   ' Replaces /3 division (was 0-7 iters/frame)
+        POKE $1F9, ChainNoiseFreq(ChainTimer)   ' Replaces /3 division (was 0-7 iters/frame)
         SOUND 0, #ChainFreq1, ChainVol
         SOUND 2, #ChainFreq2, ChainVol
         IF ChainTimer = 0 THEN
@@ -447,10 +452,7 @@ GameLoop:
             SfxVolume = 0 : SfxType = 0
             PLAY SIMPLE
             PLAY VOLUME 12
-            ON MusicGear GOTO ChainGearMid, ChainGearFast, ChainGearPanic
-            PLAY si_bg_slow
-            GOTO ChainDone
-ChainGearMid:
+            ON MusicGear GOTO ChainGearFast, ChainGearPanic
             PLAY si_bg_mid
             GOTO ChainDone
 ChainGearFast:

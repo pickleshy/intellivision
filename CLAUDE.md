@@ -454,13 +454,12 @@ The Intellivision's PSG is memory-mapped at `$1F0-$1FF`:
 | `$1F4` | Channel A period (high 4 bits) |
 | `$1F5` | Channel B period (high 4 bits) |
 | `$1F6` | Channel C period (high 4 bits) |
-| `$1F7` | Noise period |
+| `$1F7` | Envelope period high — **NOT noise period! Do not use for SFX.** |
 | `$1F8` | Channel enable (bits 0-2=tone, 3-5=noise, 0=on) |
+| `$1F9` | **Noise period (5 bits)** — this is the correct register for explosion SFX |
 | `$1FB` | Channel A volume (0-15, bit 4=envelope) |
 | `$1FC` | Channel B volume |
 | `$1FD` | Channel C volume |
-| `$1FE` | Envelope period low |
-| `$1FF` | Envelope period high + shape |
 
 **Example - Play A4 (440Hz) on channel A:**
 ```basic

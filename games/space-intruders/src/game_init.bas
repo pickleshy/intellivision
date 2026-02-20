@@ -152,26 +152,20 @@ StartGame:
     SPRITE SPR_SAUCER2, 0, 0, 0
     SPRITE SPR_POWERUP, 0, 0, 0
 
-    ' Wave 1 announcement (fire-and-forget, VOICE WAIT hangs on FPGA)
+    ' Wave 1 announcement — same WaveAnnouncerTimer system as waves 2+
+    ' GameLoop drives the static display (70 frames) then spin-out (20 frames)
     IF VOICE.AVAILABLE THEN
         VOICE PLAY wave_phrase
         VOICE NUMBER 1
     END IF
-    PRINT AT 107 COLOR 6, "WAVE 1"
-    FOR LoopVar = 0 TO 90
-        WAIT
-    NEXT LoopVar
-    FOR LoopVar = 0 TO 7
-        IF (LoopVar AND 1) = 0 THEN
-            PRINT AT 107, "       "
-        ELSE
-            PRINT AT 107 COLOR 6, "WAVE 1"
-        END IF
-        FOR Row = 0 TO 4
-            WAIT
-        NEXT Row
-    NEXT LoopVar
-    PRINT AT 107, "       "
+    PLAY si_bg_mid
+    WaveAnnouncerTimer = 90
+    WaveAnnouncerType = 1
+    WaveBannerPhase = 0
+    WaveBannerFrame = 0
+    DEFINE GRAM_FONT_T, 1, WaveSpinWGfx     ' Card 32 = W narrow (first spin phase)
+    DEFINE GRAM_ORBITER, 1, WaveSpinEdgeGfx ' Card 47 = edge-on (shared all phases)
+    GOSUB DrawWaveBanner                     ' Show banner immediately; GameLoop maintains + spins out
 
     ' Ship reveal animation (procedure in Segment 2)
     GOSUB ShipReveal

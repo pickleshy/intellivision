@@ -68,7 +68,7 @@ def resolve_game_paths(game_name):
         if len(lst_files) == 1:
             lst = lst_files[0]
         elif len(lst_files) > 1:
-            # Multiple .lst files — pick the largest (likely the main build)
-            lst = max(lst_files, key=os.path.getsize)
+            # Multiple .lst files — pick the most recently modified (latest build)
+            lst = max(lst_files, key=os.path.getmtime)
 
     return src, lst

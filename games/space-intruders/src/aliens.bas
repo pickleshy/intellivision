@@ -211,7 +211,7 @@ BombExplode: PROCEDURE
     ' Save bomb position for chain explosion rendering
     BombExpRow = BossRow(FoundBoss)
     BombExpCol = BossCol(FoundBoss)
-    BombExpTimer = 20
+    BombExpTimer = 30
     ' Kill the orbiter matching this bomb boss slot
     IF FoundBoss = 0 THEN OrbitStep = 255
     IF FoundBoss = 1 THEN OrbitStep2 = 255
@@ -279,7 +279,7 @@ END
 ' PlayerBombExplode — area explosion from player bomb weapon
 ' Prereq: BombExpRow/BombExpCol set to grid coordinates of hit
 PlayerBombExplode: PROCEDURE
-    BombExpTimer = 20
+    BombExpTimer = 30
 
     ' Kill all bosses in blast radius
     GOSUB KillBossesInBlast
@@ -860,12 +860,12 @@ END
 ' --------------------------------------------
 DrawWaveBanner: PROCEDURE
     IF WaveAnnouncerType = 1 THEN
-        PRINT AT 107 COLOR 6, "WAVE "
-        PRINT AT 112 COLOR 6, <> Level
+        PRINT AT 107 COLOR 1, "WAVE "
+        PRINT AT 112 COLOR 1, <> Level
     ELSEIF WaveAnnouncerType = 2 THEN
         PRINT AT 107 COLOR COL_RED, "ALERT!"
     ELSE
-        PRINT AT 103 COLOR 6, "INCOMING HORDE!"
+        PRINT AT 103 COLOR COL_RED, "INCOMING HORDE!"
     END IF
     RETURN
 END
@@ -894,7 +894,7 @@ SpinWaveBannerLetter: PROCEDURE
     Col = 107 + WaveBannerPhase             ' W=107, A=108, V=109, E=110
     IF WaveBannerFrame = 1 THEN
         ' Narrow frame: card 32 holds current phase's narrow bitmap
-        PRINT AT Col, GRAM_FONT_T * 8 + 6 + $0800
+        PRINT AT Col, GRAM_FONT_T * 8 + 1 + $0800
         ' Pre-load NEXT phase's narrow bitmap into card 32 for next phase Frame 1
         IF WaveBannerPhase = 0 THEN
             DEFINE GRAM_FONT_T, 1, WaveSpinAGfx
@@ -906,7 +906,7 @@ SpinWaveBannerLetter: PROCEDURE
         ' No DEFINE at Phase 3 (E is the last)
     ELSEIF WaveBannerFrame = 2 THEN
         ' Edge-on: card 47 holds WaveSpinEdgeGfx (pre-loaded at StartNewWave)
-        PRINT AT Col, GRAM_ORBITER * 8 + 6 + $0800
+        PRINT AT Col, GRAM_ORBITER * 8 + 1 + $0800
     ELSEIF WaveBannerFrame = 3 THEN
         ' Blank: letter has spun away
         PRINT AT Col, 0

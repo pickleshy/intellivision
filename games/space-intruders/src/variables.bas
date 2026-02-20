@@ -69,7 +69,7 @@ AlienDir    = 1                 ' Movement direction (1=right, 255=left using un
 MarchCount  = 0                 ' Frame counter for march timing
 CurrentMarchSpeed = 160         ' Current march speed (decreases per wave)
 BaseMarchSpeed = 60             ' March speed at start of wave (before descent accel)
-MusicGear   = 0                 ' Current music gear (0=slow,1=mid,2=fast,3=panic)
+MusicGear   = 0                 ' Current music gear (0=mid,1=fast,2=panic)
 #AliensAlive = 0                ' Count of remaining aliens
 WaveRevealCol = ALIEN_COLS - 1  ' Column reveal counter (starts fully revealed)
 WaveRevealRow = ALIEN_ROWS - 1  ' Row reveal: top-down=rows revealed, fly-down=rows hidden above
