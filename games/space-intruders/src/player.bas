@@ -46,16 +46,15 @@ MovePlayer: PROCEDURE
             #GameFlags = #GameFlags OR FLAG_KEY0HELD
             IF RogueDivePhase = 254 THEN
                 IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN
-                    ' Capture the rogue alien as wingman
-                    #GameFlags = #GameFlags OR FLAG_CAPTURE
+                    ' Capture the rogue alien — start zip-to-ship animation
                     CaptureColor = RogueColor
                     CaptureStep = 0
                     CaptureTimer = CAPTURE_FIRE_RATE
                     CaptureWaves = 0
-                    ' Cancel rogue — it's now captured
-                    RogueState = ROGUE_IDLE
+                    ' ROGUE_CAPTURED: rogue stays visible as it zips to the ship.
+                    ' FLAG_CAPTURE is set only when zip completes (in RogueUpdate).
+                    RogueState = ROGUE_CAPTURED
                     RogueTimer = 0
-                    SPRITE SPR_FLYER, 0, 0, 0
                     ' Capture SFX: rising tone
                     SfxType = 2 : SfxVolume = 14 : #SfxPitch = 400
                     SOUND 2, 400, 14

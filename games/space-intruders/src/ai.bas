@@ -294,6 +294,15 @@ RoguePickAlien: PROCEDURE
 
     RogueRow = HitRow
 
+    ' Guard: don't pick boss cells (prevents skull boss visual split)
+    ' A rogue from a boss cell would remove that cell's grid bit, splitting the boss
+    IF BossCount > 0 THEN
+        AlienGridRow = RogueRow
+        AlienGridCol = RogueCol
+        GOSUB FindBossAtCell
+        IF FoundBoss < 255 THEN RETURN
+    END IF
+
     ' Set alien type/color based on row (5 unique types)
     IF RogueRow = 0 THEN
         RogueCard = GRAM_ALIEN1
@@ -360,6 +369,50 @@ RogueUpdate: PROCEDURE
             RogueDivePhase = 24   ' Start at top of circle
             RogueCol = 0          ' Reuse as step counter during dive
             RogueTimer = 0
+        END IF
+        RETURN
+    END IF
+
+    ' --- CAPTURED ZIP STATE: rogue flies to ship orbit entry ---
+    IF RogueState = ROGUE_CAPTURED THEN
+        ' Target: orbit step 0 entry point near ship (right side of orbit)
+        ' CaptureOrbitDX(0)=12, CaptureOrbitDY(0)=6, CAPTURE_ORBIT_R=6
+        ' => target X = PlayerX + 2, target Y = PLAYER_Y - 12 (= 76)
+        HitCol = PlayerX + 2
+        HitRow = PLAYER_Y - 12
+
+        ' Move X toward target (8px/frame — snap if within range)
+        IF RogueX < HitCol THEN
+            IF HitCol - RogueX > 8 THEN RogueX = RogueX + 8 ELSE RogueX = HitCol
+        ELSEIF RogueX > HitCol THEN
+            IF RogueX - HitCol > 8 THEN RogueX = RogueX - 8 ELSE RogueX = HitCol
+        END IF
+
+        ' Move Y toward target (4px/frame — rogue typically starts below ship)
+        IF RogueY > HitRow THEN
+            IF RogueY - HitRow > 4 THEN RogueY = RogueY - 4 ELSE RogueY = HitRow
+        ELSEIF RogueY < HitRow THEN
+            IF HitRow - RogueY > 4 THEN RogueY = RogueY + 4 ELSE RogueY = HitRow
+        END IF
+
+        ' Flash between captured color and white every 4 frames
+        RogueTimer = RogueTimer + 1
+        IF RogueTimer AND 4 THEN
+            RogueCenterX = COL_WHITE
+        ELSE
+            RogueCenterX = RogueColor
+        END IF
+        SPRITE SPR_FLYER, RogueX + $0200, RogueY, (RogueCard + AnimFrame) * 8 + RogueCenterX + $0800
+
+        ' Arrived: both axes at exact target (snap guarantees equality)
+        IF RogueX = HitCol THEN
+            IF RogueY = HitRow THEN
+                ' Zip complete — activate wingman orbit
+                SPRITE SPR_FLYER, 0, 0, 0
+                #GameFlags = #GameFlags OR FLAG_CAPTURE
+                RogueState = ROGUE_IDLE
+                RogueTimer = 0
+            END IF
         END IF
         RETURN
     END IF
@@ -824,6 +877,21 @@ SaucerAnimate: PROCEDURE
                         #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                         #GameFlags = #GameFlags AND $FFF7  ' Deactivate wingman bullet
+                        GOSUB SaucerHit
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' Check collision with alien/rogue bullet
+    IF #GameFlags AND FLAG_ABULLET THEN
+        IF ABulletY + 6 >= FlyY THEN
+            IF ABulletY <= FlyY + 6 THEN
+                IF ABulletX >= FlyX - 4 THEN
+                    IF ABulletX <= FlyX + 16 THEN
+                        #GameFlags = #GameFlags AND $FFFD  ' Clear FLAG_ABULLET
+                        SPRITE SPR_ABULLET, 0, 0, 0
                         GOSUB SaucerHit
                     END IF
                 END IF

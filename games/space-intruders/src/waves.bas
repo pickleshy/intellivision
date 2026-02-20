@@ -731,11 +731,10 @@ LoadPatternB: PROCEDURE
         BossCol(1) = 6 : BossRow(1) = 1
         BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
     ELSEIF LoopVar = 10 THEN
-        ' Wave 11: 1 bomb + orbiter
+        ' Wave 11: 1 bomb boss (no orbiter — Zigzag pattern is too dense for orbit clearance)
         BossCount = 1
         BossCol(0) = 4 : BossRow(0) = 2
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        OrbitStep = 0
     ELSEIF LoopVar = 11 THEN
         ' Wave 12: 2 skulls guarding corners
         BossCount = 2
@@ -772,14 +771,12 @@ LoadPatternB: PROCEDURE
         BossCol(2) = 7 : BossRow(2) = 4
         BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 17 THEN
-        ' Wave 18: 2 bombs + 2 orbiters
+        ' Wave 18: 2 bombs (no orbiters — Fortress alt is too dense; boss 1 orbit also exits grid below row 4)
         BossCount = 2
         BossCol(0) = 1 : BossRow(0) = 1
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
         BossCol(1) = 5 : BossRow(1) = 3
         BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
     ELSEIF LoopVar = 18 THEN
         ' Wave 19: 1 bomb w/ orbiter + 1 skull
         BossCount = 2
@@ -807,7 +804,7 @@ LoadPatternB: PROCEDURE
         BossCol(2) = 3 : BossRow(2) = 4
         BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 21 THEN
-        ' Wave 22: 1 bomb w/ orbiter + 2 skulls
+        ' Wave 22: 1 bomb + 2 skulls (no orbiter — Cross alt row 2 is solid $1FF)
         BossCount = 3
         BossCol(0) = 3 : BossRow(0) = 2
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
@@ -815,7 +812,6 @@ LoadPatternB: PROCEDURE
         BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
         BossCol(2) = 1 : BossRow(2) = 4
         BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-        OrbitStep = 0
     ' Wave 23 (LoopVar=22): no bosses (breather)
     ELSEIF LoopVar = 23 THEN
         ' Wave 24: 2 bombs w/ orbiters
@@ -858,7 +854,7 @@ LoadPatternB: PROCEDURE
         BossCol(2) = 0 : BossRow(2) = 4
         BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 27 THEN
-        ' Wave 28: 4 bosses — 2 bombs w/ orbiters + 2 skulls
+        ' Wave 28: 4 bosses — 2 bombs + 2 skulls (no orbiters — Phalanx alt rows 0,2 are solid $1FF)
         BossCount = 4
         BossCol(0) = 1 : BossRow(0) = 0
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
@@ -868,8 +864,6 @@ LoadPatternB: PROCEDURE
         BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
         BossCol(3) = 5 : BossRow(3) = 4
         BossHP(3) = 3 : BossColor(3) = 12 : BossType(3) = SKULL_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
     ELSEIF LoopVar = 28 THEN
         ' Wave 29: 2 skulls
         BossCount = 2
@@ -887,14 +881,13 @@ LoadPatternB: PROCEDURE
         BossCol(2) = 0 : BossRow(2) = 4
         BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
     ELSEIF LoopVar = 30 THEN
-        ' Wave 31: 2 bombs + 2 orbiters
+        ' Wave 31: 2 bombs — boss 1 orbiter only (boss 0 at row 0 is in solid Dense Rows row)
         BossCount = 2
         BossCol(0) = 2 : BossRow(0) = 0
         BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
         BossCol(1) = 5 : BossRow(1) = 2
         BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
+        OrbitStep2 = 5  ' Only boss 1 (row 2, sparse area) gets an orbiter
     ELSEIF LoopVar = 31 THEN
         ' Wave 32: 3 skull bosses
         BossCount = 3
@@ -940,6 +933,18 @@ LoadPatternB: PROCEDURE
         FOR LoopVar = 0 TO BossCount - 1
             BossCol(LoopVar) = BossCol(LoopVar) - HitRow
         NEXT LoopVar
+    END IF
+
+    ' ── Clear orbit path cells for orbiter bosses (after normalization) ──
+    ' Removes any alive aliens in the 8 cells the orbiter sprite will cross.
+    ' Boss cells (BossCol, BossCol+1) are preserved by ClearOrbitPath.
+    IF OrbitStep < 10 THEN
+        AlienGridRow = BossRow(0) : AlienGridCol = BossCol(0)
+        GOSUB ClearOrbitPath
+    END IF
+    IF OrbitStep2 < 10 THEN
+        AlienGridRow = BossRow(1) : AlienGridCol = BossCol(1)
+        GOSUB ClearOrbitPath
     END IF
 
     ' Set dual-slide mode: halves fly in from screen edges

@@ -14,6 +14,9 @@
 StartGame:
     CLS
 
+    ' Reset score for new game (high score comparison happens at game-over)
+    #Score = 0 : #ScoreHigh = 0
+
     ' Reload ALL gameplay GRAM cards overwritten by animated title font
     ' Cards 0-8: Ship, aliens, bullet
     DEFINE GRAM_SHIP, 2, ShipGfx          ' Cards 0-1

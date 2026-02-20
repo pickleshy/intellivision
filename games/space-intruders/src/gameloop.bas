@@ -622,12 +622,23 @@ ChainDone:
                 SCROLL 0, 0
                 CLS
                 GOSUB HideAllSprites
-                ' Update high score (32-bit comparison and copy)
-                IF #ScoreHigh > #HighScoreHigh THEN
-                    #HighScore = #Score
-                    #HighScoreHigh = #ScoreHigh
-                ELSEIF #ScoreHigh = #HighScoreHigh THEN
+                ' Check and update high score; ShakeTimer reused as IsNewHigh flag
+                ' (ShakeTimer was just set to 0 above, and isn't used during the game over screen)
+                ' IMPORTANT: flag must be set BEFORE updating #HighScore, so the comparison
+                ' is against the previous best (not the just-updated value).
+                '
+                ' BUG WORKAROUND: IntyBASIC UNSIGNED `>` compiles BEQ $+4 which falls INTO
+                ' the then-body on equal case, making `>` behave as `>=`. Guard every `>`
+                ' with an explicit `<>` check so the equal case never reaches the inner IF.
+                IF #ScoreHigh <> #HighScoreHigh THEN
+                    IF #ScoreHigh > #HighScoreHigh THEN
+                        ShakeTimer = 1
+                        #HighScore = #Score
+                        #HighScoreHigh = #ScoreHigh
+                    END IF
+                ELSEIF #Score <> #HighScore THEN
                     IF #Score > #HighScore THEN
+                        ShakeTimer = 1
                         #HighScore = #Score
                         #HighScoreHigh = #ScoreHigh
                     END IF
@@ -723,7 +734,7 @@ ChainDone:
                 PRINT AT 112, GRAM_SCORE_OR * 8 + COL_WHITE + $0800  ' D2D1 (hundreds + tens)
                 PRINT AT 113, GRAM_SCORE_E * 8 + COL_WHITE + $0800   ' D0 (ones + blank)
                 ' High score at row 6
-                IF #ScoreHigh > #HighScoreHigh OR (#ScoreHigh = #HighScoreHigh AND #Score >= #HighScore) THEN
+                IF ShakeTimer THEN  ' ShakeTimer=1 means new high score was set above
                     ' New high: TinyFont "NEW HIGH SCORE!" (single space)
                     FOR LoopVar = 0 TO 3
                         PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800

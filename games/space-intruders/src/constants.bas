@@ -210,6 +210,7 @@ CONST CHASE_FIRE_RATE = 45        ' Frames between saucer shots (~1.3 per second
 CONST ROGUE_IDLE       = 0
 CONST ROGUE_SHAKE      = 1
 CONST ROGUE_DIVE       = 2
+CONST ROGUE_CAPTURED   = 3  ' Zip animation: rogue flies from capture point to ship
 CONST ROGUE_COOLDOWN   = 120      ' ~2 sec between trigger checks
 CONST ROGUE_SHAKE_TIME = 30       ' 0.5 sec shake telegraph
 CONST ROGUE_CHANCE     = 6        ' 1-in-6 per check

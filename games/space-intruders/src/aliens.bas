@@ -63,6 +63,34 @@ END
 ' Input: HitRow, HitCol = grid position of hit
 ' Shows same BACKTAB explosion flash as regular alien deaths.
 ' --------------------------------------------
+' --------------------------------------------
+' ClearOrbitPath - Clear alive aliens from the 8 surrounding cells of an orbiter boss
+' Input: AlienGridRow = boss row, AlienGridCol = boss left column
+' Iterates all 10 OrbitDX/OrbitDY steps; skips the boss's own 2 cells.
+' Call after force-setting boss cells alive and after grid normalization.
+' --------------------------------------------
+ClearOrbitPath: PROCEDURE
+    FOR LoopVar = 0 TO 9
+        Row = AlienGridRow + OrbitDY(LoopVar)
+        IF Row < ALIEN_ROWS THEN
+            ' Guard unsigned underflow: AlienGridCol + OrbitDX - 1 could be -1
+            IF AlienGridCol + OrbitDX(LoopVar) >= 1 THEN
+                Col = AlienGridCol + OrbitDX(LoopVar) - 1
+                IF Col < ALIEN_COLS THEN
+                    ' Don't clear the boss's own 2 cells (row=BossRow, col=BossCol or BossCol+1)
+                    IF Row <> AlienGridRow OR (Col <> AlienGridCol AND Col <> AlienGridCol + 1) THEN
+                        #Mask = ColMaskData(Col)
+                        IF #AlienRow(Row) AND #Mask THEN
+                            #AlienRow(Row) = #AlienRow(Row) XOR #Mask
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    NEXT LoopVar
+    RETURN
+END
+
 OrbiterHitEffect: PROCEDURE
     ' Kill any alive alien at this grid position so the cell stays blank after
     ' the explosion fades (otherwise DrawAliens redraws the alive alien every frame,
@@ -748,8 +776,13 @@ DrawAliens: PROCEDURE
             ' Pre-add row offset once (saves 2 additions per cell × 9 cols)
             #ScreenPos = #ScreenPos + ALIEN_START_X + AlienOffsetX
             IF #AlienRow(Row) = 0 THEN
-                ' EMPTY ROW: skip entire column loop (~1000 cycles saved)
-                ' Trail edges still need clearing after march
+                ' EMPTY ROW: clear all 9 columns + trail edges
+                ' Must clear interior columns (not just trail edges) because after
+                ' a grid descent the row above a boss maps to this screen row —
+                ' trail-only clearing leaves stale boss tiles from the prior descent.
+                FOR Col = 0 TO ALIEN_COLS - 1
+                    PRINT AT #ScreenPos + Col, 0
+                NEXT Col
                 IF AlienOffsetX > 0 THEN
                     PRINT AT #ScreenPos - 1, 0
                 END IF
