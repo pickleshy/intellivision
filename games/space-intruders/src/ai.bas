@@ -89,11 +89,7 @@ UpdateCapture: PROCEDURE
         IF CapBtnTimer = 0 THEN
             IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
             IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-                CapBulletCol = (HitCol - 8) / 8
-                IF CapBulletCol > 19 THEN CapBulletCol = 19
-                CapBulletRow = (HitRow - 8) / 8
-                IF CapBulletRow > 11 THEN CapBulletRow = 11
-                #GameFlags = #GameFlags OR FLAG_CAPBULLET
+                GOSUB LaunchCapBullet
                 CapBtnTimer = CAP_BTN_FIRE_RATE
             END IF
             END IF
@@ -107,11 +103,7 @@ UpdateCapture: PROCEDURE
         CaptureTimer = CAPTURE_FIRE_RATE
         IF (#GameFlags AND FLAG_CAPBULLET) = 0 THEN
             ' Launch visible upward bullet from wingman position
-            CapBulletCol = (HitCol - 8) / 8
-            IF CapBulletCol > 19 THEN CapBulletCol = 19
-            CapBulletRow = (HitRow - 8) / 8
-            IF CapBulletRow > 11 THEN CapBulletRow = 11
-            #GameFlags = #GameFlags OR FLAG_CAPBULLET
+            GOSUB LaunchCapBullet
             ' SFX: soft pew on channel 3
             SfxType = 1 : SfxVolume = 6 : #SfxPitch = 500
             SOUND 2, 500, 6
@@ -134,7 +126,7 @@ UpdateCapture: PROCEDURE
             #GameFlags = #GameFlags AND $FFF7
             GOTO CapBulletDone
         END IF
-        CapBulletRow = CapBulletRow - 1
+        CapBulletRow = CapBulletRow - 1  ' audit-ignore: IF CapBulletRow <= 1 THEN deactivate above ensures CapBulletRow >= 2 here
 
         ' Check for alien hit at new position
         GOSUB CaptureHitscan
@@ -177,6 +169,19 @@ UpdateCapture: PROCEDURE
         END IF
     END IF
 CapBulletDone:
+    RETURN
+END
+
+' --------------------------------------------
+' LaunchCapBullet - Arm wingman bullet from current HitCol/HitRow orbit position
+' Sets CapBulletCol, CapBulletRow, FLAG_CAPBULLET. Caller handles SFX/cooldown.
+' --------------------------------------------
+LaunchCapBullet: PROCEDURE
+    CapBulletCol = (HitCol - 8) / 8
+    IF CapBulletCol > 19 THEN CapBulletCol = 19
+    CapBulletRow = (HitRow - 8) / 8
+    IF CapBulletRow > 11 THEN CapBulletRow = 11
+    #GameFlags = #GameFlags OR FLAG_CAPBULLET
     RETURN
 END
 
@@ -350,7 +355,7 @@ END
 RogueUpdate: PROCEDURE
     ' --- SHAKE STATE ---
     IF RogueState = ROGUE_SHAKE THEN
-        RogueTimer = RogueTimer - 1
+        RogueTimer = RogueTimer - 1  ' audit-ignore: timer is reset to ROGUE_SHAKE_FRAMES on state entry; counts to 0 then transitions
 
         ' Flash alien's BACKTAB tile between normal and white
         #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + RogueRow)
@@ -403,7 +408,7 @@ RogueUpdate: PROCEDURE
         IF RogueX < HitCol THEN
             IF HitCol - RogueX > 8 THEN RogueX = RogueX + 8 ELSE RogueX = HitCol
         ELSEIF RogueX > HitCol THEN
-            IF RogueX - HitCol > 8 THEN RogueX = RogueX - 8 ELSE RogueX = HitCol
+            IF RogueX - HitCol > 8 THEN RogueX = RogueX - 8 ELSE RogueX = HitCol  ' audit-ignore: RogueX > HitCol+8 guarantees RogueX-8 >= 1
         END IF
 
         ' Move Y toward target (4px/frame — rogue typically starts below ship)

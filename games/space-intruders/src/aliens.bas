@@ -367,11 +367,11 @@ CheckOneColumn: PROCEDURE
                     BossHP(FoundBoss) = BossHP(FoundBoss) - 1
                     ' Beam: apply second hit to same boss if budget remains
                     IF BeamTimer > 0 THEN
-                        BeamHits = BeamHits - 1
+                        BeamHits = BeamHits - 1  ' audit-ignore: bullet cleared when BeamHits=0 prevents re-entry
                         IF BeamHits > 0 THEN
                             IF BossHP(FoundBoss) > 0 THEN
                                 BossHP(FoundBoss) = BossHP(FoundBoss) - 1
-                                BeamHits = BeamHits - 1
+                                BeamHits = BeamHits - 1  ' audit-ignore: guarded by IF BeamHits > 0 above
                             END IF
                         END IF
                     END IF
@@ -424,7 +424,7 @@ CheckOneColumn: PROCEDURE
 
                 ' Beam: decrement pierce budget; stop when exhausted
                 IF BeamTimer > 0 THEN
-                    BeamHits = BeamHits - 1
+                    BeamHits = BeamHits - 1  ' audit-ignore: bullet cleared on next line when BeamHits=0 prevents re-entry
                     IF BeamHits = 0 THEN #GameFlags = #GameFlags AND $FFFE
                 ELSE
                     #GameFlags = #GameFlags AND $FFFE

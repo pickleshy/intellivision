@@ -215,7 +215,7 @@ TitleLoop:
                 PowerUpX = 0  ' Reverse to left
             END IF
         ELSE
-            CapsuleColor2 = CapsuleColor2 - 1
+            CapsuleColor2 = CapsuleColor2 - 1  ' audit-ignore: <= 1 reversal below; momentarily 0 is fine (bounces back next frame)
             IF CapsuleColor2 <= 1 THEN
                 PowerUpX = 1  ' Reverse to right
             END IF
@@ -385,7 +385,7 @@ SkipPressfire:
             END IF
         END IF
     ELSE
-        IF CheatCode AND 7 THEN CheatCode = CheatCode - 1
+        IF CheatCode AND 7 THEN CheatCode = CheatCode - 1  ' audit-ignore: AND 7 guard ensures lower bits nonzero (>= 1)
         ' Reset cheat state if a non-3/6 key is pressed
         IF CONT.KEY < 12 THEN
             IF CONT.KEY <> 3 THEN

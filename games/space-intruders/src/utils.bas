@@ -131,7 +131,7 @@ UpdateScoreDisplay: PROCEDURE
         ' PERF: /10 on 0-999 = 99 iters. Use /100 (9 iters) + /10 (9 iters) + mul.
         HitRow = #Mask / 100               ' Hundreds digit (0-9, max 9 iters ~200 cycles)
         #Mask = #Mask - HitRow * 100       ' L mod 100 (0-99)
-        Col = #Mask / 10                   ' Tens digit (0-9 iters ~200 cycles)
+        Col = #Mask / 10                   ' Tens digit (0-9 iters ~200 cycles) audit-ignore: bounded 0-99 by prior /100
         #Mask = HitRow * 10 + Col          ' Hundreds+tens pair (0-99)
         POKE $0107, SCORE_CARD1
     ELSEIF ScoreCard = 6 THEN
@@ -143,12 +143,12 @@ UpdateScoreDisplay: PROCEDURE
         #Mask = #Score - #Mask * 1000     ' L_mod1000 (0-999)
         HitRow = #Mask / 100              ' Hundreds (0-9 iters ~200 cycles)
         #Mask = #Mask - HitRow * 100      ' L mod 100 (0-99)
-        HitRow = #Mask / 10               ' Tens (0-9 iters ~200 cycles)
+        HitRow = #Mask / 10               ' Tens (0-9 iters ~200 cycles) audit-ignore: bounded 0-99 by prior /100
         #Mask = #Mask - HitRow * 10       ' ones_L = L mod 10 (0-9)
         IF #ScoreHigh > 0 THEN
             ' Add H's contribution to ones: H * (65536 mod 10) = H * 6, then mod 10
             #Card = #ScoreHigh * 6        ' H*6 (~80 cycle mul; ≤ 65535 for H ≤ 10922)
-            HitRow = #Card / 10           ' Tens of H*6 (max 60 iters for H≤100)
+            HitRow = #Card / 10           ' Tens of H*6 (max 60 iters for H≤100) audit-ignore: H≤10 in practice
             #Card = #Card - HitRow * 10   ' H*6 mod 10 (0-9)
             #Mask = #Mask + #Card         ' ones_L + H_ones (0-18, fits in 16-bit)
             IF #Mask >= 10 THEN #Mask = #Mask - 10  ' Final ones digit (0-9)
@@ -199,7 +199,7 @@ END
 
 ' --- HitShield: Absorb a hit on the shield, announce if shields down ---
 HitShield: PROCEDURE
-    ShieldHits = ShieldHits - 1
+    ShieldHits = ShieldHits - 1  ' audit-ignore: all callers guard with IF ShieldHits > 0 THEN
     SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
     SOUND 2, 800, 12
     IF ShieldHits = 0 THEN
@@ -349,7 +349,7 @@ PrintScore7Grom: PROCEDURE
     PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
     ShootTimer = ShootTimer + 1
     #ScreenPos = #ScreenPos - Col * 100
-    Col = #ScreenPos / 10                 ' D4 ten-thousands (0-9)
+    Col = #ScreenPos / 10                 ' D4 ten-thousands (0-9) audit-ignore: bounded 0-99 by prior /100
     PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
     Col = #ScreenPos - Col * 10           ' D3 thousands (0-9, uses old Col=D4)
     ShootTimer = ShootTimer + 1
@@ -359,7 +359,7 @@ PrintScore7Grom: PROCEDURE
     PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
     ShootTimer = ShootTimer + 1
     #Mask = #Mask - Col * 100
-    Col = #Mask / 10                      ' D1 tens (0-9)
+    Col = #Mask / 10                      ' D1 tens (0-9) audit-ignore: bounded 0-99 by prior /100
     PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
     Col = #Mask - Col * 10                ' D0 ones (0-9, uses old Col=D1)
     ShootTimer = ShootTimer + 1

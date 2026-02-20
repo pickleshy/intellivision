@@ -171,7 +171,7 @@ MarchAliens: PROCEDURE
         IF AlienOffsetX > 0 THEN
             IF AlienOffsetX + HitRow > 0 THEN
                 ' Trail clearing handled by DrawAliens edge-clear (called after MarchAliens)
-                AlienOffsetX = AlienOffsetX - 1
+                AlienOffsetX = AlienOffsetX - 1  ' audit-ignore: guarded by IF AlienOffsetX > 0 THEN two lines above
             ELSE
                 ' Hit left edge - drop down and reverse
                 AlienDir = 1
@@ -559,7 +559,7 @@ END
 ' MegaBeamGfx solid block at T=0 or via StopMegaSputter on force-clear.
 ' --------------------------------------------
 MegaSputterUpdate: PROCEDURE
-    MegaSputterTimer = MegaSputterTimer - 1
+    MegaSputterTimer = MegaSputterTimer - 1  ' audit-ignore: caller (gameloop) guards with IF MegaSputterTimer > 0
 
     ' Clear previous beam column
     FOR LoopVar = 0 TO 9

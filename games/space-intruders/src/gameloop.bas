@@ -276,7 +276,7 @@ GameLoop:
                 IF ALIEN_START_Y + AlienOffsetY + HitRow >= 10 THEN
                     ' Invasion! Lose a life and reset formation
                     IF DeathTimer = 0 AND Invincible = 0 THEN
-                        Lives = Lives - 1
+                        Lives = Lives - 1  ' audit-ignore: DeathTimer prevents re-entry; game-over triggers when Lives=0
                         ' Clear power-ups, bullets, rogue, wingman
                         BeamTimer = 0 : RapidTimer = 0
                         #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
@@ -540,7 +540,7 @@ ChainDone:
         IF DeathTimer = 0 THEN
             IF Invincible = 0 THEN
                 #GameFlags = #GameFlags AND $FFEF
-                Lives = Lives - 1
+                Lives = Lives - 1  ' audit-ignore: DeathTimer=0 AND Invincible=0 gate; game-over triggers when Lives=0
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
                 #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0

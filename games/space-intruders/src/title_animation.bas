@@ -212,7 +212,7 @@ AnimateStars: PROCEDURE
     IF BulletX = 0 THEN
         BulletX = 19
     ELSE
-        BulletX = BulletX - 1
+        BulletX = BulletX - 1  ' audit-ignore: ELSE of IF BulletX = 0 guarantees BulletX > 0
     END IF
 
     ' Slow star (row 4): moves every other frame (StarTimer driven)
@@ -220,7 +220,7 @@ AnimateStars: PROCEDURE
         IF ABulletX = 0 THEN
             ABulletX = 19
         ELSE
-            ABulletX = ABulletX - 1
+            ABulletX = ABulletX - 1  ' audit-ignore: ELSE of IF ABulletX = 0 guarantees ABulletX > 0
         END IF
     END IF
 
