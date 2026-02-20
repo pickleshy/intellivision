@@ -66,12 +66,20 @@ def run(source, lst_info):
             message=f'Total ROM: {lst_info.total_used}/{total} words ({pct:.1f}%)',
         ))
 
-    # 8-bit user variables (from .lst var_ entries)
+    # 8-bit user variables (scalars + DIM array slots)
     if lst_info.var_8bit_user > 0:
+        remaining_8 = VAR_8BIT_LIMIT - lst_info.var_8bit_user
+        pct_8 = lst_info.var_8bit_user * 100.0 / VAR_8BIT_LIMIT
+        if remaining_8 <= 0:
+            sev_8 = SEVERITY_ERROR
+        elif remaining_8 <= 5:
+            sev_8 = SEVERITY_WARN
+        else:
+            sev_8 = SEVERITY_INFO
         findings.append(Finding(
             checker=NAME,
-            severity=SEVERITY_INFO,
-            message=f'8-bit user vars: {lst_info.var_8bit_user} (run build.sh to see total/limit from compiler)',
+            severity=sev_8,
+            message=f'8-bit vars: {lst_info.var_8bit_user}/{VAR_8BIT_LIMIT} ({pct_8:.1f}%) — {remaining_8} free',
         ))
 
     # 16-bit user variables

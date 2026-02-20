@@ -166,6 +166,7 @@ CaptureStep    = 0                 ' Orbit step index (0-15, 16-step circle)
 CaptureTimer   = 0                 ' Countdown to next hitscan shot
 CapBulletCol   = 0                 ' BACKTAB column of wingman bullet
 CapBulletRow   = 0                 ' Current BACKTAB row (counts down toward aliens)
+CapBtnTimer    = 0                 ' Cooldown between button-triggered wingman shots
 
 ' -- Power-Up System --
 ' These vars double as title-screen animation state (see [title:] comments at init sites)

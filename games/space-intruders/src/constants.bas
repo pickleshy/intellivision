@@ -218,6 +218,7 @@ CONST ROGUE_CHANCE     = 6        ' 1-in-6 per check
 ' Capture wingman constants
 CONST CAPTURE_FIRE_RATE = 90      ' Frames between allied hitscan shots (~1.5 sec)
 CONST CAPTURE_ORBIT_R   = 6      ' Orbit radius (pixels)
+CONST CAP_BTN_FIRE_RATE = 20     ' Min frames between button-triggered wingman shots (~3/sec)
 
 ' Boss alien constants
 CONST BOSS_HP_MAX  = 3          ' Hits to destroy boss

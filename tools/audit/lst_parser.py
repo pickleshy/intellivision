@@ -39,6 +39,9 @@ RE_TOTAL_LINE = re.compile(
 # Variable patterns (user-defined vars only, not system)
 RE_VAR_8BIT = re.compile(r'^0x[\da-fA-F]+\s+var_(\w+):\s+RMB\s+1')
 RE_VAR_16BIT = re.compile(r'^0x[\da-fA-F]+\s+var_&(\w+):\s+RMB\s+1')
+# DIM array patterns — var_NAME: RMB N allocates N 8-bit slots; array_&NAME: RMB N for 16-bit
+RE_ARRAY_8BIT = re.compile(r'^0x[\da-fA-F]+\s+array_(?!&)\w+:\s+RMB\s+(\d+)')
+RE_ARRAY_16BIT = re.compile(r'^0x[\da-fA-F]+\s+array_&\w+:\s+RMB\s+(\d+)')
 # Any ALLOCATED RMB 1 (must have address prefix 0x to confirm it was assembled)
 RE_ALLOCATED_RMB1 = re.compile(r'^0x[\da-fA-F]+\s+\S+.*\bRMB\s+1\b')
 
@@ -62,6 +65,8 @@ def parse_lst(filepath):
     in_16bit_section = False
     total_8bit_rmb = 0
     total_16bit_rmb = 0
+    array_8bit_slots = 0   # Slots from DIM array_NAME: RMB N
+    array_16bit_slots = 0  # Slots from DIM array_&NAME: RMB N
 
     for line in lines:
         stripped = line.strip()
@@ -108,7 +113,7 @@ def parse_lst(filepath):
         if in_16bit_section and RE_ALLOCATED_RMB1.search(stripped):
             total_16bit_rmb += 1
 
-        # 8-bit user variables
+        # 8-bit user scalars (var_NAME: RMB 1)
         m = RE_VAR_8BIT.match(stripped)
         if m:
             name = m.group(1)
@@ -116,14 +121,26 @@ def parse_lst(filepath):
                 var_8bit_names.add(name)
             continue
 
-        # 16-bit user variables
+        # 16-bit user scalars (var_&NAME: RMB 1)
         m = RE_VAR_16BIT.match(stripped)
         if m:
             var_16bit_names.add(m.group(1))
             continue
 
-    info.var_8bit_user = len(var_8bit_names)
-    info.var_16bit_user = len(var_16bit_names)
+        # 8-bit DIM arrays (array_NAME: RMB N) — each element is one slot
+        m = RE_ARRAY_8BIT.match(stripped)
+        if m:
+            array_8bit_slots += int(m.group(1))
+            continue
+
+        # 16-bit DIM arrays (array_&NAME: RMB N) — each element is one slot
+        m = RE_ARRAY_16BIT.match(stripped)
+        if m:
+            array_16bit_slots += int(m.group(1))
+            continue
+
+    info.var_8bit_user = len(var_8bit_names) + array_8bit_slots
+    info.var_16bit_user = len(var_16bit_names) + array_16bit_slots
     info.var_8bit_total = total_8bit_rmb
     info.var_16bit_total = total_16bit_rmb
 

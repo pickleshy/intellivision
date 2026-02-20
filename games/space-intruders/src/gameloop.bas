@@ -832,6 +832,9 @@ ChainDone:
     IF FireCooldown > 0 THEN
         FireCooldown = FireCooldown - 1
     END IF
+    IF CapBtnTimer > 0 THEN
+        CapBtnTimer = CapBtnTimer - 1
+    END IF
     IF MegaTimer > 0 THEN
         MegaTimer = MegaTimer - 1
         IF MegaTimer = 0 AND MegaSputterTimer = 0 THEN

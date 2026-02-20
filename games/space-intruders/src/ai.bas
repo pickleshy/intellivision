@@ -82,6 +82,24 @@ UpdateCapture: PROCEDURE
     END IF
     END IF
 
+    ' Button-triggered wingman fire — fires when player presses fire (20-frame cooldown ~3/sec)
+    ' Guard: CONT.BUTTON + CONT.KEY >= 12 (same ECS bleed-through protection as player.bas)
+    ' No SFX: player's own weapon sound already plays; two bullets visible is its own feedback
+    IF (#GameFlags AND FLAG_CAPBULLET) = 0 THEN
+        IF CapBtnTimer = 0 THEN
+            IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
+            IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
+                CapBulletCol = (HitCol - 8) / 8
+                IF CapBulletCol > 19 THEN CapBulletCol = 19
+                CapBulletRow = (HitRow - 8) / 8
+                IF CapBulletRow > 11 THEN CapBulletRow = 11
+                #GameFlags = #GameFlags OR FLAG_CAPBULLET
+                CapBtnTimer = CAP_BTN_FIRE_RATE
+            END IF
+            END IF
+        END IF
+    END IF
+
     ' Fire timer — launch upward bullet
     IF CaptureTimer > 0 THEN
         CaptureTimer = CaptureTimer - 1
