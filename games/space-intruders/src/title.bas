@@ -29,6 +29,13 @@ TitleScreen:
     WAIT
     ' Reload band alien sprites (cards 9-12, game over TinyFont overwrites them)
     GOSUB ReloadBandSprites
+    ' Load eye glow masks into title-only GRAM slots.
+    ' Cards 57,58 are free during title — gameplay redefines them at StartGame
+    ' (GRAM_BOMB2_F1=57 and GRAM_CHAIN_CH=58 are loaded later).
+    DEFINE GRAM_BOMB2_F1, 1, BandGlow1Gfx   ' Card 57: left half eye glow
+    WAIT
+    DEFINE GRAM_CHAIN_CH, 1, BandGlow2Gfx   ' Card 58: right half eye glow
+    WAIT
     ' Reload Zod crab sprites (cards 19-20, boot splash date overwrites them)
     DEFINE GRAM_CRAB_F1, 2, SmallCrabF1Gfx
     WAIT
@@ -80,7 +87,7 @@ TitleDebounce:
 TitleLoop:
     WAIT
 
-    ' Hide unused sprites
+    ' Default all sprites to hidden; glow code below overrides 0-4,6 when active
     SPRITE 0, 0, 0, 0
     SPRITE 1, 0, 0, 0
     SPRITE 2, 0, 0, 0
@@ -88,6 +95,23 @@ TitleLoop:
     SPRITE 4, 0, 0, 0
     SPRITE 6, 0, 0, 0
     SPRITE 7, 0, 0, 0
+
+    ' --- BEHIND eye glow: center alien column, all 3 rows (6 sprites) ---
+    ' Sprites 0-4 and 6 become BEHIND sprites at the alien center column.
+    ' They show red only through the blank eye socket pixels in the skull tile.
+    ' Solid skull pixels block the BEHIND sprite automatically — no masking needed.
+    ' Guard: skip during vanish (TitleAnimState=2) to avoid floating pixels.
+    IF TitleAnimState < 2 THEN
+        ' Center-column Band1 sprite X: (CapsuleColor2 + 3) * 8 + 8
+        ' Band2 is 8px to the right. All 3 rows: Y = 48, 56, 64
+        #ScreenPos = (CapsuleColor2 + 3) * 8 + 8
+        SPRITE 0, #ScreenPos       + $2200, 48 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
+        SPRITE 1, (#ScreenPos + 8) + $2200, 48 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
+        SPRITE 2, #ScreenPos       + $2200, 56 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
+        SPRITE 3, (#ScreenPos + 8) + $2200, 56 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
+        SPRITE 4, #ScreenPos       + $2200, 64 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
+        SPRITE 6, (#ScreenPos + 8) + $2200, 64 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
+    END IF
 
     ' --- Flying crab "Zod" state machine ---
     ' States: 0=enter from left, 1=figure-8 loops, 2=exit right, 3=offscreen pause

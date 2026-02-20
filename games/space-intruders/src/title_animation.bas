@@ -152,19 +152,20 @@ DrawAlienGrid: PROCEDURE
     FOR LoopVar = 100 TO 159
         PRINT AT LoopVar, 0
     NEXT LoopVar
-    ' Card values for left/right halves (GRAM + blue foreground)
-    #Card = (GRAM_BAND1 * 8) + COL_BLUE + $0800
-    #Mask = (GRAM_BAND2 * 8) + COL_BLUE + $0800
-    ' Draw 3 rows of 3 aliens (each alien = 2 cards wide, 1 card gap between)
+    ' All 9 aliens identical: same green body, red eye glow via BEHIND sprites (center column).
+    ' Shadow requires F/B mode (future enhancement); for now body + glow = 2 visible colors.
     FOR LoopVar = 0 TO 2
+        RowColor = COL_GREEN
+        #Card = (GRAM_BAND1 * 8) + RowColor + $0800
+        #Mask = (GRAM_BAND2 * 8) + RowColor + $0800
         #ScreenPos = (5 + LoopVar) * 20 + CapsuleColor2
-        ' Alien 1
+        ' Alien 1 (left column)
         PRINT AT #ScreenPos, #Card
         PRINT AT #ScreenPos + 1, #Mask
-        ' Alien 2 (offset +3 cards)
+        ' Alien 2 (center column — gets eye glow via BEHIND sprites)
         PRINT AT #ScreenPos + 3, #Card
         PRINT AT #ScreenPos + 4, #Mask
-        ' Alien 3 (offset +6 cards)
+        ' Alien 3 (right column)
         PRINT AT #ScreenPos + 6, #Card
         PRINT AT #ScreenPos + 7, #Mask
     NEXT LoopVar

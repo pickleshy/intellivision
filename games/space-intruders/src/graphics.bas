@@ -549,6 +549,32 @@ Band2F1Gfx:
     BITMAP "X..XX..."
     BITMAP "..XX...."
 
+' --- SKULL EYE GLOW MASKS (title screen BEHIND sprites) ---
+' Used with BEHIND sprites to project red glow through eye socket blanks.
+' Only row 3 has pixels — all other rows zero to prevent leakage through
+' jaw gaps and top-corner padding blanks.
+' Band1 eye sockets: row 3 blank at positions 5,6 ("..XXX..X" → ".....XX." glow)
+' Band2 eye sockets: row 3 blank at positions 1,2 ("X..XXX.." → ".XX....." glow)
+BandGlow1Gfx:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".....XX."   ' row 3: left eye socket (positions 5,6)
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
+BandGlow2Gfx:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".XX....."   ' row 3: right eye socket (positions 1,2)
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "........"
+
 ' --- SMALL CRAB (6x8 → centered in 8x8) ---
 SmallCrabF1Gfx:
     BITMAP "...XX..."

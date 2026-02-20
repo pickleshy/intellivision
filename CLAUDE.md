@@ -663,6 +663,26 @@ grep -n "RogueState = 0" src/main.bas
 
 ## Common Pitfalls (Learned the Hard Way)
 
+### DEFINE card number must be a CONST or variable, never DEFxx
+
+`DEFINE card_num, count, label` — the first argument is the **target GRAM card number**. It must evaluate to the correct card at runtime.
+
+```basic
+' WRONG — DEFxx is an uninitialized variable (always 0):
+DEFINE DEF00, 2, Band1Gfx    ' accidentally correct (card 0 = 0)
+DEFINE DEF02, 2, GlowBand1   ' SILENTLY WRONG — also loads to card 0!
+
+' RIGHT — use a named CONST:
+CONST G_BAND1 = 0
+CONST G_GLOW1 = 2
+DEFINE G_BAND1, 2, Band1Gfx  ' card 0 ✓
+DEFINE G_GLOW1, 2, GlowBand1 ' card 2 ✓
+```
+
+The compiler warning `variable 'DEF02' read but never assigned` is the tell. Always use the same CONST names you defined for the GRAM card indices. This is exactly how `game_init.bas` does all its DEFINE calls (`DEFINE GRAM_SHIP, 2, ShipGfx` etc.).
+
+Also: **BEHIND sprites** use `$2000` added to the **X parameter** (not the card parameter). `$2200` = VISIBLE + BEHIND. `$0100` is always required on the Y parameter.
+
 ### Color Stack BACKTAB Manipulation
 
 When reading/modifying BACKTAB values directly with PEEK/PRINT AT:

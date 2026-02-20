@@ -374,6 +374,51 @@ Depends on defining capture mechanic. Currently speculative.
 
 ---
 
+### Spec #16: Title Screen F/B Mode — 3-Color Aliens (body + shadow + eyes)
+
+**Goal:** Make all 9 title screen aliens display 3 distinct colors simultaneously:
+1. **Body** — solid foreground pixels (currently `COL_GREEN`)
+2. **Shadow** — blank pixels on each alien showing a dark shadow color (e.g. `COL_TAN` or `COL_BLUE`)
+3. **Eyes** — red glow via BEHIND sprites punching through the eye socket blanks
+
+**Why the current approach can't do this:**
+- Color Stack background (`MODE 0, shadow, 0, 0, 0`) changes ALL blank pixels globally — stars, text gaps, everything turns the shadow color. Tried this; it looked wrong.
+- BEHIND sprites for shadow would need 18 sprites for 9 aliens (9 × 2 half-tiles). Only 7 free. Not feasible.
+
+**The correct hardware solution: F/B Mode (MODE 1)**
+
+In `MODE 1` each BACKTAB card has an independent foreground AND background color encoded in the BACKTAB word itself. The alien tiles get `FG=COL_GREEN, BG=shadow_color`. All other tiles (stars, text, silhouette) get their usual FG color with `BG=0` (black). BEHIND sprites still punch through blank pixels to show the red eye glow on top of the shadow.
+
+**BACKTAB encoding change (critical):**
+
+| Mode | GRAM card encoding |
+|------|--------------------|
+| Color Stack (current) | `(card * 8) OR fg_color OR $0800` |
+| F/B Mode | `card OR (fg_color << 9) OR $1000 OR (bg_color << 13)` |
+
+Note: in F/B mode the GRAM flag is **bit 12** (not bit 11), and the card number is NOT shifted by 3.
+
+**Files that need updating (title screen BACKTAB writers):**
+
+- `title_animation.bas` — `DrawAlienGrid`, `DrawTitleAnimated`, `DrawStaticStars`, `DrawSilhouette`, `AnimateStars`, `ZodRender` (PRINT AT values and GRAM card calculations)
+- `title.bas` — `TitleScreen` init (`MODE 0` → `MODE 1`), `TitleLoop` BEHIND sprite GRAM card values, any direct PRINT AT calls (bolt sweep, PRESS FIRE, slide-in text)
+- `game_init.bas` — `StartGame`: add `MODE 0, 0, 0, 0, 0` after CLS to revert for gameplay
+
+**Shadow color suggestion:** `COL_TAN` (3) — warm bone/shadow on green aliens looks natural.
+Or `COL_BLUE` (1) — cooler "lit from top, shadow below" alien look. User to decide.
+
+**Eye glow sprites:** Unchanged in concept. BEHIND sprites still show through blank eye socket pixels in F/B mode (BEHIND priority is above tile background but below tile foreground — same as Color Stack). The center-column glow sprites already in `TitleLoop` should continue to work. Once F/B mode is working, revisit whether all 9 aliens can have glow (would need 9 sprites; 7 available without Zod, 8 if Zod is removed for title).
+
+**Current state going into this work:**
+- Aliens drawn in `DrawAlienGrid` using `RowColor = COL_GREEN` (uniform — per-row coloring was removed)
+- Center-column glow: 6 BEHIND sprites (sprites 0,1,2,3,4,6), cards `GRAM_BOMB2_F1` (57) and `GRAM_CHAIN_CH` (58), `COL_RED`
+- Zod on sprite 5 (`SPR_FLYER`)
+- All BACKTAB encoding currently uses Color Stack format
+
+**Estimated effort:** Medium. ~50-80 BACKTAB writes across 2 files need re-encoding. No logic changes, pure format translation. Build and visual-test after each procedure converted.
+
+---
+
 ### Spec #14: CP1610 Assembly Optimization
 **When:** After gameplay is feature-complete.
 
