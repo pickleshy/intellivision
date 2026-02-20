@@ -725,14 +725,26 @@ ChainDone:
                 PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
                 PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
                 PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
-                ' Score at row 5: TinyFont label + 7-digit zero-padded packed digit cards
-                FOR LoopVar = 0 TO 2
-                    PRINT AT 107 + LoopVar, (9 + LoopVar) * 8 + COL_WHITE + $0800
-                NEXT LoopVar
-                PRINT AT 110, GRAM_SCORE_M * 8 + COL_WHITE + $0800   ' D6D5 (millions + hundred-thousands)
-                PRINT AT 111, GRAM_SCORE_SC * 8 + COL_WHITE + $0800  ' D4D3 (ten-thousands + thousands)
-                PRINT AT 112, GRAM_SCORE_OR * 8 + COL_WHITE + $0800  ' D2D1 (hundreds + tens)
-                PRINT AT 113, GRAM_SCORE_E * 8 + COL_WHITE + $0800   ' D0 (ones + blank)
+                ' Score at row 5: TinyFont "SCORE" (cols 5-7) + 7 GROM zero-padded digits (cols 8-14)
+                ' Moved 2 cols left vs old layout so 10-col block centers under "GAME OVER"
+                PRINT AT 105, 9 * 8 + COL_WHITE + $0800    ' TinyFont "SC"
+                PRINT AT 106, 10 * 8 + COL_WHITE + $0800   ' TinyFont "OR"
+                PRINT AT 107, 57 * 8 + COL_WHITE + $0800   ' TinyFont "E " (card 57, no colon)
+                ' Decompose score into 7 individual GROM digits — same math as UpdateScoreDisplay
+                #Mask = #Score / 1000
+                HitRow = #Mask                        ' 8-bit save, max 65
+                #Mask = #Score - #Mask * 1000         ' low mod-1000 (0-999)
+                IF #ScoreHigh > 0 THEN
+                    #Mask = #Mask + #ScoreHigh * 536
+                    Col = #Mask / 1000
+                    #Mask = #Mask - Col * 1000
+                    #ScreenPos = HitRow + #ScoreHigh * 65 + Col
+                ELSE
+                    #ScreenPos = HitRow               ' total/1000 (0-65 for sub-65K scores)
+                END IF
+                ' #ScreenPos = D6D5D4D3 (total/1000, 0-9999), #Mask = D2D1D0 (total mod 1000, 0-999)
+                ShootTimer = 108 : ABulFrame = COL_WHITE
+                GOSUB PrintScore7Grom  ' prints cols 8-14 (positions 108-114)
                 ' High score at row 6
                 IF ShakeTimer THEN  ' ShakeTimer=1 means new high score was set above
                     ' New high: TinyFont "NEW HIGH SCORE!" (single space)
@@ -762,23 +774,8 @@ ChainDone:
                         #ScreenPos = HitRow
                     END IF
                     ' D6D5D4D3 from #ScreenPos (total/1000), D2D1D0 from #Mask (total mod 1000)
-                    Col = #ScreenPos / 1000
-                    PRINT AT 129, (16 + Col) * 8 + COL_YELLOW
-                    #ScreenPos = #ScreenPos - Col * 1000
-                    Col = #ScreenPos / 100
-                    PRINT AT 130, (16 + Col) * 8 + COL_YELLOW
-                    #ScreenPos = #ScreenPos - Col * 100
-                    Col = #ScreenPos / 10
-                    PRINT AT 131, (16 + Col) * 8 + COL_YELLOW
-                    Col = #ScreenPos - Col * 10
-                    PRINT AT 132, (16 + Col) * 8 + COL_YELLOW
-                    Col = #Mask / 100
-                    PRINT AT 133, (16 + Col) * 8 + COL_YELLOW
-                    #Mask = #Mask - Col * 100
-                    Col = #Mask / 10
-                    PRINT AT 134, (16 + Col) * 8 + COL_YELLOW
-                    Col = #Mask - Col * 10
-                    PRINT AT 135, (16 + Col) * 8 + COL_YELLOW
+                    ShootTimer = 129 : ABulFrame = COL_YELLOW
+                    GOSUB PrintScore7Grom  ' prints cols 9-15 (positions 129-135)
                 END IF
                 ' Top chain at row 7 (if achieved a chain)
                 IF ChainMax > 1 THEN

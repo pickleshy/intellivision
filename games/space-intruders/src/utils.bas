@@ -329,3 +329,40 @@ DoScreenShake: PROCEDURE
 END
 
     ' ============================================================
+
+' Segment 2 — shared display helper (keeps Segment 1 budget clear)
+    SEGMENT 2
+
+' --- PrintScore7Grom: print 7 GROM zero-padded score digits ---
+' Inputs:
+'   #ScreenPos = D6D5D4D3 (total/1000, 0-9999)
+'   #Mask      = D2D1D0   (total mod 1000, 0-999)
+'   ShootTimer = starting BACKTAB position (advanced by 6 internally)
+'   ABulFrame  = GROM foreground color bits (e.g. COL_WHITE=7, COL_YELLOW=6)
+' Clobbers: Col
+PrintScore7Grom: PROCEDURE
+    Col = #ScreenPos / 1000               ' D6 millions (0-9)
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    ShootTimer = ShootTimer + 1
+    #ScreenPos = #ScreenPos - Col * 1000
+    Col = #ScreenPos / 100                ' D5 hundred-thousands (0-9)
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    ShootTimer = ShootTimer + 1
+    #ScreenPos = #ScreenPos - Col * 100
+    Col = #ScreenPos / 10                 ' D4 ten-thousands (0-9)
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    Col = #ScreenPos - Col * 10           ' D3 thousands (0-9, uses old Col=D4)
+    ShootTimer = ShootTimer + 1
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    ShootTimer = ShootTimer + 1
+    Col = #Mask / 100                     ' D2 hundreds (0-9)
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    ShootTimer = ShootTimer + 1
+    #Mask = #Mask - Col * 100
+    Col = #Mask / 10                      ' D1 tens (0-9)
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    Col = #Mask - Col * 10                ' D0 ones (0-9, uses old Col=D1)
+    ShootTimer = ShootTimer + 1
+    PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    RETURN
+END
