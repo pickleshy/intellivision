@@ -38,5 +38,6 @@ INCLUDE "games/space-intruders/src/gameloop.bas"
 
 ' === Data Assets ===
 INCLUDE "games/space-intruders/src/graphics.bas"
+INCLUDE "games/space-intruders/src/qr_code.bas"
 INCLUDE "games/space-intruders/src/music.bas"
 INCLUDE "games/space-intruders/src/data_tables.bas"

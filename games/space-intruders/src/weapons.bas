@@ -103,15 +103,7 @@ MoveAlienBullet: PROCEDURE
                     IF ABulletX >= PlayerX - 2 THEN
                         IF ABulletX <= PlayerX + 10 THEN
                             ' Bullet hit - check shield first
-                            IF ShieldHits > 0 THEN
-                                GOSUB HitShield
-                            ELSE
-                                #GameFlags = #GameFlags OR FLAG_PLAYERHIT
-                                SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
-                                SOUND 2, 0, 15
-                                POKE $1F9, 14
-                                POKE $1F8, PEEK($1F8) AND $DF
-                            END IF
+                            GOSUB ShieldOrDamage
                             ' Either way, destroy the bullet
                             #GameFlags = #GameFlags AND $FFFD
                             SPRITE SPR_ABULLET, 0, 0, 0

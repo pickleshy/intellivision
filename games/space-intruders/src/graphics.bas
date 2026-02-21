@@ -1002,7 +1002,7 @@ ZigzagF1Gfx:
     BITMAP "...X...."
 
 ' Mega beam solid block (fills entire card)
-MegaBeamGfx:
+Sol36Gfx:
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"
     BITMAP "XXXXXXXX"

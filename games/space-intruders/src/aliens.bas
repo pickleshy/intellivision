@@ -306,6 +306,8 @@ END
 
 ' PlayerBombExplode — area explosion from player bomb weapon
 ' Prereq: BombExpRow/BombExpCol set to grid coordinates of hit
+' Lives in Seg 4 to relieve Seg 2 pressure; cross-segment GOSUB works with MAP 2.
+    SEGMENT 4
 PlayerBombExplode: PROCEDURE
     BombExpTimer = 30
 
@@ -341,7 +343,7 @@ PlayerBombExplode: PROCEDURE
 END
 
     ' ============================================================
-    ' SEGMENT 2 — COLLISION LOGIC & ALIEN DRAWING
+    ' Back to SEGMENT 2 — COLLISION LOGIC & ALIEN DRAWING
     ' ============================================================
     SEGMENT 2
 
@@ -459,6 +461,37 @@ CheckOneColumn: PROCEDURE
 END
 
 ' --------------------------------------------
+' DrawShipVisible - Render ship body + shield/accent sprite
+' Called from DrawPlayer for both normal and invincible-flash-on frames.
+' Checks Invincible>0 to choose solid yellow vs yellow/orange on damaged shield.
+' --------------------------------------------
+DrawShipVisible: PROCEDURE
+    SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
+    ' Accent sprite: shield dome if active, engine glow if not
+    IF ShieldHits > 0 THEN
+        IF ShieldHits >= 2 THEN
+            ' Full shield: fast blue/white flash (every 2 frames)
+            IF ShimmerCount AND 2 THEN
+                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_BLUE + $0800
+            ELSE
+                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_WHITE + $0800
+            END IF
+        ELSE
+            ' Damaged shield: invincible=solid yellow; normal=yellow/orange flash
+            IF Invincible > 0 OR (MarchCount AND 4) THEN
+                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_YELLOW + $0800
+            ELSE
+                ' Orange (10) is pastel: use (10 AND 7)=2 + $1800
+                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + 2 + $1800
+            END IF
+        END IF
+    ELSE
+        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP_ACCENT * 8 + $1800
+    END IF
+    RETURN
+END
+
+' --------------------------------------------
 ' DrawPlayer - Update player sprite
 ' --------------------------------------------
 DrawPlayer: PROCEDURE
@@ -497,50 +530,14 @@ DrawPlayer: PROCEDURE
     ELSEIF Invincible > 0 THEN
         ' Flash during invincibility (show every other frame)
         IF Invincible AND 4 THEN
-            SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
-            ' Accent sprite: shield dome if active, engine glow if not
-            IF ShieldHits > 0 THEN
-                IF ShieldHits >= 2 THEN
-                    ' Full shield: fast blue/white flash (every 2 frames)
-                    IF ShimmerCount AND 2 THEN
-                        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_BLUE + $0800
-                    ELSE
-                        SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_WHITE + $0800
-                    END IF
-                ELSE
-                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_YELLOW + $0800
-                END IF
-            ELSE
-                SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP_ACCENT * 8 + $1800
-            END IF
+            GOSUB DrawShipVisible
         ELSE
             SPRITE SPR_PLAYER, 0, 0, 0
             SPRITE SPR_SHIP_ACCENT, 0, 0, 0
         END IF
     ELSE
         ' Normal display - body + accent sprite (DOUBLEY for 16px tall)
-        SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP * 8 + COL_WHITE + $0800
-        ' Accent sprite: shield dome if active, engine glow if not
-        IF ShieldHits > 0 THEN
-            IF ShieldHits >= 2 THEN
-                ' Full shield: fast blue/white flash (every 2 frames)
-                IF ShimmerCount AND 2 THEN
-                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_BLUE + $0800
-                ELSE
-                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_WHITE + $0800
-                END IF
-            ELSE
-                ' Damaged shield - flash yellow/orange
-                IF MarchCount AND 4 THEN
-                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + COL_YELLOW + $0800
-                ELSE
-                    ' Orange (10) is pastel: use (10 AND 7)=2 + $1800
-                    SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIELD * 8 + 2 + $1800
-                END IF
-            END IF
-        ELSE
-            SPRITE SPR_SHIP_ACCENT, PlayerX + $0200, PLAYER_Y + $0100, GRAM_SHIP_ACCENT * 8 + $1800
-        END IF
+        GOSUB DrawShipVisible
     END IF
 
     RETURN

@@ -38,8 +38,8 @@ ResetToTitle:
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
     #GameFlags = #GameFlags AND $EFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET + FLAG_KEY0HELD
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
-    MegaTimer = 0
-    MegaBeamTimer = 0
+    Sol36Timer = 0
+    Sol36BeamTimer = 0
     #GameFlags = #GameFlags AND $FFBF
     Key1Held = 0
     #GameFlags = #GameFlags AND $BEFF  ' Clear FLAG_SUBWAVE + FLAG_REVEAL

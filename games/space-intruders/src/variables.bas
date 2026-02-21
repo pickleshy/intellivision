@@ -180,13 +180,13 @@ FireCooldown = 0                ' Frames until next shot allowed / [title: bolt 
 PowerUpY    = 0                 ' Power-up capsule Y position (separate from saucer FlyY)
 #PowerTimer = 0                 ' Landing timeout (counts down from 300)
 RapidTimer  = 0                 ' Rapid fire countdown (300 frames = 5 sec, 0 = normal)
-MegaTimer  = 0                  ' Mega beam countdown (120 frames = 2 sec, 0 = normal, converted to 8-bit)
-MegaBeamCol = 0                 ' BACKTAB column of active beam (0-19)
-MegaBeamTimer = 0               ' Beam display countdown (0 = inactive)
+Sol36Timer  = 0                  ' Mega beam countdown (120 frames = 2 sec, 0 = normal, converted to 8-bit)
+Sol36Col = 0                 ' BACKTAB column of active beam (0-19)
+Sol36BeamTimer = 0               ' Beam display countdown (0 = inactive)
 ShieldHits  = 0                 ' Shield charges (0=none, 1=damaged, 2=full)
 TutorialTimer  = 0              ' First powerup hint: 255=ready, 1-180=showing, 0=done
 AutoFireFlash  = 0              ' Auto-fire status flash: 60→0 countdown (0=inactive)
-MegaSputterTimer = 0            ' SOL-36 sputter phase countdown (95→0, 0=inactive)
+Sol36SputterTimer = 0            ' SOL-36 sputter phase countdown (95→0, 0=inactive)
 
 ' -- Sound Effects --
 SfxVolume   = 0                 ' Current decay volume (0 = silent)
@@ -304,7 +304,7 @@ ScorePairM   = 0                 ' Cached million+hundred-thousands pair from Sc
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx
     WAIT
-    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+    DEFINE GRAM_SOL36, 1, Sol36Gfx
     WAIT
     DEFINE GRAM_ZIGZAG1, 1, ZigzagF1Gfx
     WAIT

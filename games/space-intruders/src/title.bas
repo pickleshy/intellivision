@@ -39,6 +39,12 @@ TitleScreen:
     ' Reload Zod crab sprites (cards 19-20, boot splash date overwrites them)
     DEFINE GRAM_CRAB_F1, 2, SmallCrabF1Gfx
     WAIT
+    ' Reload bolt-sweep spark tiles (cards 21-24) clobbered by boot splash QR code (cards 11-35)
+    DEFINE GRAM_SPARK_UP, 4, SparkUpGfx : WAIT
+    ' Reload GRAM_FONT letter cards (25-36) clobbered by boot splash QR code (cards 11-35)
+    DEFINE GRAM_FONT_S, 4, FontSGfx : WAIT  ' Cards 25-28: S, P, A, C
+    DEFINE GRAM_FONT_E, 3, FontEGfx : WAIT  ' Cards 29-31: E, I, N
+    DEFINE GRAM_FONT_R, 4, FontRGfx : WAIT  ' Cards 33-36: R, U, D, F
 
     PowerUpState = 0      ' [title: animation frame counter]
     PowerUpX = 1          ' [title: march direction 1=right, 0=left]

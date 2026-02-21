@@ -19,7 +19,7 @@ ClearBulletsAndBeam: PROCEDURE
         IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
         #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET
     END IF
-    MegaBeamTimer = 0
+    Sol36BeamTimer = 0
     RETURN
 END
 
@@ -299,11 +299,11 @@ UpdateSfx: PROCEDURE
     ELSEIF SfxType = 4 THEN
         ' Mega beam blast: bright crackle → fade
         #SfxPitch = 0
-        IF MegaBeamTimer > 0 THEN
-            IF (MegaBeamTimer AND 3) = 0 THEN
+        IF Sol36BeamTimer > 0 THEN
+            IF (Sol36BeamTimer AND 3) = 0 THEN
                 IF SfxVolume > 1 THEN SfxVolume = SfxVolume - 1
             END IF
-            POKE $1F9, 8 + (20 - MegaBeamTimer) / 2
+            POKE $1F9, 8 + (20 - Sol36BeamTimer) / 2
             POKE $1F8, PEEK($1F8) AND $DF
         ELSE
             SfxVolume = 0
@@ -373,15 +373,15 @@ END
 ' UpdateSaucer moved to Segment 2
 
 ' --------------------------------------------
-' MegaBeamKill - Kill all aliens in the beam column
+' Sol36Kill - Kill all aliens in the beam column
 ' --------------------------------------------
-MegaBeamKill: PROCEDURE
+Sol36Kill: PROCEDURE
     ' Kill aliens in beam column AND adjacent column (brutal 16px hitbox)
     FOR HitRow = 0 TO 1
         IF HitRow = 0 THEN
-            HitCol = MegaBeamCol
+            HitCol = Sol36Col
         ELSE
-            HitCol = MegaBeamCol + 1
+            HitCol = Sol36Col + 1
         END IF
         IF HitCol >= ALIEN_START_X + AlienOffsetX THEN
             IF HitCol < ALIEN_START_X + AlienOffsetX + ALIEN_COLS THEN
@@ -449,9 +449,9 @@ MegaBeamKill: PROCEDURE
             END IF
         END IF
     NEXT HitRow
-    ' Kill saucer if beam overlaps it (beam = 16px from MegaBeamCol*8)
+    ' Kill saucer if beam overlaps it (beam = 16px from Sol36Col*8)
     IF FlyState > 0 THEN
-        #ScreenPos = MegaBeamCol * 8
+        #ScreenPos = Sol36Col * 8
         ' Saucer spans FlyX to FlyX+15, beam spans #ScreenPos to #ScreenPos+15
         IF #ScreenPos + 15 >= FlyX THEN
             IF #ScreenPos <= FlyX + 15 THEN
@@ -475,7 +475,7 @@ MegaBeamKill: PROCEDURE
     END IF
     ' Kill rogue alien in dogfight if beam overlaps it
     IF RogueState = ROGUE_DIVE THEN
-        #ScreenPos = MegaBeamCol * 8
+        #ScreenPos = Sol36Col * 8
         ' Rogue sprite is 8px wide at RogueX; beam is 16px wide at #ScreenPos
         IF #ScreenPos + 15 >= RogueX THEN
             IF #ScreenPos <= RogueX + 8 THEN
@@ -489,7 +489,7 @@ END
 
 ' --------------------------------------------
 ' DestroyRogue - Shared rogue alien kill sequence (score, SFX, state reset)
-' Called from MegaBeamKill and player-bullet rogue collision
+' Called from Sol36Kill and player-bullet rogue collision
 ' --------------------------------------------
 DestroyRogue: PROCEDURE
     RogueState = ROGUE_IDLE
@@ -504,33 +504,33 @@ DestroyRogue: PROCEDURE
 END
 
 ' --------------------------------------------
-' MegaBeamDraw - Draw beam column on BACKTAB (starts at row 8, above ship)
+' Sol36Draw - Draw beam column on BACKTAB (starts at row 8, above ship)
 ' --------------------------------------------
-MegaBeamDraw: PROCEDURE
+Sol36Draw: PROCEDURE
     ' Start with just the beam origin row (row 8, above ship turret)
-    #ScreenPos = 8 * 20 + MegaBeamCol
-    PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + COL_WHITE + $0800
+    #ScreenPos = 8 * 20 + Sol36Col
+    PRINT AT #ScreenPos, GRAM_SOL36 * 8 + COL_WHITE + $0800
     RETURN
 END
 
 ' --------------------------------------------
-' MegaBeamClear - Clear beam column from BACKTAB
+' Sol36Clear - Clear beam column from BACKTAB
 ' --------------------------------------------
-MegaBeamClear: PROCEDURE
+Sol36Clear: PROCEDURE
     FOR LoopVar = 0 TO 9
-        #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
+        #ScreenPos = Row20Data(LoopVar) + Sol36Col
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
     RETURN
 END
 
 ' --------------------------------------------
-' StopMegaSputter - Force-end sputter (death/wave transition)
+' Sol36SputterStop - Force-end sputter (death/wave transition)
 ' Restores solid beam GRAM card and silences SFX
 ' --------------------------------------------
-StopMegaSputter: PROCEDURE
-    MegaSputterTimer = 0
-    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+Sol36SputterStop: PROCEDURE
+    Sol36SputterTimer = 0
+    DEFINE GRAM_SOL36, 1, Sol36Gfx
     ' Only silence SFX if mega beam was actually playing (SfxType=4).
     ' Do NOT clear SfxType=3 (death explosion) — that was set by the collision
     ' code on this same frame and must sustain through the death animation.
@@ -542,9 +542,9 @@ StopMegaSputter: PROCEDURE
 END
 
 ' --------------------------------------------
-' MegaSputterUpdate - SOL-36 fade-out: 60-frame thin sputter + 2 kill spurts
+' Sol36SputterUpdate - SOL-36 fade-out: 60-frame thin sputter + 2 kill spurts
 '
-' Phase timing (MegaSputterTimer counts down from 95):
+' Phase timing (Sol36SputterTimer counts down from 95):
 '   94→35 (60 frames): continuous thin beam, flickers 3-on/1-off, RED
 '   34→30  (5 frames): gap 1 — beam off
 '   29→20 (10 frames): kill spurt 1 — fast alternating flicker, YELLOW
@@ -553,55 +553,55 @@ END
 '    4→ 1  (4 frames): fizzle — beam off
 '       0           : restore solid beam card, done
 '
-' Kill sweeps fire once at: T=94 (sputter start), T=29 (spurt 1), T=14 (spurt 2)
+' Kill sweeps fire once at: T=94 (sputter start), T=29 (spurt 1), T=13 (spurt 2)
 ' Beam column tracks player position every frame.
-' Card 46 (GRAM_MEGA_BEAM) holds SolSputterGfx thin stripe; restored to
-' MegaBeamGfx solid block at T=0 or via StopMegaSputter on force-clear.
+' Card 46 (GRAM_SOL36) holds SolSputterGfx thin stripe; restored to
+' Sol36Gfx solid block at T=0 or via Sol36SputterStop on force-clear.
 ' --------------------------------------------
-MegaSputterUpdate: PROCEDURE
-    MegaSputterTimer = MegaSputterTimer - 1  ' audit-ignore: caller (gameloop) guards with IF MegaSputterTimer > 0
+Sol36SputterUpdate: PROCEDURE
+    Sol36SputterTimer = Sol36SputterTimer - 1  ' audit-ignore: caller (gameloop) guards with IF Sol36SputterTimer > 0
 
     ' Clear previous beam column
     FOR LoopVar = 0 TO 9
-        #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
+        #ScreenPos = Row20Data(LoopVar) + Sol36Col
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
 
     ' Track beam column — follow player
-    MegaBeamCol = (PlayerX - 4) / 8
-    IF MegaBeamCol > 19 THEN MegaBeamCol = 19
+    Sol36Col = (PlayerX - 4) / 8
+    IF Sol36Col > 19 THEN Sol36Col = 19
 
     ' Kill sweeps at start of sputter and each final spurt
-    IF MegaSputterTimer = 94 OR MegaSputterTimer = 29 OR MegaSputterTimer = 14 THEN
+    IF Sol36SputterTimer = 94 OR Sol36SputterTimer = 29 OR Sol36SputterTimer = 13 THEN
         FOR Row = 0 TO MAX_BOSSES - 1
             BossBeamHit(Row) = 0
         NEXT Row
-        GOSUB MegaBeamKill
+        GOSUB Sol36Kill
     END IF
 
     ' Determine beam color this frame (0 = off)
     AlienColor = 0
-    IF MegaSputterTimer >= 35 THEN
+    IF Sol36SputterTimer >= 35 THEN
         ' Continuous sputter: on for 3 of every 4 frames (AND 3 = 0 is off)
-        IF (MegaSputterTimer AND 3) <> 0 THEN AlienColor = COL_RED
-    ELSEIF MegaSputterTimer >= 30 THEN
+        IF (Sol36SputterTimer AND 3) <> 0 THEN AlienColor = COL_RED
+    ELSEIF Sol36SputterTimer >= 30 THEN
         ' Gap 1: off
-    ELSEIF MegaSputterTimer >= 20 THEN
+    ELSEIF Sol36SputterTimer >= 20 THEN
         ' Spurt 1: rapid alternating flicker, yellow
-        IF (MegaSputterTimer AND 1) THEN AlienColor = COL_YELLOW
-    ELSEIF MegaSputterTimer >= 15 THEN
+        IF (Sol36SputterTimer AND 1) THEN AlienColor = COL_YELLOW
+    ELSEIF Sol36SputterTimer >= 15 THEN
         ' Gap 2: off
-    ELSEIF MegaSputterTimer >= 5 THEN
+    ELSEIF Sol36SputterTimer >= 5 THEN
         ' Spurt 2: rapid alternating flicker, orange
-        IF (MegaSputterTimer AND 1) THEN AlienColor = COL_ORANGE
+        IF (Sol36SputterTimer AND 1) THEN AlienColor = COL_ORANGE
     END IF
     ' T=4 to T=1: fizzle — AlienColor stays 0
 
     ' Draw or silence based on beam state
     IF AlienColor > 0 THEN
         FOR LoopVar = 0 TO 9
-            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
-            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + AlienColor + $0800
+            #ScreenPos = Row20Data(LoopVar) + Sol36Col
+            PRINT AT #ScreenPos, GRAM_SOL36 * 8 + AlienColor + $0800
         NEXT LoopVar
         SOUND 2, 0, 6
     ELSE
@@ -609,8 +609,8 @@ MegaSputterUpdate: PROCEDURE
     END IF
 
     ' End of sputter: restore solid beam card
-    IF MegaSputterTimer = 0 THEN
-        DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx
+    IF Sol36SputterTimer = 0 THEN
+        DEFINE GRAM_SOL36, 1, Sol36Gfx
         SOUND 2, , 0
         SfxType = 0 : SfxVolume = 0
     END IF
@@ -1115,8 +1115,8 @@ StartNewWave: PROCEDURE
 
     ' Clear any active bullets (power-ups AND wingman persist until death!)
     GOSUB ClearBulletsAndBeam
-    MegaTimer = 0
-    IF MegaSputterTimer > 0 THEN GOSUB StopMegaSputter
+    Sol36Timer = 0
+    IF Sol36SputterTimer > 0 THEN GOSUB Sol36SputterStop
     GOSUB ClearWaveObjects
     FireCooldown = 0
     WaveRevealRow = 0
@@ -1269,7 +1269,7 @@ StartNewWave: PROCEDURE
             DEFINE GRAM_PWR1, 2, PowerupRapidGfx
         ELSEIF #GameFlags AND FLAG_BOMB THEN
             DEFINE GRAM_PWR1, 2, PowerupBombGfx
-        ELSEIF MegaTimer > 0 THEN
+        ELSEIF Sol36Timer > 0 THEN
             DEFINE GRAM_PWR1, 3, PowerupSol36Gfx
         END IF
         WAIT

@@ -588,15 +588,7 @@ RogueDiveRender:
                         IF RogueX >= PlayerX - 6 THEN
                             IF RogueX <= PlayerX + 8 THEN
                                 ' Rogue body hit - check shield first
-                                IF ShieldHits > 0 THEN
-                                    GOSUB HitShield
-                                ELSE
-                                    #GameFlags = #GameFlags OR FLAG_PLAYERHIT
-                                    SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
-                                    SOUND 2, 0, 15
-                                    POKE $1F9, 14
-                                    POKE $1F8, PEEK($1F8) AND $DF
-                                END IF
+                                GOSUB ShieldOrDamage
                                 ' Either way, destroy rogue
                                 RogueState = ROGUE_IDLE
                                 RogueTimer = 0 : RogueDivePhase = 0
@@ -752,15 +744,7 @@ UpdateSaucer: PROCEDURE
             IF FlyX >= PlayerX - 8 THEN
                 IF FlyX <= PlayerX + 16 THEN
                     ' Saucer body hit - check shield first
-                    IF ShieldHits > 0 THEN
-                        GOSUB HitShield
-                    ELSE
-                        #GameFlags = #GameFlags OR FLAG_PLAYERHIT
-                        SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
-                        SOUND 2, 0, 15
-                        POKE $1F9, 14
-                        POKE $1F8, PEEK($1F8) AND $DF
-                    END IF
+                    GOSUB ShieldOrDamage
                 END IF
             END IF
             END IF

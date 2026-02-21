@@ -95,7 +95,7 @@ CONST GRAM_BEAM   = 40         ' Wide beam shot (full 8px width)
 CONST GRAM_POWERUP = 41        ' Power-up capsule graphic
 ' Cards 42-44: Freed for alien substep shift-2 (saucer uses color animation only)
 CONST GRAM_SHIP_HUD = 45       ' Compact ship icon for HUD lives display
-CONST GRAM_MEGA_BEAM = 46      ' Solid block for mega beam column
+CONST GRAM_SOL36 = 46      ' Solid block for mega beam column
 CONST GRAM_CAP_F1  = 48         ' Capsule animation frame 1
 CONST GRAM_CAP_F2  = 49         ' Capsule animation frame 2
 CONST GRAM_CAP_F3  = 50         ' Capsule animation frame 3

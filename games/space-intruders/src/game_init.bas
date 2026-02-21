@@ -75,7 +75,7 @@ StartGame:
     WAIT
     DEFINE GRAM_SHIP_HUD, 1, ShipHudGfx   ' Card 45
     WAIT
-    DEFINE GRAM_MEGA_BEAM, 1, MegaBeamGfx ' Card 46
+    DEFINE GRAM_SOL36, 1, Sol36Gfx ' Card 46
     WAIT
     DEFINE GRAM_ORBITER, 1, SmallCrabF1Gfx ' Card 47: orbiter sprite (small crab)
     WAIT
@@ -132,8 +132,8 @@ StartGame:
     BeamTimer = 0  ' No beam power-up
     RapidTimer = 0 ' No rapid fire
     #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)  ' No bomb weapon
-    MegaTimer = 0  ' No mega beam
-    MegaBeamTimer = 0
+    Sol36Timer = 0  ' No mega beam
+    Sol36BeamTimer = 0
     ShieldHits = 0  ' No shield
     PowerUpState = 0  ' No power-up drop
     ' Weighted power-up: 0=beam(2), 1=rapid(3), 2=bomb(2), 3=mega(1) out of 8

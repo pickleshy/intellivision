@@ -17,6 +17,7 @@ GameLoop:
     IF #GameFlags AND FLAG_DEBUG THEN BORDER COL_RED
 
     ' Debug: press 9 on keypad to skip wave (clears all aliens)
+    '        press 2 on keypad to cycle powerup weapons (bit 10 = key debounce)
     IF #GameFlags AND FLAG_DEBUG THEN
         IF CONT.KEY = 9 THEN
             #AlienRow(0) = 0 : #AlienRow(1) = 0
@@ -24,6 +25,11 @@ GameLoop:
             #AlienRow(4) = 0
             RogueState = 0
             ExplosionTimer = 0
+        END IF
+        IF CONT.KEY = 2 THEN
+            IF (#GameFlags AND $0400) = 0 THEN GOSUB DebugCycleWeapon
+        ELSE
+            #GameFlags = #GameFlags AND ($FFFF XOR $0400)
         END IF
     END IF
 
@@ -279,8 +285,8 @@ GameLoop:
                         Lives = Lives - 1  ' audit-ignore: DeathTimer prevents re-entry; game-over triggers when Lives=0
                         ' Clear power-ups, bullets, rogue, wingman
                         BeamTimer = 0 : RapidTimer = 0
-                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
-                        GOSUB StopMegaSputter
+                        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0 : ShieldHits = 0
+                        GOSUB Sol36SputterStop
                         #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                         RogueState = ROGUE_IDLE : RogueTimer = 0 : RogueDivePhase = 0
                         #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
@@ -543,8 +549,8 @@ ChainDone:
                 Lives = Lives - 1  ' audit-ignore: DeathTimer=0 AND Invincible=0 gate; game-over triggers when Lives=0
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : MegaTimer = 0 : ShieldHits = 0
-                GOSUB StopMegaSputter
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0 : ShieldHits = 0
+                GOSUB Sol36SputterStop
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
                 ' Clear wingman and any active capsule (dies with player)
@@ -725,11 +731,8 @@ ChainDone:
                 PRINT AT 51, GRAM_FONT_V * 8 + COL_TAN + $0800
                 PRINT AT 52, GRAM_FONT_E * 8 + COL_TAN + $0800
                 PRINT AT 53, GRAM_FONT_R * 8 + COL_TAN + $0800
-                ' Score at row 5: TinyFont "SCORE" (cols 5-7) + 7 GROM zero-padded digits (cols 8-14)
-                ' Moved 2 cols left vs old layout so 10-col block centers under "GAME OVER"
-                PRINT AT 105, 9 * 8 + COL_WHITE + $0800    ' TinyFont "SC"
-                PRINT AT 106, 10 * 8 + COL_WHITE + $0800   ' TinyFont "OR"
-                PRINT AT 107, 57 * 8 + COL_WHITE + $0800   ' TinyFont "E " (card 57, no colon)
+                ' Score at row 5: GROM "SCORE: " (cols 3-9) + 7 GROM digits (cols 10-16)
+                PRINT AT 103 COLOR COL_WHITE, "SCORE: "
                 ' Decompose score into 7 individual GROM digits — same math as UpdateScoreDisplay
                 #Mask = #Score / 1000
                 HitRow = #Mask                        ' 8-bit save, max 65
@@ -743,8 +746,8 @@ ChainDone:
                     #ScreenPos = HitRow               ' total/1000 (0-65 for sub-65K scores)
                 END IF
                 ' #ScreenPos = D6D5D4D3 (total/1000, 0-9999), #Mask = D2D1D0 (total mod 1000, 0-999)
-                ShootTimer = 108 : ABulFrame = COL_WHITE
-                GOSUB PrintScore7Grom  ' prints cols 8-14 (positions 108-114)
+                ShootTimer = 110 : ABulFrame = COL_WHITE
+                GOSUB PrintScore7Grom  ' prints cols 10-16 (positions 110-116)
                 ' High score at row 6
                 IF ShakeTimer THEN  ' ShakeTimer=1 means new high score was set above
                     ' New high: TinyFont "NEW HIGH SCORE!" (single space)
@@ -752,10 +755,7 @@ ChainDone:
                         PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800
                     NEXT LoopVar
                     PRINT AT 130, 0                              ' Blank GROM space
-                    PRINT AT 131, 9 * 8 + COL_YELLOW + $0800    ' SC
-                    PRINT AT 132, 10 * 8 + COL_YELLOW + $0800   ' OR
-                    PRINT AT 133, 57 * 8 + COL_YELLOW + $0800   ' E_ (card 57)
-                    PRINT AT 134 COLOR COL_YELLOW, "!"
+                    PRINT AT 131 COLOR COL_YELLOW, "SCORE!"
                 ELSE
                     ' TinyFont "HIGH" + GROM digits
                     PRINT AT 126, 14 * 8 + COL_YELLOW + $0800
@@ -828,29 +828,29 @@ ChainDone:
 
     ' Tick down power-up timers
     ' Beam, Rapid, Bomb persist until death (no countdown)
-    ' Only MegaTimer counts down (5-second window)
+    ' Only Sol36Timer counts down (5-second window)
     IF FireCooldown > 0 THEN
         FireCooldown = FireCooldown - 1
     END IF
     IF CapBtnTimer > 0 THEN
         CapBtnTimer = CapBtnTimer - 1
     END IF
-    IF MegaTimer > 0 THEN
-        MegaTimer = MegaTimer - 1
-        IF MegaTimer = 0 AND MegaSputterTimer = 0 THEN
+    IF Sol36Timer > 0 THEN
+        Sol36Timer = Sol36Timer - 1
+        IF Sol36Timer = 0 AND Sol36SputterTimer = 0 THEN
             ' SOL-36 expired — enter sputter phase (thin beam flicker + 2 final spurts)
-            MegaBeamTimer = 0
-            DEFINE GRAM_MEGA_BEAM, 1, SolSputterGfx
-            MegaSputterTimer = 95
+            Sol36BeamTimer = 0
+            DEFINE GRAM_SOL36, 1, SolSputterGfx
+            Sol36SputterTimer = 95
         END IF
     END IF
 
     ' Update powerup HUD indicator (positions 233-235, yellow TinyFont)
     ' Cards 25-27 are DEFINE'd per powerup type at pickup time
-    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR MegaTimer > 0 THEN
+    IF BeamTimer > 0 OR RapidTimer > 0 OR (#GameFlags AND FLAG_BOMB) OR Sol36Timer > 0 THEN
         PRINT AT 233, GRAM_PWR1 * 8 + COL_YELLOW + $0800
         PRINT AT 234, GRAM_PWR2 * 8 + COL_YELLOW + $0800
-        IF RapidTimer > 0 OR MegaTimer > 0 THEN
+        IF RapidTimer > 0 OR Sol36Timer > 0 THEN
             PRINT AT 235, GRAM_PWR3 * 8 + COL_YELLOW + $0800
         ELSE
             PRINT AT 235, 0
@@ -862,45 +862,45 @@ ChainDone:
 
     ' Mega beam display countdown + sweep-up from turret + color cycling
     ' Beam follows ship movement and kills aliens it sweeps over
-    IF MegaBeamTimer > 0 THEN
-        MegaBeamTimer = MegaBeamTimer - 1
+    IF Sol36BeamTimer > 0 THEN
+        Sol36BeamTimer = Sol36BeamTimer - 1
         ' Clear old beam column before updating position
         FOR LoopVar = 0 TO 9
-            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
+            #ScreenPos = Row20Data(LoopVar) + Sol36Col
             PRINT AT #ScreenPos, 0
         NEXT LoopVar
         ' Track ship position: recalculate beam column each frame
         ' Sprite-to-BACKTAB offset: col = (spriteX - 8) / 8, centered on ship (+4)
-        MegaBeamCol = (PlayerX - 4) / 8
-        IF MegaBeamCol > 19 THEN MegaBeamCol = 19
+        Sol36Col = (PlayerX - 4) / 8
+        IF Sol36Col > 19 THEN Sol36Col = 19
         ' Kill aliens in new column position
-        GOSUB MegaBeamKill
+        GOSUB Sol36Kill
         ' Calculate beam top row: sweeps UP from row 9 (at ship turret)
-        ' Frames elapsed = 20 - MegaBeamTimer. Sweep 2 rows/frame.
-        Col = (20 - MegaBeamTimer) * 2
+        ' Frames elapsed = 20 - Sol36BeamTimer. Sweep 2 rows/frame.
+        Col = (20 - Sol36BeamTimer) * 2
         IF Col > 9 THEN Col = 9
         Col = 9 - Col
         ' Color cycle: white → yellow → red
-        IF MegaBeamTimer > 13 THEN
+        IF Sol36BeamTimer > 13 THEN
             AlienColor = COL_WHITE
-        ELSEIF MegaBeamTimer > 6 THEN
+        ELSEIF Sol36BeamTimer > 6 THEN
             AlienColor = COL_YELLOW
         ELSE
             AlienColor = COL_RED
         END IF
         ' Draw beam from top row (Col) down to row 9 (at ship turret)
         FOR LoopVar = Col TO 9
-            #ScreenPos = Row20Data(LoopVar) + MegaBeamCol
-            PRINT AT #ScreenPos, GRAM_MEGA_BEAM * 8 + AlienColor + $0800
+            #ScreenPos = Row20Data(LoopVar) + Sol36Col
+            PRINT AT #ScreenPos, GRAM_SOL36 * 8 + AlienColor + $0800
         NEXT LoopVar
-        IF MegaBeamTimer = 0 THEN
-            GOSUB MegaBeamClear
+        IF Sol36BeamTimer = 0 THEN
+            GOSUB Sol36Clear
         END IF
     END IF
 
     ' SOL-36 sputter phase: thin beam flicker + 2 final kill spurts
-    IF MegaSputterTimer > 0 THEN
-        GOSUB MegaSputterUpdate
+    IF Sol36SputterTimer > 0 THEN
+        GOSUB Sol36SputterUpdate
     END IF
 
     ' Update sprites

@@ -69,18 +69,18 @@ MovePlayer: PROCEDURE
     ' Fire: side buttons (not keypad) or auto-fire
     IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
     IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-        IF MegaTimer > 0 THEN
+        IF Sol36Timer > 0 THEN
             ' Mega beam: instant column blast (reusable for 5 sec)
-            IF MegaBeamTimer = 0 THEN
-                MegaBeamCol = (PlayerX - 4) / 8
-                IF MegaBeamCol > 19 THEN MegaBeamCol = 19
-                MegaBeamTimer = 20
+            IF Sol36BeamTimer = 0 THEN
+                Sol36Col = (PlayerX - 4) / 8
+                IF Sol36Col > 19 THEN Sol36Col = 19
+                Sol36BeamTimer = 20
                 ' Reset beam damage tracker for each boss
                 FOR LoopVar = 0 TO MAX_BOSSES - 1
                     BossBeamHit(LoopVar) = 0
                 NEXT LoopVar
-                GOSUB MegaBeamKill
-                GOSUB MegaBeamDraw
+                GOSUB Sol36Kill
+                GOSUB Sol36Draw
                 ' SFX: loud crackle blast
                 SfxType = 4 : SfxVolume = 15 : #SfxPitch = 0
                 SOUND 2, 0, 15
@@ -98,7 +98,7 @@ MovePlayer: PROCEDURE
                 SfxType = 7 : SfxVolume = 14 : #SfxPitch = 100
                 SOUND 2, 100, 14
             END IF
-        ELSEIF MegaSputterTimer = 0 THEN
+        ELSEIF Sol36SputterTimer = 0 THEN
             ' Normal/beam/rapid: single center shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 IF FireCooldown = 0 THEN

@@ -33,11 +33,13 @@ BootSplash: PROCEDURE
     WAIT
     DEFINE 8, 3, SplashBatch2
     WAIT
-    ' Line 1: PAISLEYBOXERS.ITCH.IO (row 5, col 5, 11 cards TinyFont)
+    ' Load QR tiles into cards 11-35 and draw 5x5 grid (rows 1-5, cols 7-11)
+    GOSUB DrawQrCode
+    ' Line 1: PAISLEYBOXERS.ITCH.IO (row 7, col 5, 11 cards TinyFont — below QR)
     FOR LoopVar = 0 TO 10
-        PRINT AT 105 + LoopVar, LoopVar * 8 + COL_WHITE + $0800
+        PRINT AT 145 + LoopVar, LoopVar * 8 + COL_WHITE + $0800
     NEXT LoopVar
-    ' Line 2: BETA - MM/DD/YYYY (row 7, centered, GROM font via generated procedure)
+    ' Line 2: BETA - MM/DD/YYYY (row 10, centered, GROM font via generated procedure)
     GOSUB SplashDate_Print
     ' Hold for ~3 seconds
     FOR LoopVar = 0 TO 179
@@ -364,5 +366,55 @@ PrintScore7Grom: PROCEDURE
     Col = #Mask - Col * 10                ' D0 ones (0-9, uses old Col=D1)
     ShootTimer = ShootTimer + 1
     PRINT AT ShootTimer, (16 + Col) * 8 + ABulFrame
+    RETURN
+END
+
+' ============================================================
+' SEGMENT 2 — PROCEDURES MOVED HERE TO RELIEVE SEG 1 PRESSURE
+' Cross-segment GOSUB works fine with OPTION MAP 2.
+' ============================================================
+    SEGMENT 2
+
+' --- DebugCycleWeapon: cycle powerup weapons on debug key 2 ---
+' Caller (gameloop.bas) checks CONT.KEY=2 and debounce bit $0400 before calling.
+' Sets $0400 held-flag then activates the next weapon in the cycle:
+'   nothing/shield → beam → rapid → bomb → mega → shield → ...
+DebugCycleWeapon: PROCEDURE
+    #GameFlags = #GameFlags OR $0400
+    IF Sol36Timer > 0 THEN
+        ShieldHits = 2 : Sol36Timer = 0
+    ELSEIF #GameFlags AND FLAG_BOMB THEN
+        Sol36Timer = 120
+        BeamTimer = 0 : RapidTimer = 0
+        #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
+        DEFINE GRAM_PWR1, 3, PowerupSol36Gfx
+    ELSEIF RapidTimer > 0 THEN
+        #GameFlags = #GameFlags OR FLAG_BOMB
+        BeamTimer = 0 : RapidTimer = 0 : Sol36Timer = 0
+        DEFINE GRAM_PWR1, 2, PowerupBombGfx
+    ELSEIF BeamTimer > 0 THEN
+        RapidTimer = 1
+        BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0
+        DEFINE GRAM_PWR1, 3, PowerupRapidGfx
+    ELSE
+        BeamTimer = 1
+        RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0
+        DEFINE GRAM_PWR1, 2, PowerupBeamGfx
+    END IF
+    RETURN
+END
+
+' --- ShieldOrDamage: absorb hit via shield, or flag player hit with SFX ---
+' Used by alien bullet, rogue dive, and saucer body collision sites.
+ShieldOrDamage: PROCEDURE
+    IF ShieldHits > 0 THEN
+        GOSUB HitShield
+    ELSE
+        #GameFlags = #GameFlags OR FLAG_PLAYERHIT
+        SfxType = 3 : SfxVolume = 15 : #SfxPitch = 0
+        SOUND 2, 0, 15
+        POKE $1F9, 14
+        POKE $1F8, PEEK($1F8) AND $DF
+    END IF
     RETURN
 END
