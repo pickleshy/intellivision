@@ -144,6 +144,11 @@ GOLetterGram:
 GOLetterStaticGram:
     DATA 37, 27, 38, 29, 40, 41, 29, 33
 
+' Eye shimmer color cycle — 6 entries, indexed by FlyColorIdx (advances every 24 frames).
+' Spends most time red, briefly pulses yellow then white — "otherworldly" shimmer.
+EyeShimmerColors:
+    DATA COL_RED, COL_RED, COL_YELLOW, COL_WHITE, COL_YELLOW, COL_RED
+
     SEGMENT 2  ' Title drawing procs moved to Seg 2 (Seg 1 critically full)
 
 ' --- Draw 3x3 alien grid on BACKTAB ---
@@ -152,10 +157,10 @@ DrawAlienGrid: PROCEDURE
     FOR LoopVar = 100 TO 159
         PRINT AT LoopVar, 0
     NEXT LoopVar
-    ' All 9 aliens identical: same green body, red eye glow via BEHIND sprites (center column).
-    ' Shadow requires F/B mode (future enhancement); for now body + glow = 2 visible colors.
+    ' All 9 aliens identical: blue body, shimmering eye glow via BEHIND sprites (center column).
+    ' Shadow requires F/B mode (future enhancement); for now body + shimmer = 2 visible colors.
     FOR LoopVar = 0 TO 2
-        RowColor = COL_GREEN
+        RowColor = COL_BLUE
         #Card = (GRAM_BAND1 * 8) + RowColor + $0800
         #Mask = (GRAM_BAND2 * 8) + RowColor + $0800
         #ScreenPos = (5 + LoopVar) * 20 + CapsuleColor2

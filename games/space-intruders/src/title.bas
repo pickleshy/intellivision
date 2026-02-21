@@ -96,21 +96,25 @@ TitleLoop:
     SPRITE 6, 0, 0, 0
     SPRITE 7, 0, 0, 0
 
-    ' --- BEHIND eye glow: center alien column, all 3 rows (6 sprites) ---
-    ' Sprites 0-4 and 6 become BEHIND sprites at the alien center column.
-    ' They show red only through the blank eye socket pixels in the skull tile.
-    ' Solid skull pixels block the BEHIND sprite automatically — no masking needed.
+    ' --- BEHIND eye shimmer: time-multiplexed across all 3 alien columns ---
+    ' Only ONE column has active glow sprites per frame, rotating left→center→right each frame.
+    ' At 60fps, each column lights 20x/sec — persistence of vision makes ALL 9 appear to glow.
+    ' Slow playback reveals the illusion: each frame only 3 of 9 aliens have lit eyes.
+    ' Color also pulses slowly via EyeShimmerColors (indexed by FlyColorIdx, every 24 frames).
     ' Guard: skip during vanish (TitleAnimState=2) to avoid floating pixels.
     IF TitleAnimState < 2 THEN
-        ' Center-column Band1 sprite X: (CapsuleColor2 + 3) * 8 + 8
-        ' Band2 is 8px to the right. All 3 rows: Y = 48, 56, 64
-        #ScreenPos = (CapsuleColor2 + 3) * 8 + 8
-        SPRITE 0, #ScreenPos       + $2200, 48 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
-        SPRITE 1, (#ScreenPos + 8) + $2200, 48 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
-        SPRITE 2, #ScreenPos       + $2200, 56 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
-        SPRITE 3, (#ScreenPos + 8) + $2200, 56 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
-        SPRITE 4, #ScreenPos       + $2200, 64 + $0100, GRAM_BOMB2_F1 * 8 + COL_RED + $0800
-        SPRITE 6, (#ScreenPos + 8) + $2200, 64 + $0100, GRAM_CHAIN_CH * 8 + COL_RED + $0800
+        GlowColor = EyeShimmerColors(FlyColorIdx)
+        EyeGroup = EyeGroup + 1
+        IF EyeGroup >= 3 THEN EyeGroup = 0
+        IF EyeGroup = 0 THEN #ScreenPos = CapsuleColor2 * 8 + 8
+        IF EyeGroup = 1 THEN #ScreenPos = (CapsuleColor2 + 3) * 8 + 8
+        IF EyeGroup = 2 THEN #ScreenPos = (CapsuleColor2 + 6) * 8 + 8
+        SPRITE 0, #ScreenPos       + $2200, 48 + $0100, GRAM_BOMB2_F1 * 8 + GlowColor + $0800
+        SPRITE 1, (#ScreenPos + 8) + $2200, 48 + $0100, GRAM_CHAIN_CH * 8 + GlowColor + $0800
+        SPRITE 2, #ScreenPos       + $2200, 56 + $0100, GRAM_BOMB2_F1 * 8 + GlowColor + $0800
+        SPRITE 3, (#ScreenPos + 8) + $2200, 56 + $0100, GRAM_CHAIN_CH * 8 + GlowColor + $0800
+        SPRITE 4, #ScreenPos       + $2200, 64 + $0100, GRAM_BOMB2_F1 * 8 + GlowColor + $0800
+        SPRITE 6, (#ScreenPos + 8) + $2200, 64 + $0100, GRAM_CHAIN_CH * 8 + GlowColor + $0800
     END IF
 
     ' --- Flying crab "Zod" state machine ---
