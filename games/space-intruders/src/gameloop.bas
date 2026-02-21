@@ -111,10 +111,10 @@ GameLoop:
 
         ' Button debounce: GameOver=5 waits for release, GameOver=6 accepts press
         IF GameOver = 5 THEN
-            IF CONT.BUTTON = 0 AND CONT.KEY = 12 THEN GameOver = 6
+            IF cont1.b0 = 0 AND CONT.KEY = 12 THEN GameOver = 6
         END IF
         IF GameOver = 6 THEN
-            IF CONT.BUTTON OR CONT.KEY = 1 THEN
+            IF cont1.b0 OR CONT.KEY = 1 THEN
                 GOTO ResetToTitle
             END IF
         END IF

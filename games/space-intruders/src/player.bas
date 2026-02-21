@@ -9,17 +9,21 @@
 ' === Player Control ===
 
 MovePlayer: PROCEDURE
-    ' Left movement
+    ' Left movement — disc (arrow keys), guarded so keypad keys don't bleed into disc
     IF CONT.LEFT THEN
-        IF PlayerX > PLAYER_MIN_X THEN
-            PlayerX = PlayerX - PLAYER_SPEED
+        IF CONT.KEY >= 12 THEN
+            IF PlayerX > PLAYER_MIN_X THEN
+                PlayerX = PlayerX - PLAYER_SPEED
+            END IF
         END IF
     END IF
 
-    ' Right movement
+    ' Right movement — disc (arrow keys), guarded so keypad keys don't bleed into disc
     IF CONT.RIGHT THEN
-        IF PlayerX < PLAYER_MAX_X THEN
-            PlayerX = PlayerX + PLAYER_SPEED
+        IF CONT.KEY >= 12 THEN
+            IF PlayerX < PLAYER_MAX_X THEN
+                PlayerX = PlayerX + PLAYER_SPEED
+            END IF
         END IF
     END IF
 
@@ -41,7 +45,7 @@ MovePlayer: PROCEDURE
 
     ' Keypad 0: capture rogue alien during dogfight (with debounce)
     ' On keyboard: numpad 0 (see intruders.kbd — KP0 PD0L_KP0)
-    IF CONT.KEY = 0 THEN
+    IF CONT.KEY = 0 OR cont1.b2 THEN
         IF (#GameFlags AND FLAG_KEY0HELD) = 0 THEN
             #GameFlags = #GameFlags OR FLAG_KEY0HELD
             IF RogueDivePhase = 254 THEN
@@ -62,8 +66,8 @@ MovePlayer: PROCEDURE
             END IF
         END IF
     END IF
-    IF CONT.KEY <> 0 THEN
-        #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD when key released
+    IF CONT.KEY <> 0 AND cont1.b2 = 0 THEN
+        #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD when both released
     END IF
 
     ' SOL-36 auto-cannon: fires at own 20-frame cadence regardless of button state
@@ -86,9 +90,8 @@ MovePlayer: PROCEDURE
         END IF
     END IF
 
-    ' Fire: side buttons (not keypad) or auto-fire
-    IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-    IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
+    ' Fire: top or bottom-left action button, or auto-fire
+    IF cont1.b0 OR cont1.b1 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
         IF #GameFlags AND FLAG_BOMB THEN
             ' Bomb weapon: fires capsule projectile, one shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
@@ -136,7 +139,6 @@ MovePlayer: PROCEDURE
                 END IF
             END IF
         END IF
-    END IF
     END IF
 
     RETURN

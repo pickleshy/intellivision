@@ -83,15 +83,12 @@ UpdateCapture: PROCEDURE
     END IF
 
     ' Button-triggered wingman fire — fires when player presses fire (20-frame cooldown ~3/sec)
-    ' Guard: CONT.BUTTON + CONT.KEY >= 12 (same ECS bleed-through protection as player.bas)
     ' No SFX: player's own weapon sound already plays; two bullets visible is its own feedback
     IF (#GameFlags AND FLAG_CAPBULLET) = 0 THEN
         IF CapBtnTimer = 0 THEN
-            IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-            IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
+            IF cont1.b0 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
                 GOSUB LaunchCapBullet
                 CapBtnTimer = CAP_BTN_FIRE_RATE
-            END IF
             END IF
         END IF
     END IF

@@ -88,7 +88,7 @@ TitleScreen:
     ' Wait for all buttons/keys released before accepting input
 TitleDebounce:
     WAIT
-    IF CONT.BUTTON OR CONT.KEY < 12 THEN GOTO TitleDebounce
+    IF cont1.b0 OR CONT.KEY < 12 THEN GOTO TitleDebounce
 
 TitleLoop:
     WAIT
@@ -428,13 +428,9 @@ SkipPressfire:
         END IF
     END IF
 
-    ' Fire button: must hold 4 frames with NO keypad key active
-    IF CONT.BUTTON THEN
-        IF CONT.KEY >= 12 THEN
-            IF Key1Held < 4 THEN Key1Held = Key1Held + 1
-        ELSE
-            Key1Held = 0    ' Keypad active — reset counter
-        END IF
+    ' Fire button: hold 4 frames to start (state-transition debounce, not ECS guard)
+    IF cont1.b0 THEN
+        IF Key1Held < 4 THEN Key1Held = Key1Held + 1
     ELSE
         Key1Held = 0
     END IF
