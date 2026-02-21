@@ -1310,26 +1310,6 @@ GOEBlankGfx:
     BITMAP "XXX....."
     BITMAP "........"
 
-' --- WIDE CRAB (14x7 → padded to 16x8) ---
-WideCrabLeftF1Gfx:
-    BITMAP ".....XXX"
-    BITMAP "...XXXXX"
-    BITMAP "..XXXXXX"
-    BITMAP ".XX.XX.X"
-    BITMAP ".XXXXXXX"
-    BITMAP "..XXX..X"
-    BITMAP "...X...."
-    BITMAP "........"
-
-WideCrabRightF1Gfx:
-    BITMAP "XXX....."
-    BITMAP "XXXXX..."
-    BITMAP "XXXXXX.."
-    BITMAP "X.XX.XX."
-    BITMAP "XXXXXXX."
-    BITMAP "X..XXX.."
-    BITMAP "....X..."
-    BITMAP "........"
 
 ' Explosion graphics - 3 frame animation
 ' Frame 1 - tight pop (dense core)

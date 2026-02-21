@@ -1036,11 +1036,7 @@ ReloadHorde: PROCEDURE
     NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
     ' Reset positions
-    AlienOffsetX = 0
-    AlienOffsetY = 0
-    LastClearedY = 0
-    AlienDir = 1
-    MarchCount = 0
+    GOSUB ResetAlienGrid
     CurrentMarchSpeed = BaseMarchSpeed
     ' Clear screen and redraw HUD + silhouette
     CLS
@@ -1093,11 +1089,7 @@ StartNewWave: PROCEDURE
     MusicGear = 0
 
     ' Reset alien positions
-    AlienOffsetX = 0
-    AlienOffsetY = 0
-    LastClearedY = 0
-    AlienDir = 1
-    MarchCount = 0
+    GOSUB ResetAlienGrid
 
     ' Reset all aliens to alive (9 bits = $1FF)
     FOR LoopVar = 0 TO ALIEN_ROWS - 1

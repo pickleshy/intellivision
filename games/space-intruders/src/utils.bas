@@ -375,6 +375,18 @@ END
 ' ============================================================
     SEGMENT 2
 
+' --- ResetAlienGrid: zero alien position / direction / march state ---
+' Called by StartNewWave and ReloadHorde in waves.bas.
+' Does NOT reset CurrentMarchSpeed (caller handles that, since each site uses a different value).
+ResetAlienGrid: PROCEDURE
+    AlienOffsetX = 0
+    AlienOffsetY = 0
+    LastClearedY = 0
+    AlienDir = 1
+    MarchCount = 0
+    RETURN
+END
+
 ' --- DebugCycleWeapon: cycle powerup weapons on debug key 2 ---
 ' Caller (gameloop.bas) checks CONT.KEY=2 and debounce bit $0400 before calling.
 ' Sets $0400 held-flag then activates the next weapon in the cycle:
