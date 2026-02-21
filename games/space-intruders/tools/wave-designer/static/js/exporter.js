@@ -1,5 +1,16 @@
 /**
  * Exporter — IntyBASIC code generation, import parser, JSON save/load
+ *
+ * Boss export format (data-driven, Feb 2026):
+ *   Three DATA tables replacing the old IF/ELSEIF chain in waves.bas:
+ *   - BossHeader(32):  bits 0-2=BossCount, bit 3=OrbitStep=0, bit 4=OrbitStep2=5
+ *   - BossColRow(128): bits 0-3=BossCol, bits 4-7=BossRow  (4 slots per wave)
+ *   - BossAttrs(128):  bits 0-2=BossHP, bits 3-6=BossColor, bit 7=BossType
+ *   These paste into data_tables.bas after the OrbitDY table.
+ *
+ * Palette export format (5-color, Feb 2026):
+ *   Five WavePalette arrays (one per alien row), 6 entries each, cycling via (Level-1) MOD 6.
+ *   Replaces old 3-array / squid+crab+octopus system.
  */
 
 import { GRID_ROWS, SKULL_TYPE, BOMB_TYPE, TOTAL_WAVES } from './state.js';
@@ -23,7 +34,6 @@ export class Exporter {
         // 1. Deduplicate patterns and build index
         const { uniquePatterns, patternIndex } = this._deduplicatePatterns(waves);
 
-        // PatternBData
         lines.push('PatternBData:');
         uniquePatterns.forEach((pattern, i) => {
             const hex = pattern.map(v => '$' + v.toString(16).toUpperCase().padStart(3, '0'));
@@ -31,7 +41,6 @@ export class Exporter {
         });
         lines.push('');
 
-        // PatternBIndex (rows of 8 for readability)
         lines.push('PatternBIndex:');
         for (let i = 0; i < patternIndex.length; i += 8) {
             const chunk = patternIndex.slice(i, i + 8);
@@ -41,17 +50,13 @@ export class Exporter {
         }
         lines.push('');
 
-        // 2. Palettes (collapse 8 waves to 6 via MOD 6)
+        // 2. Palettes — 5 WavePalette arrays (one per row), 6 entries each (MOD 6 cycle)
         const palettes = this._buildPalettes(waves);
-        lines.push('WavePalette0:');
-        lines.push(`    DATA ${palettes[0].join(', ')}`);
-        lines.push('');
-        lines.push('WavePalette1:');
-        lines.push(`    DATA ${palettes[1].join(', ')}`);
-        lines.push('');
-        lines.push('WavePalette2:');
-        lines.push(`    DATA ${palettes[2].join(', ')}`);
-        lines.push('');
+        for (let row = 0; row < 5; row++) {
+            lines.push(`WavePalette${row}:`);
+            lines.push(`    DATA ${palettes[row].join(', ')}`);
+            lines.push('');
+        }
 
         // 3. Entrance data (rows of 8)
         const entrances = waves.map(w => w.entrance);
@@ -77,11 +82,15 @@ export class Exporter {
         }
         lines.push('');
 
-        // 5. Boss placement code
-        lines.push("' === Boss Placement (paste into LoadPatternB) ===");
-        lines.push("' Replace the IF/ELSEIF chain after BossCount = 0");
+        // 5. Boss placement — data tables (paste into data_tables.bas after OrbitDY)
+        lines.push("' === Boss Placement (paste into data_tables.bas after OrbitDY) ===");
+        lines.push("' BossHeader(32):  bits 0-2=BossCount, bit 3=OrbitStep=0, bit 4=OrbitStep2=5");
+        lines.push("' BossColRow(128): bits 0-3=BossCol, bits 4-7=BossRow  (4 slots per wave)");
+        lines.push("' BossAttrs(128):  bits 0-2=BossHP,  bits 3-6=BossColor, bit 7=BossType");
+        lines.push("'   Skull attrs: HP + Color*8        (e.g. hp3 c9=75, hp3 c12=99, hp4 c15=124)");
+        lines.push("'   Bomb attrs:  HP + Color*8 + 128  (e.g. hp2 c10=210, hp4 c10=212, hp5 c12=229)");
         lines.push('');
-        lines.push(...this._generateBossCode(waves));
+        lines.push(...this._generateBossData(waves));
 
         return lines.join('\n');
     }
@@ -92,7 +101,6 @@ export class Exporter {
 
         waves.forEach(wave => {
             const rows = wave.patternB.rows;
-            // Check if this pattern already exists
             let found = -1;
             for (let i = 0; i < uniquePatterns.length; i++) {
                 if (uniquePatterns[i].every((v, j) => v === rows[j])) {
@@ -112,89 +120,95 @@ export class Exporter {
     }
 
     _buildPalettes(waves) {
-        // Game uses 3 palette lines with 6 entries each, cycling via (Level-1) MOD 6
-        // Palette lines interleave: P0 has squid colors, P1 has crab, P2 has octopus
-        // Actually, the game stores them as: each line has [squid0, crab0, octo0, squid1, crab1, octo1]
-        // Wait — looking at the source: WavePalette0 DATA 6, 7, 5, 2, 1, 3
-        // The game reads: palette_base = (Level - 1) MOD 3 (picks which of the 3 lines)
-        // Then AlienColor0 = WavePalette{base}(0), AlienColor1 = WavePalette{base}(1), etc.
-        //
-        // Actually from the game code, there are 3 palette lines of 6 entries each.
-        // The game picks one line per wave: wave MOD 3 selects which line.
-        // Each line has 6 colors for the 3 alien types (2 alternating per type? or just 6 total?)
-        //
-        // For simplicity in the export, we output the raw palette data.
-        // Each palette line has: color_for_type0, color_for_type1, color_for_type2, + 3 more
-        //
-        // Given the complexity of the palette system, we'll output per-wave comments
-        // and let the user map them back to the palette lines.
-
-        const p0 = [], p1 = [], p2 = [];
-
-        // Build 3 palette lines, 6 entries each
-        // Use the first 6 waves to populate, since waves 7-8 share with 1-2
-        for (let i = 0; i < 6; i++) {
-            const pal = i < waves.length ? waves[i].palette : { squid: 7, crab: 7, octopus: 7 };
-            if (i < 2) {
-                p0.push(pal.squid);
-                p0.push(pal.crab);
-                p0.push(pal.octopus);
-            } else if (i < 4) {
-                p1.push(pal.squid);
-                p1.push(pal.crab);
-                p1.push(pal.octopus);
-            } else {
-                p2.push(pal.squid);
-                p2.push(pal.crab);
-                p2.push(pal.octopus);
+        // Build 5 WavePalette arrays (one per alien row, row0-row4).
+        // Each array has 6 entries — one per palette slot cycling via (Level-1) MOD 6.
+        // Uses the first 6 waves' palette data (the full cycle).
+        const palettes = [[], [], [], [], []];
+        for (let palIdx = 0; palIdx < 6; palIdx++) {
+            const pal = palIdx < waves.length
+                ? waves[palIdx].palette
+                : { row0: 7, row1: 7, row2: 7, row3: 7, row4: 7 };
+            for (let row = 0; row < 5; row++) {
+                palettes[row].push(pal[`row${row}`] ?? 7);
             }
         }
-
-        return [p0, p1, p2];
+        return palettes;
     }
 
-    _generateBossCode(waves) {
-        const lines = [];
-        let firstIf = true;
+    _generateBossData(waves) {
+        // Encode all 32 waves into 3 compact DATA tables.
+        // Orbiters: boss[0].orbiter → bit 3 of header (OrbitStep=0)
+        //           boss[1].orbiter → bit 4 of header (OrbitStep2=5)
+        const headers = [];
+        const colRows = [];
+        const attrs = [];
 
-        waves.forEach((wave, i) => {
-            const bosses = wave.patternB.bosses;
-            if (bosses.length === 0) {
-                lines.push(`    ' Wave ${i + 1} (LoopVar=${i}): no bosses`);
-                return;
+        waves.forEach((wave, waveIdx) => {
+            const bosses = wave.patternB.bosses.slice(0, 4);
+            const bossCount = bosses.length;
+            const orbit0 = bossCount >= 1 && bosses[0].orbiter;
+            const orbit1 = bossCount >= 2 && bosses[1].orbiter;
+            headers.push(bossCount + (orbit0 ? 8 : 0) + (orbit1 ? 16 : 0));
+
+            for (let slot = 0; slot < 4; slot++) {
+                const b = slot < bossCount ? bosses[slot] : null;
+                if (b) {
+                    colRows.push((b.col & 0xF) | ((b.row & 0xF) << 4));
+                    attrs.push((b.hp & 0x7) | ((b.color & 0xF) << 3) | (b.type === BOMB_TYPE ? 128 : 0));
+                } else {
+                    colRows.push(0);
+                    attrs.push(0);
+                }
             }
-
-            const keyword = firstIf ? 'IF' : 'ELSEIF';
-            firstIf = false;
-
-            lines.push(`    ${keyword} LoopVar = ${i} THEN`);
-            lines.push(`        ' Wave ${i + 1}: ${bosses.length} boss${bosses.length > 1 ? 'es' : ''}`);
-            lines.push(`        BossCount = ${bosses.length}`);
-
-            bosses.forEach((b, j) => {
-                const typeName = b.type === SKULL_TYPE ? 'SKULL_TYPE' : 'BOMB_TYPE';
-                lines.push(`        BossCol(${j}) = ${b.col} : BossRow(${j}) = ${b.row}`);
-                lines.push(`        BossHP(${j}) = ${b.hp} : BossColor(${j}) = ${b.color} : BossType(${j}) = ${typeName}`);
-            });
-
-            // Orbiters
-            const orbiters = bosses.filter((b, idx) => b.orbiter && idx < 2);
-            if (orbiters.length >= 1) {
-                const orbiterIdx = bosses.indexOf(orbiters[0]);
-                lines.push(`        OrbitStep = 0  ' Orbiter on boss ${orbiterIdx}`);
-            }
-            if (orbiters.length >= 2) {
-                lines.push(`        OrbitStep2 = 5  ' Orbiter on boss 1 (offset start)`);
-            }
-
-            lines.push('');
         });
 
-        if (!firstIf) {
-            lines.push('    END IF');
+        const lines = [];
+
+        // BossHeader: 32 values, 8 per line
+        lines.push('BossHeader:');
+        for (let i = 0; i < headers.length; i += 8) {
+            const chunk = headers.slice(i, i + 8);
+            const padded = chunk.map(v => String(v).padStart(2, ' ')).join(', ');
+            lines.push(`    DATA ${padded}   ' Waves ${i + 1}-${Math.min(i + 8, headers.length)}`);
+        }
+        lines.push('');
+
+        // BossColRow: 128 values (32 waves × 4 slots), one wave per line
+        lines.push('BossColRow:');
+        for (let i = 0; i < colRows.length; i += 4) {
+            const waveIdx = Math.floor(i / 4);
+            const chunk = colRows.slice(i, i + 4);
+            const padded = chunk.map(v => String(v).padStart(2, ' ')).join(', ');
+            const comment = this._bossColRowComment(waves[waveIdx].patternB.bosses);
+            lines.push(`    DATA ${padded}   ' W${waveIdx + 1}${comment}`);
+        }
+        lines.push('');
+
+        // BossAttrs: 128 values (32 waves × 4 slots), one wave per line
+        lines.push('BossAttrs:');
+        for (let i = 0; i < attrs.length; i += 4) {
+            const waveIdx = Math.floor(i / 4);
+            const chunk = attrs.slice(i, i + 4);
+            const padded = chunk.map(v => String(v).padStart(3, ' ')).join(', ');
+            const comment = this._bossAttrsComment(waves[waveIdx].patternB.bosses);
+            lines.push(`    DATA ${padded}   ' W${waveIdx + 1}${comment}`);
         }
 
         return lines;
+    }
+
+    _bossColRowComment(bosses) {
+        if (!bosses.length) return ': no bosses';
+        return ': ' + bosses.slice(0, 4).map(b =>
+            `${b.type === SKULL_TYPE ? 'skull' : 'bomb'}(${b.col},${b.row})`
+        ).join(' ');
+    }
+
+    _bossAttrsComment(bosses) {
+        if (!bosses.length) return ': no bosses';
+        return ': ' + bosses.slice(0, 4).map(b =>
+            `${b.type === SKULL_TYPE ? 's' : 'b'}hp${b.hp}c${b.color}`
+        ).join(' ');
     }
 
     // ── IntyBASIC Import ──
@@ -204,9 +218,17 @@ export class Exporter {
         const patterns = [];
         const patternIndex = [];
         const entrances = [];
-        const palettes = [[], [], []];
-        const bossData = new Map(); // wave index -> boss array
+        // Palette storage: palettes[rowIdx] = array of 6 color values
+        const palettes = [[], [], [], [], []];
         const reinforceWaves = new Set();
+
+        // New data-table boss storage
+        const bossHeaders = [];
+        const bossColRows = [];
+        const bossAttrs = [];
+
+        // Legacy IF/ELSEIF boss storage (for old exports)
+        const legacyBossData = new Map();
 
         let mode = 'scanning';
         let currentPatternRows = [];
@@ -215,44 +237,47 @@ export class Exporter {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith("'") || trimmed.startsWith('REM')) continue;
 
-            // Detect labels
-            if (trimmed.startsWith('PatternBData:')) { mode = 'patternBData'; continue; }
-            if (trimmed.startsWith('PatternBIndex:')) { mode = 'patternBIndex'; continue; }
-            if (trimmed.startsWith('WavePalette0:')) { mode = 'palette0'; continue; }
-            if (trimmed.startsWith('WavePalette1:')) { mode = 'palette1'; continue; }
-            if (trimmed.startsWith('WavePalette2:')) { mode = 'palette2'; continue; }
-            if (trimmed.startsWith('WaveEntranceData:')) { mode = 'entrance'; continue; }
+            // Detect section labels
+            if (trimmed.startsWith('PatternBData:'))    { mode = 'patternBData'; continue; }
+            if (trimmed.startsWith('PatternBIndex:'))   { mode = 'patternBIndex'; continue; }
+            if (trimmed.startsWith('WaveEntranceData:')){ mode = 'entrance'; continue; }
+            if (trimmed.startsWith('BossHeader:'))      { mode = 'bossHeader'; continue; }
+            if (trimmed.startsWith('BossColRow:'))      { mode = 'bossColRow'; continue; }
+            if (trimmed.startsWith('BossAttrs:'))       { mode = 'bossAttrs'; continue; }
 
-            // Check for reinforcement line: IF Col = 2 OR Col = 10 ... THEN
+            // WavePalette0-4
+            const palMatch = trimmed.match(/^WavePalette(\d):/);
+            if (palMatch) {
+                mode = `palette${palMatch[1]}`;
+                continue;
+            }
+
+            // Reinforcement: IF Col = N OR Col = M ... THEN
             const reinforceMatch = trimmed.match(/IF\s+(Col\s*=\s*\d+(?:\s+OR\s+Col\s*=\s*\d+)*)\s+THEN/i);
             if (reinforceMatch) {
-                const colMatches = reinforceMatch[1].matchAll(/Col\s*=\s*(\d+)/gi);
-                for (const m of colMatches) {
+                for (const m of reinforceMatch[1].matchAll(/Col\s*=\s*(\d+)/gi)) {
                     reinforceWaves.add(parseInt(m[1]));
                 }
             }
 
-            // Check for boss assignments
-            const bossCountMatch = trimmed.match(/BossCount\s*=\s*(\d+)/);
-            const loopVarMatch = trimmed.match(/LoopVar\s*=\s*(\d+)/);
-
+            // Legacy: IF/ELSEIF LoopVar = N THEN (old boss IF/ELSEIF format)
+            const loopVarMatch = trimmed.match(/(?:IF|ELSEIF)\s+LoopVar\s*=\s*(\d+)\s+THEN/i);
             if (loopVarMatch) {
-                mode = 'boss';
+                mode = 'legacyBoss';
                 this._currentBossWave = parseInt(loopVarMatch[1]);
-                if (!bossData.has(this._currentBossWave)) {
-                    bossData.set(this._currentBossWave, []);
+                if (!legacyBossData.has(this._currentBossWave)) {
+                    legacyBossData.set(this._currentBossWave, []);
                 }
                 continue;
             }
 
             // Parse DATA lines
-            if (trimmed.startsWith('DATA') || trimmed.startsWith('data')) {
+            if (/^DATA\s/i.test(trimmed)) {
                 const values = this._parseDataValues(trimmed);
 
                 switch (mode) {
                     case 'patternBData':
                         currentPatternRows.push(...values);
-                        // Group into 5-row patterns
                         while (currentPatternRows.length >= GRID_ROWS) {
                             patterns.push(currentPatternRows.splice(0, GRID_ROWS));
                         }
@@ -261,37 +286,48 @@ export class Exporter {
                         patternIndex.push(...values);
                         if (patternIndex.length >= TOTAL_WAVES) mode = 'scanning';
                         break;
-                    case 'palette0':
-                        palettes[0].push(...values);
-                        mode = 'scanning';
-                        break;
-                    case 'palette1':
-                        palettes[1].push(...values);
-                        mode = 'scanning';
-                        break;
-                    case 'palette2':
-                        palettes[2].push(...values);
-                        mode = 'scanning';
-                        break;
                     case 'entrance':
                         entrances.push(...values);
                         if (entrances.length >= TOTAL_WAVES) mode = 'scanning';
                         break;
+                    case 'bossHeader':
+                        bossHeaders.push(...values);
+                        if (bossHeaders.length >= TOTAL_WAVES) mode = 'scanning';
+                        break;
+                    case 'bossColRow':
+                        bossColRows.push(...values);
+                        if (bossColRows.length >= TOTAL_WAVES * 4) mode = 'scanning';
+                        break;
+                    case 'bossAttrs':
+                        bossAttrs.push(...values);
+                        if (bossAttrs.length >= TOTAL_WAVES * 4) mode = 'scanning';
+                        break;
+                    default:
+                        if (mode.startsWith('palette')) {
+                            const rowIdx = parseInt(mode.slice(7));
+                            if (!isNaN(rowIdx) && rowIdx < 5) {
+                                palettes[rowIdx].push(...values);
+                            }
+                            mode = 'scanning';
+                        }
+                        break;
                 }
             }
 
-            // Parse boss property assignments
-            if (mode === 'boss' && this._currentBossWave !== undefined) {
-                this._parseBossLine(trimmed, bossData.get(this._currentBossWave));
+            // Legacy boss property lines (BossCol(i) = N etc.)
+            if (mode === 'legacyBoss' && this._currentBossWave !== undefined) {
+                this._parseLegacyBossLine(trimmed, legacyBossData.get(this._currentBossWave));
             }
         }
 
-        // Apply parsed data to state
-        return this._applyParsedData(patterns, patternIndex, palettes, entrances, bossData, reinforceWaves);
+        return this._applyParsedData(
+            patterns, patternIndex, palettes, entrances,
+            bossHeaders, bossColRows, bossAttrs,
+            legacyBossData, reinforceWaves
+        );
     }
 
     _parseDataValues(line) {
-        // Strip "DATA" prefix and trailing comment
         let data = line.replace(/^DATA\s*/i, '').replace(/'.*$/, '').trim();
         return data.split(',').map(v => {
             v = v.trim();
@@ -300,43 +336,75 @@ export class Exporter {
         }).filter(v => !isNaN(v));
     }
 
-    _parseBossLine(line, bossArray) {
-        // Parse: BossCol(0) = 4 : BossRow(0) = 2
-        const colMatch = line.match(/BossCol\((\d+)\)\s*=\s*(\d+)/);
-        const rowMatch = line.match(/BossRow\((\d+)\)\s*=\s*(\d+)/);
-        const hpMatch = line.match(/BossHP\((\d+)\)\s*=\s*(\d+)/);
+    _parseLegacyBossLine(line, bossArray) {
+        // Parse old IF/ELSEIF style: BossCol(0) = 4 : BossRow(0) = 2, etc.
+        const colMatch   = line.match(/BossCol\((\d+)\)\s*=\s*(\d+)/);
+        const rowMatch   = line.match(/BossRow\((\d+)\)\s*=\s*(\d+)/);
+        const hpMatch    = line.match(/BossHP\((\d+)\)\s*=\s*(\d+)/);
         const colorMatch = line.match(/BossColor\((\d+)\)\s*=\s*(\d+)/);
-        const typeMatch = line.match(/BossType\((\d+)\)\s*=\s*(\w+)/);
-        const orbitMatch = line.match(/OrbitStep\s*=\s*(\d+)/);
+        const typeMatch  = line.match(/BossType\((\d+)\)\s*=\s*(\w+)/);
+        const orbitMatch  = line.match(/OrbitStep\s*=\s*(\d+)/);
         const orbit2Match = line.match(/OrbitStep2\s*=\s*(\d+)/);
 
-        // Ensure boss entries exist
         const ensureBoss = (idx) => {
             while (bossArray.length <= idx) {
                 bossArray.push({ col: 0, row: 0, hp: 3, color: 9, type: 0, orbiter: false });
             }
         };
 
-        if (colMatch) { const idx = parseInt(colMatch[1]); ensureBoss(idx); bossArray[idx].col = parseInt(colMatch[2]); }
-        if (rowMatch) { const idx = parseInt(rowMatch[1]); ensureBoss(idx); bossArray[idx].row = parseInt(rowMatch[2]); }
-        if (hpMatch) { const idx = parseInt(hpMatch[1]); ensureBoss(idx); bossArray[idx].hp = parseInt(hpMatch[2]); }
-        if (colorMatch) { const idx = parseInt(colorMatch[1]); ensureBoss(idx); bossArray[idx].color = parseInt(colorMatch[2]); }
+        if (colMatch)   { const i = parseInt(colMatch[1]);   ensureBoss(i); bossArray[i].col   = parseInt(colMatch[2]); }
+        if (rowMatch)   { const i = parseInt(rowMatch[1]);   ensureBoss(i); bossArray[i].row   = parseInt(rowMatch[2]); }
+        if (hpMatch)    { const i = parseInt(hpMatch[1]);    ensureBoss(i); bossArray[i].hp    = parseInt(hpMatch[2]); }
+        if (colorMatch) { const i = parseInt(colorMatch[1]); ensureBoss(i); bossArray[i].color = parseInt(colorMatch[2]); }
         if (typeMatch) {
-            const idx = parseInt(typeMatch[1]);
-            ensureBoss(idx);
-            const val = typeMatch[2];
-            bossArray[idx].type = val === 'BOMB_TYPE' || val === '1' ? BOMB_TYPE : SKULL_TYPE;
+            const i = parseInt(typeMatch[1]);
+            ensureBoss(i);
+            bossArray[i].type = (typeMatch[2] === 'BOMB_TYPE' || typeMatch[2] === '1') ? BOMB_TYPE : SKULL_TYPE;
         }
-        if (orbitMatch && bossArray.length > 0) { bossArray[0].orbiter = true; }
-        if (orbit2Match && bossArray.length > 1) { bossArray[1].orbiter = true; }
+        if (orbitMatch  && bossArray.length > 0) bossArray[0].orbiter = true;
+        if (orbit2Match && bossArray.length > 1) bossArray[1].orbiter = true;
     }
 
-    _applyParsedData(patterns, patternIndex, palettes, entrances, bossData, reinforceWaves) {
+    _decodeBossTables(bossHeaders, bossColRows, bossAttrs) {
+        // Decode the 3 compact DATA tables back into per-wave boss arrays.
+        const bossData = new Map();
+        const numWaves = Math.min(bossHeaders.length, TOTAL_WAVES);
+
+        for (let waveIdx = 0; waveIdx < numWaves; waveIdx++) {
+            const header = bossHeaders[waveIdx];
+            const bossCount = header & 7;
+            const orbit0 = !!(header & 8);
+            const orbit1 = !!(header & 16);
+            const bosses = [];
+
+            for (let slot = 0; slot < bossCount; slot++) {
+                const tableIdx = waveIdx * 4 + slot;
+                if (tableIdx >= bossColRows.length) break;
+                const cr = bossColRows[tableIdx];
+                const at = tableIdx < bossAttrs.length ? bossAttrs[tableIdx] : 0;
+                bosses.push({
+                    col:    cr & 0xF,
+                    row:    (cr >> 4) & 0xF,
+                    hp:     at & 0x7,
+                    color:  (at >> 3) & 0xF,
+                    type:   (at >> 7) & 1 ? BOMB_TYPE : SKULL_TYPE,
+                    orbiter: slot === 0 ? orbit0 : slot === 1 ? orbit1 : false,
+                });
+            }
+
+            bossData.set(waveIdx, bosses);
+        }
+        return bossData;
+    }
+
+    _applyParsedData(patterns, patternIndex, palettes, entrances,
+                     bossHeaders, bossColRows, bossAttrs,
+                     legacyBossData, reinforceWaves) {
         const waves = this.state.waves;
         const numWaves = waves.length;
         let applied = 0;
 
-        // Apply patterns via index
+        // Patterns via index
         if (patterns.length > 0 && patternIndex.length >= numWaves) {
             for (let i = 0; i < numWaves; i++) {
                 const pidx = patternIndex[i];
@@ -347,50 +415,43 @@ export class Exporter {
             }
         }
 
-        // Apply entrances
+        // Entrances
         if (entrances.length >= numWaves) {
-            for (let i = 0; i < numWaves; i++) {
-                waves[i].entrance = entrances[i];
-            }
+            for (let i = 0; i < numWaves; i++) waves[i].entrance = entrances[i];
             applied++;
         }
 
-        // Apply palettes (6 palettes cycling via MOD 6)
-        if (palettes[0].length >= 6) {
+        // Palettes — WavePalette0-4 (5 rows × 6 palette slots → 32 waves via MOD 6)
+        if (palettes.every(p => p.length >= 6)) {
             for (let i = 0; i < numWaves; i++) {
-                const paletteSlot = i % 3;
-                const offset = Math.floor((i % 6) / 3) * 3;
-                const pal = palettes[paletteSlot];
-                if (pal && pal.length >= offset + 3) {
-                    waves[i].palette = {
-                        squid: pal[offset],
-                        crab: pal[offset + 1],
-                        octopus: pal[offset + 2],
-                    };
+                const palIdx = i % 6;
+                waves[i].palette = {};
+                for (let row = 0; row < 5; row++) {
+                    waves[i].palette[`row${row}`] = palettes[row][palIdx] ?? 7;
                 }
             }
             applied++;
         }
 
-        // Apply reinforcements
-        if (reinforceWaves && reinforceWaves.size > 0) {
-            for (let i = 0; i < numWaves; i++) {
-                waves[i].reinforcement = reinforceWaves.has(i);
-            }
+        // Reinforcements
+        if (reinforceWaves.size > 0) {
+            for (let i = 0; i < numWaves; i++) waves[i].reinforcement = reinforceWaves.has(i);
             applied++;
         }
 
-        // Apply bosses
-        for (const [waveIdx, bosses] of bossData) {
-            if (waveIdx < numWaves) {
-                waves[waveIdx].patternB.bosses = bosses;
-                applied++;
+        // Bosses: prefer new DATA table format; fall back to legacy IF/ELSEIF parse
+        if (bossHeaders.length >= TOTAL_WAVES) {
+            const bossData = this._decodeBossTables(bossHeaders, bossColRows, bossAttrs);
+            for (const [waveIdx, bosses] of bossData) {
+                if (waveIdx < numWaves) { waves[waveIdx].patternB.bosses = bosses; applied++; }
+            }
+        } else if (legacyBossData.size > 0) {
+            for (const [waveIdx, bosses] of legacyBossData) {
+                if (waveIdx < numWaves) { waves[waveIdx].patternB.bosses = bosses; applied++; }
             }
         }
 
-        if (applied > 0) {
-            this.state._notify('fullReload', {});
-        }
+        if (applied > 0) this.state._notify('fullReload', {});
         return applied;
     }
 
@@ -411,15 +472,12 @@ export class Exporter {
         const text = document.getElementById('import-text').value;
         const count = this.parseIntyBASIC(text);
         document.getElementById('modal-import').classList.add('hidden');
-        if (count > 0) {
-            this.state.setCurrentWave(0);
-        }
+        if (count > 0) this.state.setCurrentWave(0);
     }
 
     copyToClipboard() {
         const text = document.getElementById('export-text').value;
         navigator.clipboard.writeText(text).catch(() => {
-            // Fallback: select all text
             document.getElementById('export-text').select();
         });
     }
@@ -444,11 +502,9 @@ export class Exporter {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            if (this.state.fromJSON(e.target.result)) {
-                this.state.setCurrentWave(0);
-            }
+            if (this.state.fromJSON(e.target.result)) this.state.setCurrentWave(0);
         };
         reader.readAsText(file);
-        event.target.value = ''; // Reset for next load
+        event.target.value = '';
     }
 }

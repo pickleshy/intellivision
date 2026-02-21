@@ -661,242 +661,26 @@ LoadPatternB: PROCEDURE
     NEXT LoopVar
     BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
 
-    ' ── LEVEL DESIGN: Boss Placement (edit here or paste from Wave Designer) ──
-    LoopVar = (Level - 1) AND 31  ' 0-based wave index (0-31)
-    ' Boss types: SKULL_TYPE=0 (3 HP multi-hit), BOMB_TYPE=1 (2 HP chain explode)
-    ' Bosses are 2-wide: occupy BossCol and BossCol+1. Max 4 bosses per wave.
-    ' Orbiters: OrbitStep/OrbitStep2 = 0 to activate (bomb bosses only, max 2).
-
-    IF LoopVar = 0 THEN
-        ' Wave 1: 1 skull boss
-        BossCount = 1
-        BossCol(0) = 3 : BossRow(0) = 3
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-    ELSEIF LoopVar = 1 THEN
-        ' Wave 2: 2 skull bosses
-        BossCount = 2
-        BossCol(0) = 2 : BossRow(0) = 2
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 5 : BossRow(1) = 2
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-    ELSEIF LoopVar = 2 THEN
-        ' Wave 3: 1 bomb boss (no orbiter — conflicts with surrounding alien sprites)
-        BossCount = 1
-        BossCol(0) = 3 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-    ELSEIF LoopVar = 3 THEN
-        ' Wave 4: 2 bomb bosses + 2 orbiters
-        BossCount = 2
-        BossCol(0) = 2 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 3
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
-    ELSEIF LoopVar = 4 THEN
-        ' Wave 5: 2 skull bosses
-        BossCount = 2
-        BossCol(0) = 2 : BossRow(0) = 2
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 5 : BossRow(1) = 2
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-    ELSEIF LoopVar = 5 THEN
-        ' Wave 6: 3 skull bosses
-        BossCount = 3
-        BossCol(0) = 3 : BossRow(0) = 3
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 5 : BossRow(1) = 3
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 4 : BossRow(2) = 2
-        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-    ELSEIF LoopVar = 6 THEN
-        ' Wave 7: 1 bomb boss
-        BossCount = 1
-        BossCol(0) = 4 : BossRow(0) = 2
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-    ELSEIF LoopVar = 7 THEN
-        ' Wave 8: 2 skull bosses
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 1
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 3
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-    ' ── Waves 9-16 ──
-    ' Wave 9 (LoopVar=8): no bosses
-    ELSEIF LoopVar = 9 THEN
-        ' Wave 10: 2 skull bosses on wings
-        BossCount = 2
-        BossCol(0) = 0 : BossRow(0) = 1
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 1
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-    ELSEIF LoopVar = 10 THEN
-        ' Wave 11: 1 bomb boss (no orbiter — Zigzag pattern is too dense for orbit clearance)
-        BossCount = 1
-        BossCol(0) = 4 : BossRow(0) = 2
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-    ELSEIF LoopVar = 11 THEN
-        ' Wave 12: 2 skulls guarding corners
-        BossCount = 2
-        BossCol(0) = 0 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 7 : BossRow(1) = 4
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-    ' Wave 13 (LoopVar=12): no bosses (breather)
-    ELSEIF LoopVar = 13 THEN
-        ' Wave 14: 1 bomb boss
-        BossCount = 1
-        BossCol(0) = 2 : BossRow(0) = 2
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-    ELSEIF LoopVar = 14 THEN
-        ' Wave 15: 1 skull boss
-        BossCount = 1
-        BossCol(0) = 3 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-    ELSEIF LoopVar = 15 THEN
-        ' Wave 16: 1 bomb + 1 skull
-        BossCount = 2
-        BossCol(0) = 3 : BossRow(0) = 1
-        BossHP(0) = 4 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 6 : BossRow(1) = 3
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-    ' ── Waves 17-24: Harder ──
-    ELSEIF LoopVar = 16 THEN
-        ' Wave 17: 3 skulls
-        BossCount = 3
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 4 : BossRow(1) = 0
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 7 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
-    ELSEIF LoopVar = 17 THEN
-        ' Wave 18: 2 bombs (no orbiters — Fortress alt is too dense; boss 1 orbit also exits grid below row 4)
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 3
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-    ELSEIF LoopVar = 18 THEN
-        ' Wave 19: 1 bomb w/ orbiter + 1 skull
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 6 : BossRow(1) = 3
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        OrbitStep = 0
-    ELSEIF LoopVar = 19 THEN
-        ' Wave 20: 2 bombs + 2 orbiters
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 4
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
-    ELSEIF LoopVar = 20 THEN
-        ' Wave 21: 3 skulls
-        BossCount = 3
-        BossCol(0) = 0 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 7 : BossRow(1) = 0
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 3 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-    ELSEIF LoopVar = 21 THEN
-        ' Wave 22: 1 bomb + 2 skulls (no orbiter — Cross alt row 2 is solid $1FF)
-        BossCount = 3
-        BossCol(0) = 3 : BossRow(0) = 2
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 1 : BossRow(1) = 0
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 1 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-    ' Wave 23 (LoopVar=22): no bosses (breather)
-    ELSEIF LoopVar = 23 THEN
-        ' Wave 24: 2 bombs w/ orbiters
-        BossCount = 2
-        BossCol(0) = 2 : BossRow(0) = 1
-        BossHP(0) = 5 : BossColor(0) = 12 : BossType(0) = BOMB_TYPE
-        OrbitStep = 0
-        BossCol(1) = 6 : BossRow(1) = 3
-        BossHP(1) = 5 : BossColor(1) = 12 : BossType(1) = BOMB_TYPE
-        OrbitStep2 = 5
-    ' ── Waves 25-32: Endgame gauntlet ──
-    ELSEIF LoopVar = 24 THEN
-        ' Wave 25: 4 bosses — 1 bomb w/ orbiter + 3 skulls
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 4
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 3
-        BossHP(1) = 3 : BossColor(1) = 9 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 3 : BossRow(2) = 2
-        BossHP(2) = 3 : BossColor(2) = 12 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 7 : BossRow(3) = 4
-        BossHP(3) = 3 : BossColor(3) = 9 : BossType(3) = SKULL_TYPE
-        OrbitStep = 0
-    ELSEIF LoopVar = 25 THEN
-        ' Wave 26: 2 bombs + 2 orbiters
-        BossCount = 2
-        BossCol(0) = 3 : BossRow(0) = 1
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 3 : BossRow(1) = 3
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep = 0
-        OrbitStep2 = 5
-    ELSEIF LoopVar = 26 THEN
-        ' Wave 27: 3 skulls
-        BossCount = 3
-        BossCol(0) = 0 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 4 : BossRow(1) = 2
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 0 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-    ELSEIF LoopVar = 27 THEN
-        ' Wave 28: 4 bosses — 2 bombs + 2 skulls (no orbiters — Phalanx alt rows 0,2 are solid $1FF)
-        BossCount = 4
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 0
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        BossCol(2) = 1 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 9 : BossType(2) = SKULL_TYPE
-        BossCol(3) = 5 : BossRow(3) = 4
-        BossHP(3) = 3 : BossColor(3) = 12 : BossType(3) = SKULL_TYPE
-    ELSEIF LoopVar = 28 THEN
-        ' Wave 29: 2 skulls
-        BossCount = 2
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 12 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 6 : BossRow(1) = 0
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-    ELSEIF LoopVar = 29 THEN
-        ' Wave 30: 3 skulls
-        BossCount = 3
-        BossCol(0) = 0 : BossRow(0) = 0
-        BossHP(0) = 3 : BossColor(0) = 9 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 4 : BossRow(1) = 2
-        BossHP(1) = 3 : BossColor(1) = 12 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 0 : BossRow(2) = 4
-        BossHP(2) = 3 : BossColor(2) = 10 : BossType(2) = SKULL_TYPE
-    ELSEIF LoopVar = 30 THEN
-        ' Wave 31: 2 bombs — boss 1 orbiter only (boss 0 at row 0 is in solid Dense Rows row)
-        BossCount = 2
-        BossCol(0) = 2 : BossRow(0) = 0
-        BossHP(0) = 2 : BossColor(0) = 10 : BossType(0) = BOMB_TYPE
-        BossCol(1) = 5 : BossRow(1) = 2
-        BossHP(1) = 2 : BossColor(1) = 10 : BossType(1) = BOMB_TYPE
-        OrbitStep2 = 5  ' Only boss 1 (row 2, sparse area) gets an orbiter
-    ELSEIF LoopVar = 31 THEN
-        ' Wave 32: 3 skull bosses
-        BossCount = 3
-        BossCol(0) = 1 : BossRow(0) = 0
-        BossHP(0) = 4 : BossColor(0) = 15 : BossType(0) = SKULL_TYPE
-        BossCol(1) = 4 : BossRow(1) = 2
-        BossHP(1) = 4 : BossColor(1) = 15 : BossType(1) = SKULL_TYPE
-        BossCol(2) = 7 : BossRow(2) = 4
-        BossHP(2) = 4 : BossColor(2) = 15 : BossType(2) = SKULL_TYPE
+    ' ── LEVEL DESIGN: Boss Placement — data-driven (edit tables in data_tables.bas) ──
+    ' BossHeader bits: 0-2=BossCount, 3=OrbitStep=0, 4=OrbitStep2=5
+    ' BossColRow: col(bits 0-3) + row(bits 4-7).  BossAttrs: hp(0-2)+color(3-6)+type(7)
+    HitCol = (Level - 1) AND 31       ' 0-based wave index 0-31
+    Row = BossHeader(HitCol)
+    BossCount = Row AND 7
+    IF Row AND 8 THEN OrbitStep = 0
+    IF Row AND 16 THEN OrbitStep2 = 5
+    HitRow = HitCol + HitCol : HitRow = HitRow + HitRow   ' wave index * 4 = boss slot base
+    IF BossCount > 0 THEN
+        FOR LoopVar = 0 TO BossCount - 1
+            Col = HitRow + LoopVar
+            Row = BossColRow(Col)
+            BossCol(LoopVar) = Row AND 15
+            BossRow(LoopVar) = Row / 16
+            Row = BossAttrs(Col)
+            BossHP(LoopVar) = Row AND 7
+            BossColor(LoopVar) = (Row / 8) AND 15
+            BossType(LoopVar) = Row / 128
+        NEXT LoopVar
     END IF
 
     ' ── END Boss Placement ──

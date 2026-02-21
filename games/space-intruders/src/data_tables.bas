@@ -221,3 +221,83 @@ OrbitDX:
     DATA 0, 1, 2, 3, 3, 3, 2, 1, 0, 0
 OrbitDY:
     DATA 0, 0, 0, 0, 1, 2, 2, 2, 2, 1
+
+' Boss placement tables — used by LoadPatternB decode loop (replaces 32-way IF/ELSEIF)
+' BossHeader(32):  bits 0-2 = BossCount, bit 3 = OrbitStep=0, bit 4 = OrbitStep2=5
+' BossColRow(128): bits 0-3 = BossCol, bits 4-7 = BossRow  (4 slots per wave)
+' BossAttrs(128):  bits 0-2 = BossHP,  bits 3-6 = BossColor, bit 7 = BossType (4 per wave)
+'   Skull attrs: HP + Color*8 + 0     (e.g. hp3 c9  = 75, hp3 c12 = 99, hp4 c15 = 124)
+'   Bomb attrs:  HP + Color*8 + 128   (e.g. hp2 c10 = 210, hp4 c10 = 212, hp5 c12 = 229)
+BossHeader:
+    DATA  1,  2,  1, 26,  2,  3,  1,  2   ' Waves  1-8
+    DATA  0,  2,  1,  2,  0,  1,  1,  2   ' Waves  9-16
+    DATA  3,  2, 10, 26,  3,  3,  0, 26   ' Waves 17-24
+    DATA 12, 26,  3,  4,  2,  3, 18,  3   ' Waves 25-32
+
+BossColRow:
+    DATA 51,  0,  0,  0   '  W1: skull(3,3)
+    DATA 34, 37,  0,  0   '  W2: skulls(2,2)(5,2)
+    DATA 19,  0,  0,  0   '  W3: bomb(3,1)
+    DATA 18, 53,  0,  0   '  W4: bombs(2,1)(5,3)
+    DATA 34, 37,  0,  0   '  W5: skulls(2,2)(5,2)
+    DATA 51, 53, 36,  0   '  W6: skulls(3,3)(5,3)(4,2)
+    DATA 36,  0,  0,  0   '  W7: bomb(4,2)
+    DATA 17, 54,  0,  0   '  W8: skulls(1,1)(6,3)
+    DATA  0,  0,  0,  0   '  W9: no bosses
+    DATA 16, 22,  0,  0   ' W10: skulls(0,1)(6,1)
+    DATA 36,  0,  0,  0   ' W11: bomb(4,2)
+    DATA  0, 71,  0,  0   ' W12: skulls(0,0)(7,4)
+    DATA  0,  0,  0,  0   ' W13: no bosses
+    DATA 34,  0,  0,  0   ' W14: bomb(2,2)
+    DATA  3,  0,  0,  0   ' W15: skull(3,0)
+    DATA 19, 54,  0,  0   ' W16: bomb(3,1)+skull(6,3)
+    DATA  1,  4, 71,  0   ' W17: skulls(1,0)(4,0)(7,4)
+    DATA 17, 53,  0,  0   ' W18: bombs(1,1)(5,3)
+    DATA 17, 54,  0,  0   ' W19: bomb(1,1)+skull(6,3)+orbit0
+    DATA  1, 69,  0,  0   ' W20: bombs(1,0)(5,4)+orbiters
+    DATA  0,  7, 67,  0   ' W21: skulls(0,0)(7,0)(3,4)
+    DATA 35,  1, 65,  0   ' W22: bomb(3,2)+skulls(1,0)(1,4)
+    DATA  0,  0,  0,  0   ' W23: no bosses
+    DATA 18, 54,  0,  0   ' W24: bombs(2,1)(6,3)+orbiters
+    DATA 65, 53, 35, 71   ' W25: bomb(1,4)+skulls(5,3)(3,2)(7,4)+orbit0
+    DATA 19, 51,  0,  0   ' W26: bombs(3,1)(3,3)+orbiters
+    DATA  0, 36, 64,  0   ' W27: skulls(0,0)(4,2)(0,4)
+    DATA  1,  5, 65, 69   ' W28: bombs(1,0)(5,0)+skulls(1,4)(5,4)
+    DATA  1,  6,  0,  0   ' W29: skulls(1,0)(6,0)
+    DATA  0, 36, 64,  0   ' W30: skulls(0,0)(4,2)(0,4)
+    DATA  2, 37,  0,  0   ' W31: bombs(2,0)(5,2)+orbit1
+    DATA  1, 36, 71,  0   ' W32: skulls(1,0)(4,2)(7,4) HP4
+
+BossAttrs:
+    DATA  75,   0,   0,   0   '  W1: skull hp3 c9
+    DATA  75,  75,   0,   0   '  W2: 2 skulls hp3 c9
+    DATA 210,   0,   0,   0   '  W3: bomb hp2 c10
+    DATA 210, 210,   0,   0   '  W4: 2 bombs hp2 c10
+    DATA  75,  75,   0,   0   '  W5: 2 skulls hp3 c9
+    DATA  75,  75,  75,   0   '  W6: 3 skulls hp3 c9
+    DATA 210,   0,   0,   0   '  W7: bomb hp2 c10
+    DATA  75,  75,   0,   0   '  W8: 2 skulls hp3 c9
+    DATA   0,   0,   0,   0   '  W9: no bosses
+    DATA  75,  75,   0,   0   ' W10: 2 skulls hp3 c9
+    DATA 210,   0,   0,   0   ' W11: bomb hp2 c10
+    DATA  99,  99,   0,   0   ' W12: 2 skulls hp3 c12
+    DATA   0,   0,   0,   0   ' W13: no bosses
+    DATA 210,   0,   0,   0   ' W14: bomb hp2 c10
+    DATA  75,   0,   0,   0   ' W15: skull hp3 c9
+    DATA 212,  75,   0,   0   ' W16: bomb hp4 c10 + skull hp3 c9
+    DATA  75,  99,  83,   0   ' W17: skull c9 + skull c12 + skull c10
+    DATA 210, 210,   0,   0   ' W18: 2 bombs hp2 c10
+    DATA 210,  75,   0,   0   ' W19: bomb hp2 c10 + skull hp3 c9
+    DATA 210, 210,   0,   0   ' W20: 2 bombs hp2 c10
+    DATA  99,  99,  75,   0   ' W21: skulls c12,c12,c9
+    DATA 210,  75,  75,   0   ' W22: bomb c10 + 2 skulls c9
+    DATA   0,   0,   0,   0   ' W23: no bosses
+    DATA 229, 229,   0,   0   ' W24: 2 bombs hp5 c12
+    DATA 210,  75,  99,  75   ' W25: bomb c10 + skull c9 + skull c12 + skull c9
+    DATA 210, 210,   0,   0   ' W26: 2 bombs hp2 c10
+    DATA  75,  99,  75,   0   ' W27: skulls c9,c12,c9
+    DATA 210, 210,  75,  99   ' W28: 2 bombs c10 + skull c9 + skull c12
+    DATA  99,  99,   0,   0   ' W29: 2 skulls hp3 c12
+    DATA  75,  99,  83,   0   ' W30: skulls c9,c12,c10
+    DATA 210, 210,   0,   0   ' W31: 2 bombs hp2 c10
+    DATA 124, 124, 124,   0   ' W32: 3 skulls hp4 c15

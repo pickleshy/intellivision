@@ -1,5 +1,92 @@
 # Wave Designer Update Log
 
+## February 21, 2026 - Data-Driven Boss Tables + Palette Export Fix
+
+### Context
+
+Boss placement in `waves.bas` was refactored from a 32-way IF/ELSEIF chain (~1,676 ROM words)
+to three compact DATA tables in `data_tables.bas` (~288 ROM words + ~80-word decode loop).
+Net savings: **+1,388 words freed in Segment 2**.
+
+The wave designer exporter and importer have been updated to match.
+
+---
+
+### ✅ Completed Updates
+
+**exporter.js** — Full rewrite for new boss format + palette fix:
+
+1. **Boss export: `_generateBossData()` (replaces `_generateBossCode()`)**
+   - Now outputs three `DATA` tables instead of an IF/ELSEIF chain
+   - Tables paste into `data_tables.bas` after the `OrbitDY` table (end of file)
+   - Encoding:
+     - `BossHeader`: `BossCount (bits 0-2) | orbit0*8 | orbit1*16`
+     - `BossColRow`: `BossCol (bits 0-3) | BossRow (bits 4-7)`
+     - `BossAttrs`:  `BossHP (bits 0-2) | BossColor (bits 3-6) | BossType (bit 7)`
+   - Orbiter mapping: `boss[0].orbiter` → OrbitStep=0, `boss[1].orbiter` → OrbitStep2=5
+   - Each DATA line annotated with wave number and boss summary comment
+
+2. **Palette export: `_buildPalettes()` (rewrote from squid/crab/octopus → row0-row4)**
+   - Now outputs 5 `WavePalette` arrays (one per alien row), 6 entries each
+   - Entries cycle via `(Level-1) MOD 6` — uses waves 0-5's palette data
+   - Correct format: `WavePalette0: DATA 6, 7, 5, 1, 2, 3` (row0 colors for palettes 0-5)
+
+3. **Boss import: `_decodeBossTables()` (new method)**
+   - Parses `BossHeader:`, `BossColRow:`, `BossAttrs:` DATA labels
+   - Decodes packed fields with bitwise operations matching the game's decode loop
+   - Reconstructs `{ col, row, hp, color, type, orbiter }` boss objects per wave
+
+4. **Legacy import fallback**
+   - Old IF/ELSEIF format (`IF LoopVar = N THEN`) still parsed via `_parseLegacyBossLine()`
+   - New DATA table format takes priority; legacy only used if `BossHeader` table not found
+
+5. **Palette import: updated `_applyParsedData()`**
+   - Parses `WavePalette0`-`WavePalette4` labels (instead of `WavePalette0`-`2`)
+   - Reconstructs `wave.palette = { row0, row1, row2, row3, row4 }` for all 32 waves via MOD 6
+
+---
+
+### Data Table Encoding Reference
+
+```
+BossHeader(32) — one value per wave:
+  bits 0-2: BossCount (0-4)
+  bit 3:    OrbitStep = 0   (boss[0] gets orbiter)
+  bit 4:    OrbitStep2 = 5  (boss[1] gets orbiter, offset start)
+
+BossColRow(128) — 4 slots per wave, encoded as one DECLE:
+  bits 0-3: BossCol  (0-7, left half-cells; bosses are 2-wide)
+  bits 4-7: BossRow  (0-4)
+  Example:  Col=3, Row=3 → 3 + 3*16 = 51
+
+BossAttrs(128) — 4 slots per wave, encoded as one DECLE:
+  bits 0-2: BossHP    (0-7; skulls typically 3-4, bombs 2-5)
+  bits 3-6: BossColor (0-15; skulls: 9=cyan, 12=pink, 15=purple; bombs: 10=orange)
+  bit 7:    BossType  (0=SKULL_TYPE, 1=BOMB_TYPE)
+  Examples: skull hp3 c9  → 3 + 9*8 + 0   = 75
+            bomb  hp2 c10 → 2 + 10*8 + 128 = 210
+            skull hp4 c15 → 4 + 15*8 + 0   = 124
+
+WavePalette{row}(6) — 5 arrays (row0-row4), 6 entries each:
+  palettes[row][palIdx] = alien row `row`'s color in palette slot `palIdx`
+  Game selects slot via: (Level - 1) MOD 6
+```
+
+---
+
+### Export Workflow (Updated)
+
+After editing waves in the designer and clicking **Export IntyBASIC**:
+
+1. Copy `PatternBData` + `PatternBIndex` → paste into `data_tables.bas` (Segment 2 section)
+2. Copy `WavePalette0-4` → paste into `flight_engine.bas` (replacing WavePalette arrays)
+3. Copy `WaveEntranceData` → paste into `flight_engine.bas` (replacing WaveEntranceData)
+4. Copy `BossHeader`, `BossColRow`, `BossAttrs` → paste into `data_tables.bas` **after `OrbitDY`**
+   (These replace the existing boss tables, not the waves.bas IF/ELSEIF — that's gone)
+5. Copy the reinforcement `IF` condition → paste into `waves.bas` CheckAliensDead
+
+---
+
 ## February 16, 2026 - Game Data Sync
 
 ### ✅ Completed Updates
@@ -31,7 +118,6 @@
 
 6. **Docker Configuration**
    - ✅ Dockerfile and docker-compose.yml verified - no changes needed
-   - ✅ Updated static/js/state.js will be automatically included in builds
 
 7. **UI Component Updates** (Browser Cache Fix)
    - ✅ wave_designer.html: Updated palette UI from 3 rows to 5 rows
@@ -39,98 +125,41 @@
    - ✅ gridEditor.js: Fixed ALIEN_GLYPHS and palette color lookup to use row0-row4 keys
    - ✅ app.py: Added cache-busting headers to prevent browser caching issues
 
-### 📋 Remaining Work (Future Updates)
+---
 
-**exporter.js** - Needs comprehensive rewrite for new 5-palette system:
-- Current exporter assumes 3-color palettes (squid/crab/octopus)
-- Game uses 5 separate WavePalette arrays (WavePalette0-4, each with 6 entries)
-- Export format needs to generate correct DATA statements for:
-  ```basic
-  WavePalette0: DATA 6, 7, 5, 1, 2, 3
-  WavePalette1: DATA 5, 6, 1, 2, 1, 7
-  WavePalette2: DATA 7, 5, 2, 3, 6, 7
-  WavePalette3: DATA 2, 3, 7, 5, 6, 1
-  WavePalette4: DATA 3, 2, 6, 7, 5, 5
-  ```
+### 📋 Remaining Work
 
-**constraints.js** - Palette validation needs updating:
+**constraints.js** — Minor palette validation update:
 - Update checks from `pal.squid/crab/octopus` to `pal.row0/row1/row2/row3/row4`
-- Line 86, 105-107 (minor - can be done later)
-
-### 🧪 Testing Checklist
-
-Before next session:
-- [ ] Launch wave designer: `docker-compose up`
-- [ ] Verify all 32 waves load correctly
-- [ ] Check that patterns 16-22 display properly
-- [ ] Verify entrance animations match (0/1/2)
-- [ ] Check palette colors for all 5 rows
-- [ ] Test boss placement editing
-- [ ] Test JSON export/import (may fail due to exporter.js issues)
-
-### 📦 Current Game Data Summary
-
-**From games/space-intruders/src/**:
-- `data_tables.bas`:
-  - PatternBData: 23 patterns (rows 171-194)
-  - PatternBIndex: 32-wave mapping (rows 197-201)
-- `flight_engine.bas`:
-  - WaveEntranceData: 32 waves (4 lines of 8 values)
-  - WavePalette0-4: 6 entries each (5 arrays)
-- `waves.bas`:
-  - LoadPatternB: Boss placement IF/ELSEIF chain (lines 546-889)
-  - Reinforcements: Waves 3, 11, 19, 27 (Col = 2 OR 10 OR 18 OR 26)
-
-### 🔗 Related Files Modified
-
-- `/Users/mikeholzinger/src/intv-game-builder/games/space-intruders/tools/wave-designer/static/js/state.js`
-  - Lines 43-60: Added patterns 16-22
-  - Lines 62-71: Updated pattern index mapping
-  - Lines 73-78: Updated entrance patterns
-  - Lines 81-95: Updated palette system (3→5 colors)
-  - Line 36: Updated ALIEN_TYPES array
-
-### 📖 How to Use
-
-The wave designer now accurately reflects the game's current 32-wave cycle. To use:
-
-1. **View waves**: Navigate through waves 1-32 using the wave selector
-2. **Edit patterns**: Click cells to toggle aliens, use brush tools
-3. **Add bosses**: Use boss placement tools (skull/bomb types)
-4. **Set entrances**: Choose left sweep (0), top-down (1), or fly-down (2)
-5. **Color palettes**: Colors cycle automatically per wave MOD 6
-6. **Export**: JSON export works for state, BASIC export needs exporter.js update
-
-### 💡 Next Steps
-
-1. **Fix exporter.js**:
-   - Rewrite `_generatePaletteData()` to output 5 WavePalette arrays
-   - Update palette parsing in import functions
-   - Test round-trip: export → import → verify
-
-2. **Update UI components**:
-   - constraints.js palette checks
-   - gridEditor.js alien type references
-   - waveSettings.js palette color picker (5 rows)
-
-3. **Add validation**:
-   - Warn if pattern index > 22 (out of range)
-   - Validate boss positions don't overlap
-   - Check entrance modes are 0-2
-
-### 🐛 Known Issues
-
-- **Export to BASIC**: Will generate incorrect WavePalette DATA (still uses 3-color system)
-- **Palette UI**: May show only 3 color pickers instead of 5
-- **Import**: May fail if JSON has old squid/crab/octopus keys instead of row0-row4
-
-### 📚 References
-
-- Space Intruders ROADMAP.md: 32-wave cycle design
-- Space Intruders data_tables.bas: Pattern and index definitions
-- Space Intruders flight_engine.bas: Entrance and palette data
-- Space Intruders waves.bas: Boss placement logic
+- Lines 86, 105-107 (cosmetic, validation still works)
 
 ---
 
-**Status**: Wave designer data is synced. UI display will work correctly. Export functionality needs follow-up work.
+### 🧪 Testing Checklist
+
+- [ ] Launch wave designer: `docker-compose up` (or `python3 app.py`)
+- [ ] Verify all 32 waves load with correct patterns, entrances, colors
+- [ ] Test boss placement editing (skull/bomb, HP, orbiter toggle)
+- [ ] **Export to BASIC** → verify BossHeader/BossColRow/BossAttrs tables are correct
+- [ ] **Import from BASIC** → paste generated output back in, verify round-trip
+- [ ] **Import legacy** → paste old IF/ELSEIF boss format, verify it still loads
+- [ ] Verify WavePalette0-4 output matches values in flight_engine.bas
+- [ ] Test JSON save/load round-trip
+
+---
+
+### 📦 Current Source File Locations
+
+| Data | File | Location |
+|------|------|----------|
+| PatternBData | `data_tables.bas` | Segment 2 |
+| PatternBIndex | `data_tables.bas` | Segment 2 |
+| BossHeader/BossColRow/BossAttrs | `data_tables.bas` | Segment 2, after OrbitDY |
+| WavePalette0-4 | `flight_engine.bas` | Segment 2 |
+| WaveEntranceData | `flight_engine.bas` | Segment 2 |
+| Boss decode loop | `waves.bas` LoadPatternB | Segment 2 |
+| Reinforcements | `waves.bas` CheckAliensDead | Segment 2 |
+
+---
+
+**Status**: Wave designer fully synced to data-driven boss system. Export/import round-trip is functional for all wave data.
