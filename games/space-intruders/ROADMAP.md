@@ -12,11 +12,14 @@
 - [x] **Lives counter shows 'E' on first wave** — GRAM card 29 is shared by `GRAM_LIVES_DIG` and `GRAM_FONT_E`. The `game_init.bas` pre-init loop fired 5 `UpdateScoreDisplay` calls (ScoreCard 3-7), stopping at the chain digit (card 28) and never reaching ScoreCard=8 (lives digit, card 29). Card 29 retained 'E' font data from boot. Fixed by adding a 6th pre-init call.
 - [x] **#NextLife overflow awards burst of extra lives at high scores** — `#NextLife` is 16-bit; after the 13th extra life (score ~61,000), adding 5,000 wraps to ~464. Every subsequent frame `#Score >= 464` is true, awarding 12+ lives in one burst. Fixed with unsigned overflow detection: `IF #NextLife < 5000 THEN #NextLife = 65535`.
 - [ ] **CONT.BUTTON bitmask breaks input** — Using `CONT.BUTTON AND bitmask` (e.g., `AND 3` to exclude bottom-right, `AND 4` to isolate bottom-right) causes all controller input to stop working in jzintv. Suspected IntyBASIC compilation quirk with bitwise AND on hardware register reads. Needs assembly listing investigation to see what instructions are generated. Capture currently uses keypad 0 as workaround. Removing `--ecsimg` from jzintv_run resolved ECS keyboard bleed-through into CONT.BUTTON but did not fix the bitmask issue.
-- [ ] **Dead alien pop-in during march** — A dead alien (cleared from `#AlienRow`) occasionally becomes visible for a frame or two when the grid marches. Suspected cause: `DRAW_ROW_FAST` writes the correct `0` to dead cells, but the march trail redraw (`NeedRedraw=3`) or a stale `BACKTAB` position is rendering the tile before the column bitmask is checked. Repro: watch a sparse grid march left/right after several kills, particularly near the boundary of a march step. Needs `NeedRedraw` logic audit and march trail clear ordering check.
-- [ ] **Skull boss split → rogue animation / orphan alien** — Skull boss occasionally triggers the rogue dive animation and leaves a small alien tile visible on the opposite side of the sprite pattern. Suspected double-XOR resurrection or a `BossHP` race with `RoguePickAlien` selecting the boss grid cell before `SkullBossGridClear` has run. Repro: kill skull boss at the exact frame a rogue selection fires. Check `RoguePickAlien` guard against boss-occupied cells.
+- [x] **Dead alien pop-in during march** — Root cause: `NeedRedraw = 0` was reset at frame-start, but kills happen in `CheckOneColumn` *after* `DrawAliens` runs. Dead tile persisted until next march/shimmer (up to 24+ frames). Fix: moved `NeedRedraw = 0` reset to *after* `DrawAliens` (`IF NeedRedraw THEN GOSUB DrawAliens : NeedRedraw = 0`), added `NeedRedraw = 1` in `CheckOneColumn` after kill and in `SkullBossDeath`. Latches redraw to next frame for any late-frame kill.
+- [x] **Skull boss split → rogue animation / orphan alien** — Investigated: no double-XOR resurrection found. `SkullBossGridClear` properly guarded for both cells. `RoguePickAlien` rejects boss cells via `FindBossAtCell` + `BossHP > 0` guard. The "orphan tile" was the same stale-BACKTAB issue as the pop-in bug; fixed by the NeedRedraw latch. `SkullBossDeath` now also sets `NeedRedraw = 1`.
 - [x] **Pea shooter fires during SOL-36 sputter phase** — When `MegaTimer` hits 0 and `MegaSputterTimer` is active, the `ELSE` branch in `player.bas` fire logic allowed normal pea shooter firing. Fixed by changing `ELSE` to `ELSEIF MegaSputterTimer = 0 THEN` so the player is locked out of all normal fire while the sputter countdown is running.
-- [ ] **SOL-36 not added to auto-fire sequence** — When SOL-36 (mega beam) powerup is active, it does not fire automatically alongside the player's normal bullet cadence. Needs investigation of `MegaTimer` check placement in the fire logic path and whether `FireCooldown` is gating beam shots correctly.
-- [ ] **Sprites not cleared on player death** — On player death, one or more sprite MOBs (suspected: `SPR_PBULLET`, `SPR_SHIP_ACCENT`, or `SPR_POWERUP`) remain visible during the death animation or respawn delay. Check death sequence in `gameloop.bas` to confirm `HideAllSprites` (or equivalent per-sprite zeroing) runs before the first WAIT of the death state.
+- [x] **SOL-36 not added to auto-fire sequence** — Moved Sol36 firing block out of the button-press ELSEIF chain into its own unconditional block before the button gate. Sol36 now auto-fires at its 20-frame cadence regardless of button state, and fires simultaneously alongside normal bullets (player can fire both at once). player.bas.
+- [x] **Sprites not cleared on player death** — `SPR_SHIP_ACCENT` was missing from the bullet-hit death path (only cleared on invasion death and game-over screen). Added `SPRITE SPR_SHIP_ACCENT, 0, 0, 0` after `SPR_PBULLET` hide in gameloop.bas death sequence.
+- [x] **SOL-36 beam column shows alien bitmaps instead of laser sputter** — The beam block cleared the *old* `Sol36Col` before updating to the new player position, but only drew rows `Col`–`9` at the new column. Rows `0`–`Col-1` retained alien GRAM cards from `DrawAliens`. Fixed by adding a full-column clear of the new `Sol36Col` before drawing the beam sweep. gameloop.bas.
+- [x] **Capture/wingman bullets don't hit saucer at row 0** — Saucer starts at `FlyY=8` (BACKTAB row 0). Bullet deactivated at `CapBulletRow <= 1` so it never reached row 0; at row 1 `CapPixelY=16 > FlyY+6=14` so collision also failed. Fixed: deactivation changed to `= 0`, letting bullet reach row 0 invisibly (draw guard added for score row). `SaucerAnimate` now sees `CapBulletRow=0`, `CapPixelY=8` matching `FlyY=8`. ai.bas.
+- [x] **Wave announcement overlaps bottom alien row** — Banner at BACKTAB row 5 (positions 103/107/112) overlapped the lowest alien row. Shifted all positions down one row (+20): `107→127`, `112→132`, `103→123`. Updated `DrawWaveBanner`, `ClearWaveBanner`, `SpinWaveBannerLetter`, and timer-expired clear in gameloop.bas. aliens.bas + gameloop.bas.
 
 ---
 
@@ -63,10 +66,16 @@
 - [x] Wingman goodbye animation (stop at center, "bye!" speech bubbles)
 - [x] Rogue vs wingman dogfight (body collision, wingman bullet kills rogue, strafing fire at wingman)
 - [x] Bug fixes: powerup capsule ghost, wingman bullet ghost tile, mega beam vs rogue, rogue/wingman variable conflict
+- [x] Game over screen polish — "HIGH: NNNNNNN" label when not a new high, all-TinyFont "NEW HIGH SCORE" when it is; 7-digit zero-padded 32-bit score display
+- [x] Saucer score tuned to 100 points
+- [x] Wingman capture bullet now reaches saucer at row 0 (deactivation threshold fix)
+- [x] SOL-36 beam column alien bitmap bleed fixed (full-column clear before beam draw)
+- [x] Wave announcement repositioned to row 6 (was overlapping bottom alien row at row 5)
 
 ### Backlog
 - [ ] Impact pause / "dopamine moments" (see spec #7)
 - [ ] Saucer animation refactor (see spec #11)
+- [ ] **Kill counter on game over screen** — Display total aliens killed during the session (e.g. "KILLS: NNN") on the game over screen as a fun stat. Cost: 2 × 8-bit vars (`KillCount` 0-99, `KillCountHi` 0-9, tracking up to 999 kills), ~80-100 ROM words. Increment at each `#AlienRow XOR #Mask` kill site across player.bas, aliens.bas, waves.bas, ai.bas. Display using GROM digits on row 8 of the game over screen. Add only after all primary features are complete.
 
 ---
 
@@ -127,9 +136,9 @@ _Document existing patterns here as reference._
 ## 5. Audio/Music
 
 ### Current State
-- Background music: DNB track via PLAY SIMPLE
-- SFX: Player shoot, alien death, explosions, powerup pickup, shield ping
-- Intellivoice: Not currently used in gameplay
+- Background music: DNB track via PLAY SIMPLE (4 speed gears: slow/mid/fast/panic)
+- SFX: Player shoot, alien death, explosions, powerup pickup, shield ping, saucer hit, chain combo noise, rogue dive rumble
+- Intellivoice: **Active in gameplay** — wave number announcement ("Wave One", "Wave Two", etc.) and "Shields Down" callout
 
 ### Tasks
 - [ ] Audit SFX variety (enough feedback for all events?)
@@ -161,27 +170,22 @@ _Document existing patterns here as reference._
 - [x] ScoreCard=5: `#Mask/10` on L_mod1000 (99 iters = ~2178 cycles) → `/100` + `/10` chain (9+9 iters + mul = ~600 cycles). Saves ~210 cycles/frame amortized
 - [x] ChainTimer noise freq: `(24-ChainTimer)/3` (0-7 iters/frame) → 25-entry `ChainNoiseFreq` lookup. Constant ~31 cycles every frame during active chain
 
-### Division Audit Results (2026-02-18)
+### Division Audit Results (2026-02-18, fixes applied 2026-02-21)
 All IntyBASIC `/2`, `/4`, `/8` operations compile to fast shifts — zero concern.
 
-**Remaining non-power-of-2 divisions in gameplay code (hot path):**
+**Remaining non-power-of-2 divisions in gameplay hot path (post-fix):**
 
-| File | Line | Expression | Runs | Max iters | Cycles | Impact |
-|------|------|-----------|------|-----------|--------|--------|
-| `utils.bas` | 138 | `#Score / 100` | Every 8 frames (ScoreCard=6) | 655 | ~14,410 | **HIGH** — ~12% frame amortized |
-| `utils.bas` | 131 | `#Mask / 10` | Every 8 frames (ScoreCard=5) | 99 | ~2,178 | Medium — ~1.8% frame amortized |
-| `gameloop.bas` | 441 | `(24-ChainTimer) / 3` | Every frame during chain | 8 | ~176 | Low — 1.2% during chain only |
+| File | Expression | Runs | Max iters | Cycles | Impact |
+|------|-----------|------|-----------|--------|--------|
+| `utils.bas` (ScoreCard=6) | `/1000` + `/100` + `/10` chain | Every 8 frames | ≤65+9+9 | ~1,830 | Low — ~1.5% frame amortized |
+| `utils.bas` (ScoreCard=5) | `/100` + `/10` chain on L_mod1000 | Every 8 frames | ≤9+9 | ~600 | Negligible |
+| `gameloop.bas` | `(24-ChainTimer) / 3` replaced by `ChainNoiseFreq` lookup | — | — | ~31 | Eliminated |
 
 **Wave-load / title-only (no concern):**
-- `waves.bas:108,828` — `#AlienRow / ColMaskData(HitRow)` — runs once at wave load
-- `waves.bas:997` — `(Level-1) / 6` — runs once at wave load (110 cycles)
-- `title.bas:168` — `FlyX / 5` — title screen only
-- `title_animation.bas:121` — `GOAnimFrame / 3` — title screen only
-
-**Proposed fixes (utils.bas ScoreCard=5 and ScoreCard=6):**
-- ScoreCard=6: Replace `#Score/100` (655 iters) → `#Score/1000` + `/100` + `/10` (≤65+9+9 iters). Saves ~12,580 cycles/8-frame = ~1,572 cycles/frame.
-- ScoreCard=5: Replace `#Mask/10` (99 iters) → `/100` + `/10` chain on L_mod1000 (9+9 iters). Saves ~1,678 cycles/8-frame = ~210 cycles/frame.
-- Net savings: ~1,782 cycles/frame amortized (~12% of frame budget freed).
+- `waves.bas` — `#AlienRow / ColMaskData(HitRow)` — runs once at wave load
+- `waves.bas` — `(Level-1) / 6` — runs once at wave load (~110 cycles)
+- `title.bas` — `FlyX / 5` — title screen only
+- `title_animation.bas` — `GOAnimFrame / 3` — title screen only
 
 ### Remaining Optimization Targets
 | Routine | Priority | Notes |
@@ -199,16 +203,16 @@ See detailed spec #14 below — only pursue after feature-complete.
 
 ### Completed
 - [x] Captured alien escape after 2 waves (spec #15) — goodbye animation with speech bubbles
-- [x] Large sprite alien variants (spec #8) — BACKTAB 2x2 LARGE_TYPE bosses
+- [x] Boss system (spec #8) — BACKTAB 2×2 skull and bomb boss types, per-wave data-driven placement, HP, color cycling, orbiter companions
 - [x] Wave entrance animations (spec #9) — left sweep, top-down, fly-down + pincer
 - [x] Title screen: 3D rotating letters (spec #1) — Y-axis rotation cascade
+- [x] Wave announcement transition (spec #6) — spinning WAVE N letters with color cascade, ALERT! and INCOMING HORDE! variants, wave banner spin-in/spin-out animation
 
 ### Near-Term
 - [ ] Destructible barriers/shields (spec #2)
-- [ ] Wave announcement transition (spec #6)
 
 ### Medium-Term
-- [ ] Boss fight (spec #3) — dedicated boss wave (skull/bomb/large exist but no standalone encounter)
+- [ ] Boss fight (spec #3) — dedicated boss wave (skull and bomb boss types exist but no standalone boss-only encounter)
 
 ### Stretch Goals
 - [ ] Player 2 controls Zod on title/game over (spec #4)
@@ -465,18 +469,18 @@ Or `COL_BLUE` (1) — cooler "lit from top, shadow below" alien look. User to de
 **Available for new features during gameplay:** 15 cards
 
 ### Variables
-**8-bit:** 157/187 used (30 free) — *updated 2026-02-18*
+**8-bit:** 168/187 used (19 free) — *updated 2026-02-21*
 **16-bit:** 25/25 used (0 free — use bit-packing in #GameFlags for new booleans)
 **#GameFlags:** 15/16 bits used (bit 11 free)
 
-### ROM — *updated 2026-02-18 (36,162 words)*
-**Total:** 36,403 of 42,016 words used (6,013 available)
-**Seg 0:** 2,035 words free (main loop + Intellivoice runtime)
-**Seg 1:** ~8 words free ⚠️ FULL — do not add procedures here; use `SEGMENT 2` (utilities + game loop inline)
-**Seg 2:** 1,369 words free (collision, alien drawing, DATA tables)
-**Seg 3:** 414 words free (title animation + music data)
-**Seg 4:** 917 words free (AI systems)
-**Seg 5:** 1,199 words free (compact_score + PackedPairs)
+### ROM — *updated 2026-02-21 (36,306 words)*
+**Total:** 36,306 of 42,016 words used (5,710 available)
+**Seg 0:** 2,017 words free (main loop + Intellivoice runtime)
+**Seg 1:** 172 words free ⚠️ very tight — add new procedures to Seg 2 via `SEGMENT 2` directive
+**Seg 2:** 1,845 words free (collision, alien drawing, DATA tables)
+**Seg 3:** 639 words free (title animation + music data)
+**Seg 4:** 537 words free (AI systems + PlayerBombExplode)
+**Seg 5:** 901 words free (compact_score + PackedPairs)
 
 **If Seg 1 overflows:** Move procedures to Seg 2 with `SEGMENT 2` directive; cross-segment GOSUB works with MAP 2.
 

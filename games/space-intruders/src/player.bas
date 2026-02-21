@@ -66,28 +66,30 @@ MovePlayer: PROCEDURE
         #GameFlags = #GameFlags AND $EFFF  ' Clear FLAG_KEY0HELD when key released
     END IF
 
+    ' SOL-36 auto-cannon: fires at own 20-frame cadence regardless of button state
+    IF Sol36Timer > 0 THEN
+        IF Sol36BeamTimer = 0 THEN
+            Sol36Col = (PlayerX - 4) / 8
+            IF Sol36Col > 19 THEN Sol36Col = 19
+            Sol36BeamTimer = 20
+            ' Reset beam damage tracker for each boss
+            FOR LoopVar = 0 TO MAX_BOSSES - 1
+                BossBeamHit(LoopVar) = 0
+            NEXT LoopVar
+            GOSUB Sol36Kill
+            GOSUB Sol36Draw
+            ' SFX: loud crackle blast
+            SfxType = 4 : SfxVolume = 15 : #SfxPitch = 0
+            SOUND 2, 0, 15
+            POKE $1F9, 8
+            POKE $1F8, PEEK($1F8) AND $DF
+        END IF
+    END IF
+
     ' Fire: side buttons (not keypad) or auto-fire
     IF CONT.BUTTON OR (#GameFlags AND FLAG_AUTOFIRE) THEN
     IF CONT.KEY >= 12 OR (#GameFlags AND FLAG_AUTOFIRE) THEN
-        IF Sol36Timer > 0 THEN
-            ' Mega beam: instant column blast (reusable for 5 sec)
-            IF Sol36BeamTimer = 0 THEN
-                Sol36Col = (PlayerX - 4) / 8
-                IF Sol36Col > 19 THEN Sol36Col = 19
-                Sol36BeamTimer = 20
-                ' Reset beam damage tracker for each boss
-                FOR LoopVar = 0 TO MAX_BOSSES - 1
-                    BossBeamHit(LoopVar) = 0
-                NEXT LoopVar
-                GOSUB Sol36Kill
-                GOSUB Sol36Draw
-                ' SFX: loud crackle blast
-                SfxType = 4 : SfxVolume = 15 : #SfxPitch = 0
-                SOUND 2, 0, 15
-                POKE $1F9, 8
-                POKE $1F8, PEEK($1F8) AND $DF
-            END IF
-        ELSEIF #GameFlags AND FLAG_BOMB THEN
+        IF #GameFlags AND FLAG_BOMB THEN
             ' Bomb weapon: fires capsule projectile, one shot
             IF (#GameFlags AND FLAG_BULLET) = 0 THEN
                 BulletX = PlayerX

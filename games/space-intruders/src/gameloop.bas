@@ -128,7 +128,9 @@ GameLoop:
     END IF
 
     ' Animate alien walk frames independently (every 24 frames ≈ 2.5/sec, 3-frame cycle)
-    NeedRedraw = 0
+    ' NOTE: NeedRedraw is NOT reset here — it's reset after DrawAliens (line below) so
+    ' kills that happen AFTER DrawAliens (MoveBullet, MegaBeam, etc.) carry forward to
+    ' the next frame and ensure the dead tile is cleared promptly.
     ShimmerCount = ShimmerCount + 1
     IF ShimmerCount >= 24 THEN
         ShimmerCount = 0
@@ -326,7 +328,7 @@ GameLoop:
     END IF
 
     ' Single DrawAliens call per frame (shimmer, reveal, or march)
-    IF NeedRedraw THEN GOSUB DrawAliens
+    IF NeedRedraw THEN GOSUB DrawAliens : NeedRedraw = 0
     ' Orbiter draws on top of grid (after DrawAliens clears empty cells)
     IF OrbitStep < 10 OR OrbitStep2 < 10 OR OrbiterDeathTimer > 0 THEN GOSUB UpdateOrbiter
 
@@ -426,7 +428,7 @@ GameLoop:
                 END IF
             ELSE
                 ' Timer expired: clear remaining text and restore card 47 for orbiter
-                PRINT AT 107, "       "
+                PRINT AT 127, "       "
                 DEFINE GRAM_ORBITER, 1, SmallCrabF1Gfx
             END IF
         ELSE
@@ -553,6 +555,7 @@ ChainDone:
                 GOSUB Sol36SputterStop
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
+                SPRITE SPR_SHIP_ACCENT, 0, 0, 0
                 ' Clear wingman and any active capsule (dies with player)
                 #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
                 SPRITE SPR_POWERUP, 0, 0, 0
@@ -750,16 +753,17 @@ ChainDone:
                 GOSUB PrintScore7Grom  ' prints cols 10-16 (positions 110-116)
                 ' High score at row 6
                 IF ShakeTimer THEN  ' ShakeTimer=1 means new high score was set above
-                    ' New high: TinyFont "NEW HIGH SCORE!" (single space)
+                    ' New high: TinyFont "NEW HIGH SCORE" (all TinyFont, 7 cards at pos 126-132)
+                    ' Cards 12-15 = NE,W_,HI,GH  Cards 9,10,57 = SC,OR,E_
                     FOR LoopVar = 0 TO 3
                         PRINT AT 126 + LoopVar, (12 + LoopVar) * 8 + COL_YELLOW + $0800
                     NEXT LoopVar
-                    PRINT AT 130, 0                              ' Blank GROM space
-                    PRINT AT 131 COLOR COL_YELLOW, "SCORE!"
+                    PRINT AT 130,  9 * 8 + COL_YELLOW + $0800   ' SC
+                    PRINT AT 131, 10 * 8 + COL_YELLOW + $0800   ' OR
+                    PRINT AT 132, 57 * 8 + COL_YELLOW + $0800   ' E_
                 ELSE
-                    ' TinyFont "HIGH" + GROM digits
-                    PRINT AT 126, 14 * 8 + COL_YELLOW + $0800
-                    PRINT AT 127, 15 * 8 + COL_YELLOW + $0800
+                    ' GROM "HIGH: " label + 7-digit score (mirrors "SCORE: " label on row above)
+                    PRINT AT 123 COLOR COL_YELLOW, "HIGH: "
                     ' 7-digit 32-bit high score as GROM chars at positions 129-135
                     ' Same 32-bit decomposition as UpdateScoreDisplay (safe for H <= 122)
                     #Mask = #HighScore / 1000            ' L_th (0-65)
@@ -873,6 +877,11 @@ ChainDone:
         ' Sprite-to-BACKTAB offset: col = (spriteX - 8) / 8, centered on ship (+4)
         Sol36Col = (PlayerX - 4) / 8
         IF Sol36Col > 19 THEN Sol36Col = 19
+        ' Clear new column entirely (DrawAliens may have drawn alien cards there above the sweep top)
+        FOR LoopVar = 0 TO 9
+            #ScreenPos = Row20Data(LoopVar) + Sol36Col
+            PRINT AT #ScreenPos, 0
+        NEXT LoopVar
         ' Kill aliens in new column position
         GOSUB Sol36Kill
         ' Calculate beam top row: sweeps UP from row 9 (at ship turret)

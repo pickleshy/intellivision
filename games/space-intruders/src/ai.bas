@@ -120,9 +120,9 @@ UpdateCapture: PROCEDURE
             END IF
         END IF
 
-        ' Move up — stop at row 1 (don't enter score row 0)
-        IF CapBulletRow <= 1 THEN
-            ' Reached top of play area, deactivate
+        ' Move up — allow bullet to enter row 0 for saucer collision, but deactivate there
+        IF CapBulletRow = 0 THEN
+            ' Reached score row, deactivate (saucer collision was checked last frame via SaucerAnimate)
             #GameFlags = #GameFlags AND $FFF7
             GOTO CapBulletDone
         END IF
@@ -160,8 +160,8 @@ UpdateCapture: PROCEDURE
             END IF
         END IF
 
-        ' Draw bullet tile if still active
-        IF #GameFlags AND FLAG_CAPBULLET THEN
+        ' Draw bullet tile if still active (skip row 0 = score row, invisible pass for saucer check)
+        IF (#GameFlags AND FLAG_CAPBULLET) AND CapBulletRow > 0 THEN
             #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
             IF #ScreenPos < 240 THEN
                 PRINT AT #ScreenPos, GRAM_BULLET * 8 + COL_WHITE + $0800
@@ -921,7 +921,7 @@ SaucerHit: PROCEDURE
     SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
     SOUND 2, 150, 15  ' Immediate tone hit on channel 3
     ' Bonus points
-    #Mask = 10 : GOSUB AddToScore
+    #Mask = 100 : GOSUB AddToScore
     ' Drop power-up from saucer position
     PowerUpState = 1       ' Falling
     PowerUpX = FlyX        ' Drop from saucer X

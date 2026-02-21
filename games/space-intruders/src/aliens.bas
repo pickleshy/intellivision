@@ -423,6 +423,7 @@ CheckOneColumn: PROCEDURE
 
                 ' Normal alien kill
                 #AlienRow(AlienGridRow) = #AlienRow(AlienGridRow) XOR #Mask
+                NeedRedraw = 1  ' Ensure dead tile is cleared next frame
 
                 ' Beam: decrement pierce budget; stop when exhausted
                 IF BeamTimer > 0 THEN
@@ -890,12 +891,12 @@ END
 ' --------------------------------------------
 DrawWaveBanner: PROCEDURE
     IF WaveAnnouncerType = 1 THEN
-        PRINT AT 107 COLOR 1, "WAVE "
-        PRINT AT 112 COLOR 1, <> Level
+        PRINT AT 127 COLOR 1, "WAVE "
+        PRINT AT 132 COLOR 1, <> Level
     ELSEIF WaveAnnouncerType = 2 THEN
-        PRINT AT 107 COLOR COL_RED, "ALERT!"
+        PRINT AT 127 COLOR COL_RED, "ALERT!"
     ELSE
-        PRINT AT 103 COLOR COL_RED, "INCOMING HORDE!"
+        PRINT AT 123 COLOR COL_RED, "INCOMING HORDE!"
     END IF
     RETURN
 END
@@ -905,9 +906,9 @@ END
 ' --------------------------------------------
 ClearWaveBanner: PROCEDURE
     IF WaveAnnouncerType = 3 THEN
-        PRINT AT 103, "               "
+        PRINT AT 123, "               "
     ELSE
-        PRINT AT 107, "       "
+        PRINT AT 127, "       "
     END IF
     RETURN
 END
@@ -921,7 +922,7 @@ END
 ' --------------------------------------------
 SpinWaveBannerLetter: PROCEDURE
     IF WaveBannerPhase >= 4 THEN RETURN     ' All letters done, no-op
-    Col = 107 + WaveBannerPhase             ' W=107, A=108, V=109, E=110
+    Col = 127 + WaveBannerPhase             ' W=127, A=128, V=129, E=130
     IF WaveBannerFrame = 1 THEN
         ' Narrow frame: card 32 holds current phase's narrow bitmap
         PRINT AT Col, GRAM_FONT_T * 8 + 1 + $0800
