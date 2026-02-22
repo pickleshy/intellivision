@@ -20,6 +20,7 @@
 - [x] **SOL-36 beam column shows alien bitmaps instead of laser sputter** — The beam block cleared the *old* `Sol36Col` before updating to the new player position, but only drew rows `Col`–`9` at the new column. Rows `0`–`Col-1` retained alien GRAM cards from `DrawAliens`. Fixed by adding a full-column clear of the new `Sol36Col` before drawing the beam sweep. gameloop.bas.
 - [x] **Capture/wingman bullets don't hit saucer at row 0** — Saucer starts at `FlyY=8` (BACKTAB row 0). Bullet deactivated at `CapBulletRow <= 1` so it never reached row 0; at row 1 `CapPixelY=16 > FlyY+6=14` so collision also failed. Fixed: deactivation changed to `= 0`, letting bullet reach row 0 invisibly (draw guard added for score row). `SaucerAnimate` now sees `CapBulletRow=0`, `CapPixelY=8` matching `FlyY=8`. ai.bas.
 - [x] **Wave announcement overlaps bottom alien row** — Banner at BACKTAB row 5 (positions 103/107/112) overlapped the lowest alien row. Shifted all positions down one row (+20): `107→127`, `112→132`, `103→123`. Updated `DrawWaveBanner`, `ClearWaveBanner`, `SpinWaveBannerLetter`, and timer-expired clear in gameloop.bas. aliens.bas + gameloop.bas.
+- [ ] **SOL-36 cleanup** — Known issues with the SOL-36 auto-cannon still to be investigated and resolved. Tracked for next dedicated SOL-36 session.
 
 ---
 
@@ -209,6 +210,7 @@ See detailed spec #14 below — only pursue after feature-complete.
 - [x] Wave announcement transition (spec #6) — spinning WAVE N letters with color cascade, ALERT! and INCOMING HORDE! variants, wave banner spin-in/spin-out animation
 
 ### Near-Term
+- [ ] **SOL-36 skeleton death effect** (spec #17) — When the SOL-36 beam kills an alien, flash an invader skeleton sprite at that cell instead of the normal death pop. See spec below.
 - [ ] Destructible barriers/shields (spec #2)
 
 ### Medium-Term
@@ -457,6 +459,86 @@ Or `COL_BLUE` (1) — cooler "lit from top, shadow below" alien look. User to de
 - Should there be a visual/audio cue warning the player ("alien is restless")?
 - Should the escape be preventable (e.g., feed it powerups)?
 - Does the alien rejoin the enemy grid or just disappear?
+
+---
+
+### Spec #17: SOL-36 Skeleton Death Effect
+
+**Concept:** When the SOL-36 auto-cannon beam kills an alien, briefly flash an "invader skeleton" GRAM card at that BACKTAB cell — as if the laser burns away the alien's body and leaves its skeletal frame exposed for a moment. Normal bullet kills show a chain-colored explosion pop; SOL-36 kills currently show nothing special. The skeleton gives SOL-36 a distinct, satisfying visual identity.
+
+**Visual design (GRAM skeleton card):**
+- Single 8×8 GRAM card at card 32 (free during gameplay — only used by title font)
+- Pixel-art "invader X-ray" — what remains after vaporization. Design options:
+  - **Bones/lattice**: ribs, limbs, and antennae visible as bare strokes
+  - **Ghostly outline**: hollow silhouette — just the perimeter edges, empty inside
+  - **Ember core**: only the "hot" interior remains (eye dots + central node)
+- Color: White (7) for stark "burned out" contrast, or Cyan (9) for a spectral glow
+- Duration: 16 frames (~0.27s) — visible but not lingering
+
+**Variables needed (3 × 8-bit, affordable within 19 free slots):**
+
+| Variable | Purpose | Range |
+|----------|---------|-------|
+| `Sol36SkelMask` | Bitmask of rows killed (bit N = row N killed) | 0–31 (5 row bits) |
+| `Sol36SkelTimer` | Countdown to 0 (0 = inactive) | 0–16 |
+| `Sol36SkelCol` | Column where kills occurred (same as Sol36Col at fire) | 0–9 |
+
+**Implementation — `weapons.bas` (`MegaBeamKill`):**
+1. At start of each SOL-36 fire: `Sol36SkelMask = 0` (clear from previous fire)
+2. At each alien kill site (inside row loop): `Sol36SkelMask = Sol36SkelMask OR ColMaskData(AlienGridRow)` — reuse the existing `ColMaskData` table; rows 0-4 map to masks 1, 2, 4, 8, 16
+3. After sweep completes: `IF Sol36SkelMask THEN Sol36SkelTimer = 16 : Sol36SkelCol = Sol36Col`
+
+**Rendering — `gameloop.bas` (after DrawAliens, before HUD):**
+```basic
+IF Sol36SkelTimer > 0 THEN
+    Sol36SkelTimer = Sol36SkelTimer - 1
+    FOR AlienGridRow = 0 TO 4
+        IF Sol36SkelMask AND ColMaskData(AlienGridRow) THEN
+            ' Compute BACKTAB position matching DrawAliens coordinate math
+            #Card = (ALIEN_ROW_START + AlienOffsetY + AlienGridRow) * 20 + AlienOffsetX + Sol36SkelCol
+            PRINT AT #Card COLOR COL_WHITE, (GRAM_SKELETON * 8 + $0800)
+        END IF
+    NEXT AlienGridRow
+END IF
+```
+Note: `#Card` is safe as a temp here (no AddToScore call in this block). Use the same row-start constant as `DrawAliens`.
+
+**State resets — all 3 wave transition procedures:**
+```basic
+Sol36SkelTimer = 0
+Sol36SkelMask = 0
+```
+
+**GRAM definition — `game_init.bas` (full GRAM reload block):**
+```basic
+DEFINE 32, 1, SkeletonGfx   ' GRAM_SKELETON = 32, card 32 is free during gameplay
+```
+
+**Graphics — `graphics.bas`:**
+```basic
+SkeletonGfx:
+    BITMAP "........"   ' to be designed — see visual options above
+    BITMAP "..X..X.."
+    BITMAP "..XXXX.."
+    BITMAP ".X.XX.X."
+    BITMAP "..XXXX.."
+    BITMAP "...XX..."
+    BITMAP "..X..X.."
+    BITMAP "........"
+```
+
+**Files to modify:**
+- `weapons.bas` — `MegaBeamKill`: set `Sol36SkelMask` bit per row kill, arm timer after sweep
+- `gameloop.bas` — add skeleton render block after `DrawAliens`
+- `game_init.bas` — `DEFINE 32, 1, SkeletonGfx` + reset `Sol36SkelMask=0, Sol36SkelTimer=0`
+- `waves.bas` — `StartNewWave`, `LoadPatternB`, `ReloadHorde`: reset `Sol36SkelMask=0, Sol36SkelTimer=0`
+- `graphics.bas` — add `SkeletonGfx` BITMAP data (8 rows)
+
+**ROM cost estimate:** ~50–70 words (timer check, 5-iteration FOR loop, PRINT AT, MegaBeamKill additions)
+**GRAM cost:** 1 card (card 32, already free during gameplay)
+**Variable cost:** 3 × 8-bit (Sol36SkelMask, Sol36SkelTimer, Sol36SkelCol)
+
+**Design note — why not per-kill explosions?** The SOL-36 often kills multiple aliens in one sweep (up to 5 in a full column). Showing `ShowChainExplosion` per kill would re-trigger the GRAM define 5× in one frame, overloading the ISR. The skeleton approach is safer: write BACKTAB cards (instant), let them persist for 16 frames, then DrawAliens naturally clears them as dead cells (DRAW_ROW_FAST always writes 0 to dead cells).
 
 ---
 
