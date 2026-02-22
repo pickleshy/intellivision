@@ -43,6 +43,7 @@ CONST GRAM_BAND2_F1 = 12        ' Alien right half - Frame 2
 CONST GRAM_EXPLOSION = 14       ' Explosion frame 1 (tight pop)
 CONST GRAM_EXPLOSION2 = 15      ' Explosion frame 2 (expanding scatter)
 CONST GRAM_EXPLOSION3 = 16      ' Explosion frame 3 (dissipate)
+CONST GRAM_SKELETON   = 16      ' SOL-36 death skeleton (time-shares card 16; safe — beam clear overwrites GRAM_EXPLOSION3 each frame during beam)
 CONST GRAM_SHIP_ACCENT = 17     ' Ship accent overlay (2 cards for animation)
 CONST GRAM_CRAB_F1  = 19        ' Small crab frame 1 (title screen flyer)
 CONST GRAM_CRAB_F2  = 20        ' Small crab frame 2

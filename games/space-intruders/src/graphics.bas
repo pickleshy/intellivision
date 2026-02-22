@@ -452,6 +452,30 @@ Shift2F1Row4:
     BITMAP "...X..X."
     BITMAP "........"
 
+' SOL-36 death skeleton (GRAM card 16 / GRAM_SKELETON, time-shared with GRAM_EXPLOSION3)
+' Shown flashing at killed alien BACKTAB position during beam sequence.
+' GRAM_EXPLOSION3 is never visible during beam (beam clear wipes it each frame), so safe.
+IntruderSkeletonGfx:
+    BITMAP "........"
+    BITMAP "...XXX.."
+    BITMAP "...X.X.."
+    BITMAP ".X..X..X"
+    BITMAP "..XXXXX."
+    BITMAP "....X..."
+    BITMAP "...XXX.."
+    BITMAP "..X...X."
+
+IntruderSkeletonGfx2:
+    BITMAP "........"
+    BITMAP "...XXX.."
+    BITMAP "...X.X.."
+    BITMAP "....X..."
+    BITMAP ".XXXXXXX"
+    BITMAP "....X..."
+    BITMAP "..XXXXX."
+    BITMAP "........"
+
+
 ' Warp-in animation frames (universal for all alien types)
 WarpInGfx1:
     ' Frame 1: single pixel - just arriving from hyperspace

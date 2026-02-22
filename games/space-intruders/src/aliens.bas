@@ -512,12 +512,13 @@ DrawPlayer: PROCEDURE
             SPRITE SPR_SHIP_ACCENT, PlayerX + $0204, PLAYER_Y - 2, GRAM_EXPLOSION2 * 8 + 7 + $0800
         ELSEIF DeathTimer > 47 THEN
             ' Phase 3 - Dissipating: sparse particles, white/tan (10 frames)
-            SPRITE SPR_PLAYER, PlayerX + $01FC, PLAYER_Y + 4, GRAM_EXPLOSION3 * 8 + 7 + $0800
-            SPRITE SPR_SHIP_ACCENT, PlayerX + $0206, PLAYER_Y - 4, GRAM_EXPLOSION3 * 8 + 3 + $0800
+            ' GRAM_EXPLOSION3 (card 16) time-shares with GRAM_SKELETON — use card 15 instead
+            SPRITE SPR_PLAYER, PlayerX + $01FC, PLAYER_Y + 4, GRAM_EXPLOSION2 * 8 + 7 + $0800
+            SPRITE SPR_SHIP_ACCENT, PlayerX + $0206, PLAYER_Y - 4, GRAM_EXPLOSION2 * 8 + 3 + $0800
         ELSEIF DeathTimer > 39 THEN
             ' Phase 4 - Fading embers: blink on/off (8 frames)
             IF DeathTimer AND 2 THEN
-                SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_EXPLOSION3 * 8 + 3 + $0800
+                SPRITE SPR_PLAYER, PlayerX + $0200, PLAYER_Y, GRAM_EXPLOSION2 * 8 + 3 + $0800
                 SPRITE SPR_SHIP_ACCENT, 0, 0, 0
             ELSE
                 SPRITE SPR_PLAYER, 0, 0, 0

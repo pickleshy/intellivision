@@ -44,7 +44,10 @@ DeathTimer  = 0                 ' Countdown during death animation
 Invincible  = 0                 ' Invincibility timer after respawn
 Key1Held    = 0                 ' Debounce flag for keypad 1
 CheatCode   = 0                 ' Packed cheat entry: bits 0-2=held timer, bit 3=got '3'
-ShakeTimer  = 0                 ' Screen shake countdown (0 = no shake)
+ShakeTimer    = 0               ' Screen shake countdown (0 = no shake)
+SkeletonTimer  = 0              ' SOL-36 skeleton flash countdown (0 = inactive, 15 = fresh)
+SkeletonPos    = 0              ' Bitmask: which rows had kills in beam left column (bits 0-4 = rows 0-4)
+SkeletonRowsB  = 0              ' Bitmask: which rows had kills in beam right column (Sol36Col+1)
 
 ' -- Bullet State --
 BulletX     = 0                 ' Bullet X position

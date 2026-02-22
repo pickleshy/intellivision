@@ -71,7 +71,10 @@ MovePlayer: PROCEDURE
     END IF
 
     ' SOL-36 auto-cannon: fires at own 20-frame cadence regardless of button state
-    IF Sol36Timer > 0 THEN
+    ' Guard Sol36Timer < 120: prevents first beam from firing the same frame DebugCycleWeapon
+    ' sets Sol36Timer=120. Without this, DEFINE GRAM_SKELETON (Sol36Kill) clobbers DEFINE GRAM_PWR1
+    ' on the shared _gram_* ISR channel ($0105/$0344), corrupting the HUD powerup graphic.
+    IF Sol36Timer > 0 AND Sol36Timer < 120 THEN
         IF Sol36BeamTimer = 0 THEN
             Sol36Col = (PlayerX - 4) / 8
             IF Sol36Col > 19 THEN Sol36Col = 19

@@ -428,19 +428,21 @@ ASM DECLE data1, data2
 
 ### Critical: R4 Preservation
 
-**R4 is IntyBASIC's stack pointer.** Any assembly routine called via `USR` MUST preserve R4 or IntyBASIC will crash.
+**R4 holds IntyBASIC's screen cursor (`_screen` var).** Any assembly routine called via `USR` MUST preserve R4. If corrupted, the next `PRINT AT` write lands at the wrong BACKTAB address, causing display corruption or overwriting system RAM.
 
 ```basic
 ASM MY_ROUTINE: PROC
 ASM         PSHR    R5              ' Save return address
-ASM         PSHR    R4              ' CRITICAL: Save IntyBASIC stack pointer
+ASM         PSHR    R4              ' CRITICAL: Save screen cursor (_screen)
 ASM         ; ... your code here ...
-ASM         PULR    R4              ' Restore R4 before returning
+ASM         PULR    R4              ' Restore screen cursor before returning
 ASM         PULR    PC              ' Return
 ASM         ENDP
 ```
 
-**Symptom of R4 corruption:** Random crashes, "CPU off in the weeds", corrupted variables.
+Note: The hardware stack pointer is R6. R4 is NOT a general stack — it is reloaded from `_screen` before each `PRINT AT` and saved back after. The ISR and WAIT also clobber R4 (keypad scanning).
+
+**Symptom of R4 corruption:** Text/tiles written to wrong screen positions, apparent variable corruption, eventual crash.
 
 ### PSG (AY-3-8914) Direct Access
 
@@ -479,15 +481,15 @@ ASM         MVO     R0,     $1FB    ' Channel A volume
 
 1. **PLAY system conflict**: IntyBASIC's `PLAY SIMPLE`/`PLAY FULL` uses an ISR that writes PSG registers every frame. Direct PSG writes will be overwritten unless you use `PLAY OFF` first.
 
-2. **R4 auto-increment**: R4 is used as auto-incrementing pointer. Using `MVI@` or `MVO@` with R4 will corrupt IntyBASIC's stack.
+2. **R4 auto-increment**: R4 supports auto-increment with `MVI@`/`MVO@`. Using these with R4 inside a USR routine corrupts IntyBASIC's screen cursor (`_screen`), causing subsequent PRINT AT calls to write to wrong BACKTAB addresses.
 
 3. **ROM segment placement**: Use `ASM ORG $D000` with `ASM ROMW 16` for assembly routines to avoid conflicts with IntyBASIC-generated code.
 
 4. **Register conventions**:
    - R0-R3: General purpose (freely usable)
-   - R4: IntyBASIC stack pointer (PRESERVE!)
+   - R4: IntyBASIC screen cursor (`_screen` var) — PRESERVE in USR routines!
    - R5: Return address for `PSHR`/`PULR PC`
-   - R6: Stack pointer (hardware)
+   - R6: Hardware stack pointer
    - R7: PC
 
 5. **USR parameter passing**: First parameter to `USR routine(x)` is in R0.
@@ -691,7 +693,17 @@ When reading/modifying BACKTAB values directly with PEEK/PRINT AT:
 
 2. **Use mask `$EFF8` to strip color.** This clears bits 0-2 and bit 12 without touching the card number. Then OR in the new color (0-7).
 
-3. **Colors 8+ overflow in Color Stack mode.** The 3-bit foreground color field (bits 0-2) only supports colors 0-7. Colors like Cyan (9) will corrupt the card number via bit overflow, displaying garbage characters instead of text.
+3. **Colors 8+ corrupt the GRAM card field in direct formulas.** In Color Stack mode, bits 0-2 hold fg color and bits 3-8 hold the GRAM card number. Using `PRINT AT COLOR` with a color 8+ in normal text is handled by IntyBASIC (it sets bit 12). But in **direct BACKTAB writes** (`PRINT AT pos, card * 8 + color + $0800`), adding a color > 7 bleeds into bits 3-8 and corrupts the card number:
+
+   ```
+   ' COL_ORANGE = 10. GRAM_SOL36 = 46.
+   GRAM_SOL36 * 8 + COL_ORANGE + $0800 = 368 + 10 + 2048 = 2426
+   Decode bits 3-8 of 2426: 47  ← card 47, NOT 46!
+   Card 47 = GRAM_ORBITER (small crab) — the "Zod alien" bug.
+   ```
+
+   **Rule:** Only use colors 0-7 in any formula of the form `card * 8 + color + $0800`.
+   `COL_RED` (2) appears orange-reddish on the Intellivision — use it instead of `COL_ORANGE` (10).
 
 ### DIM Array Sizing
 
@@ -764,7 +776,7 @@ These bugs were found through extensive debugging sessions and are easy to reint
 
 ### NEVER use GOTO to exit a FOR loop
 
-IntyBASIC FOR/NEXT loops push state onto the R4 stack. Using GOTO to break out of a FOR loop **leaks stack space every iteration**. This causes a delayed crash — the game runs fine for minutes, then corrupts memory and resets.
+Early exit from a FOR loop via GOTO (or RETURN — see below) causes delayed crashes. The exact internal mechanism is not confirmed, but the symptom and fix are well-established: the game runs fine for minutes, then corrupts memory and resets.
 
 ```basic
 ' BAD — stack leak every time this runs:
@@ -938,7 +950,7 @@ PRINT AT #ScreenPos + AlienOffsetX + Col, #Card
 
 ### RETURN inside FOR loops is equally dangerous as GOTO
 
-The original bug documentation covers `GOTO` out of FOR loops, but `RETURN` inside a FOR loop causes the **exact same R4 stack leak**. This was found in `FindShooter` where `RETURN` was used to exit early when a shooter was found — leaking stack space on every alien shot (~1/sec), crashing the game after 1-3 minutes.
+The original bug documentation covers `GOTO` out of FOR loops, but `RETURN` inside a FOR loop causes the **exact same delayed crash**. This was found in `FindShooter` where `RETURN` was used to exit early when a shooter was found — crashing the game after 1-3 minutes at a rate of ~1 alien shot/sec.
 
 ```basic
 ' BAD — RETURN leaks FOR state just like GOTO:
@@ -1977,7 +1989,11 @@ See **[games/space-intruders/STICHacking.md](games/space-intruders/STICHacking.m
 - Background: Prepare data in shadow buffers
 - Interrupt: Block-copy during VBLANK
 - Separate concerns: calculation vs rendering
-- IntyBASIC: Use `POKE _gram2_*` ISR vars
+- IntyBASIC: Use `POKE _gram2_*` ISR vars — **write order is critical:**
+  1. `POKE $0107, target_card` (_gram2_target)
+  2. `POKE $0108, num_rows`    (_gram2_total) — set BEFORE bitmap!
+  3. `POKE $0345, bitmap_addr` (_gram2_bitmap) — this is the ISR trigger
+  - If `_gram2_bitmap` is set while `_gram2_total` is still 0, the ISR's DECR+BNE loop wraps to 65535 iterations (hang).
 
 **Data-Driven Design:**
 - Spawn tables instead of hardcoded logic

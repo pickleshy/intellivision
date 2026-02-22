@@ -442,6 +442,20 @@ Sol36Kill: PROCEDURE
                             END IF
                             #ExplosionPos = (ALIEN_START_Y + AlienOffsetY + LoopVar) * 20 + HitCol
                             GOSUB ShowChainExplosion
+                            ' SOL-36 skeleton: record every killed normal alien as a row bit
+                            ' SkeletonPos = bitmask for left column (Sol36Col), SkeletonRowsB for right
+                            ' ColMaskData(LoopVar) gives bit values 1,2,4,8,16 for rows 0-4
+                            IF FoundBoss = 255 THEN
+                                IF HitRow = 0 THEN
+                                    SkeletonPos = SkeletonPos OR ColMaskData(LoopVar)
+                                ELSE
+                                    SkeletonRowsB = SkeletonRowsB OR ColMaskData(LoopVar)
+                                END IF
+                                IF SkeletonTimer = 0 THEN
+                                    DEFINE GRAM_SKELETON, 1, IntruderSkeletonGfx
+                                END IF
+                                SkeletonTimer = 15
+                            END IF
                         END IF
                     NEXT LoopVar
                     IF ChainCount >= 2 THEN ExplosionTimer = 16 ELSE ExplosionTimer = 15
@@ -521,6 +535,12 @@ Sol36Clear: PROCEDURE
         #ScreenPos = Row20Data(LoopVar) + Sol36Col
         PRINT AT #ScreenPos, 0
     NEXT LoopVar
+    ' Restore GRAM_SKELETON (card 16) to ExplosionGfx3 if beam ended before timer expired
+    IF SkeletonTimer > 0 THEN
+        SkeletonTimer = 0
+        DEFINE GRAM_SKELETON, 1, ExplosionGfx3
+    END IF
+    SkeletonPos = 0 : SkeletonRowsB = 0
     RETURN
 END
 
@@ -530,6 +550,7 @@ END
 ' --------------------------------------------
 Sol36SputterStop: PROCEDURE
     Sol36SputterTimer = 0
+    GOSUB Sol36Clear
     DEFINE GRAM_SOL36, 1, Sol36Gfx
     ' Only silence SFX if mega beam was actually playing (SfxType=4).
     ' Do NOT clear SfxType=3 (death explosion) — that was set by the collision
@@ -592,10 +613,13 @@ Sol36SputterUpdate: PROCEDURE
     ELSEIF Sol36SputterTimer >= 15 THEN
         ' Gap 2: off
     ELSEIF Sol36SputterTimer >= 5 THEN
-        ' Spurt 2: rapid alternating flicker, orange
-        IF (Sol36SputterTimer AND 1) THEN AlienColor = COL_ORANGE
+        ' Spurt 2: rapid alternating flicker, red/orange
+        ' NOTE: COL_ORANGE=10 corrupts BACKTAB card field (bits 3-8), showing GRAM_ORBITER (card 47)
+        ' instead of GRAM_SOL36 (card 46). Use COL_RED=2 which appears orange-red on Intellivision.
+        IF (Sol36SputterTimer AND 1) THEN AlienColor = COL_RED
     END IF
-    ' T=4 to T=1: fizzle — AlienColor stays 0
+    ' Skip fizzle: end immediately when spurt 2 finishes (avoids stale tile flash)
+    IF Sol36SputterTimer < 5 THEN Sol36SputterTimer = 0
 
     ' Draw or silence based on beam state
     IF AlienColor > 0 THEN
@@ -608,8 +632,9 @@ Sol36SputterUpdate: PROCEDURE
         SOUND 2, , 0
     END IF
 
-    ' End of sputter: restore solid beam card
+    ' End of sputter: clear column, restore solid beam card
     IF Sol36SputterTimer = 0 THEN
+        GOSUB Sol36Clear
         DEFINE GRAM_SOL36, 1, Sol36Gfx
         SOUND 2, , 0
         SfxType = 0 : SfxVolume = 0
@@ -659,7 +684,7 @@ LoadPatternB: PROCEDURE
     FOR LoopVar = 0 TO MAX_BOSSES - 1
         BossHP(LoopVar) = 0
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
 
     ' ── LEVEL DESIGN: Boss Placement — data-driven (edit tables in data_tables.bas) ──
     ' BossHeader bits: 0-2=BossCount, 3=OrbitStep=0, 4=OrbitStep2=5
@@ -818,7 +843,7 @@ ReloadHorde: PROCEDURE
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
     ' Reset positions
     GOSUB ResetAlienGrid
     CurrentMarchSpeed = BaseMarchSpeed
@@ -884,7 +909,7 @@ StartNewWave: PROCEDURE
     FOR LoopVar = 0 TO MAX_BOSSES - 1
         BossHP(LoopVar) = 0
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
 
     ' Pattern A = pure small alien horde (no bosses)
     ' Bosses only appear in Pattern B formations

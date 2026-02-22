@@ -367,8 +367,8 @@ GameLoop:
             ' Frame 2: expanding scatter (frames 10-6) - White
             PRINT AT #ExplosionPos, GRAM_EXPLOSION2 * 8 + COL_WHITE + $0800
         ELSE
-            ' Frame 3: dissipate (frames 5-1) - White
-            PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + COL_WHITE + $0800
+            ' Frames 5-1: card 16 (GRAM_EXPLOSION3) time-shares with GRAM_SKELETON — just clear
+            PRINT AT #ExplosionPos, 0
         END IF
         END IF
     END IF
@@ -382,7 +382,8 @@ GameLoop:
         ELSEIF BombExpTimer > 9 THEN
             AlienCard = GRAM_EXPLOSION2
         ELSE
-            AlienCard = GRAM_EXPLOSION3
+            ' Card 16 (GRAM_EXPLOSION3) time-shares with GRAM_SKELETON — hold scatter frame instead
+            AlienCard = GRAM_EXPLOSION2
         END IF
         IF BombExpTimer AND 1 THEN
             AlienColor = COL_RED
@@ -551,7 +552,7 @@ ChainDone:
                 Lives = Lives - 1  ' audit-ignore: DeathTimer=0 AND Invincible=0 gate; game-over triggers when Lives=0
                 ' Lose all power-ups on death (mega laser too)
                 BeamTimer = 0 : RapidTimer = 0
-                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0 : ShieldHits = 0
+                #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0 : Sol36BeamTimer = 0 : ShieldHits = 0
                 GOSUB Sol36SputterStop
                 #GameFlags = #GameFlags AND $FFFC  ' Clear FLAG_BULLET + FLAG_ABULLET
                 SPRITE SPR_PBULLET, 0, 0, 0
@@ -902,6 +903,30 @@ ChainDone:
             #ScreenPos = Row20Data(LoopVar) + Sol36Col
             PRINT AT #ScreenPos, GRAM_SOL36 * 8 + AlienColor + $0800
         NEXT LoopVar
+        ' Skeleton animation: 2-frame pose swap driven by SkeletonTimer bits
+        ' Bit 0 (AND 1): on/off flicker — show skeleton on ODD frames only
+        ' Bit 1 (AND 2): pose select — frame A on set, frame B on clear
+        ' Countdown is in outer block below; this only draws using pre-decrement value.
+        IF SkeletonTimer > 0 THEN
+            IF SkeletonTimer AND 1 THEN
+                ' Select and load the pose for this frame (DEFINE fires before WAIT → card 16 ready)
+                IF SkeletonTimer AND 2 THEN
+                    DEFINE GRAM_SKELETON, 1, IntruderSkeletonGfx   ' Pose A
+                ELSE
+                    DEFINE GRAM_SKELETON, 1, IntruderSkeletonGfx2  ' Pose B
+                END IF
+                FOR LoopVar = 0 TO ALIEN_ROWS - 1
+                    IF SkeletonPos AND ColMaskData(LoopVar) THEN
+                        #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + LoopVar) + Sol36Col
+                        PRINT AT #ScreenPos, GRAM_SKELETON * 8 + COL_WHITE + $0800
+                    END IF
+                    IF SkeletonRowsB AND ColMaskData(LoopVar) THEN
+                        #ScreenPos = Row20Data(ALIEN_START_Y + AlienOffsetY + LoopVar) + Sol36Col + 1
+                        PRINT AT #ScreenPos, GRAM_SKELETON * 8 + COL_WHITE + $0800
+                    END IF
+                NEXT LoopVar
+            END IF
+        END IF
         IF Sol36BeamTimer = 0 THEN
             GOSUB Sol36Clear
         END IF
@@ -910,6 +935,18 @@ ChainDone:
     ' SOL-36 sputter phase: thin beam flicker + 2 final kill spurts
     IF Sol36SputterTimer > 0 THEN
         GOSUB Sol36SputterUpdate
+    END IF
+
+    ' SkeletonTimer countdown (outside beam block so it runs even after Sol36Timer expires and
+    ' Sol36BeamTimer is force-killed to 0 at line 855, bypassing the beam block).
+    ' Sol36Clear handles the end-of-beam case (force-clears to 0 + fires restore DEFINE directly).
+    ' This block handles the Sol36Timer-expiry case where SkeletonTimer is left stranded > 0.
+    IF SkeletonTimer > 0 THEN
+        SkeletonTimer = SkeletonTimer - 1
+        IF SkeletonTimer = 0 THEN
+            DEFINE GRAM_SKELETON, 1, ExplosionGfx3  ' Restore card 16 to GRAM_EXPLOSION3
+            SkeletonPos = 0 : SkeletonRowsB = 0
+        END IF
     END IF
 
     ' Update sprites
