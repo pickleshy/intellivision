@@ -4,10 +4,11 @@
 # ============================================
 # A Space Invaders clone for Intellivision
 #
-# Usage: ./build.sh [run|voice|publish]
+# Usage: ./build.sh [run|voice|intv|publish]
 #   - No args: compile only
 #   - run: compile and launch in jzIntv emulator
 #   - voice: compile and launch with Intellivoice support
+#   - intv: compile and convert to INTV2 format for Nt Mini Noir FPGA
 #   - publish: compile, package assets, push to itch.io
 # ============================================
 
@@ -44,6 +45,9 @@ SRC="$GAME_DIR/src/main.bas"
 ASM="$BUILD_DIR/intruders.asm"
 ROM="$BUILD_DIR/intruders.rom"
 LST="$BUILD_DIR/intruders.lst"
+INTV_NOIR="$BUILD_DIR/intruders-nt-noir.intv"
+INTV_POCKET="$BUILD_DIR/intruders-pocket.intv"
+INTV2_SCRIPT="$PROJECT_ROOT/tools/make_intv2.py"
 
 echo "=== Space Intruders Build ==="
 echo "Project root: $PROJECT_ROOT"
@@ -76,15 +80,47 @@ echo "=== Build Complete ==="
 echo "ROM: $ROM"
 echo "LST: $LST"
 
+# Convert to INTV2 format for both FPGA targets if requested
+if [ "$1" = "intv" ]; then
+    echo ""
+    echo "=== Converting to INTV2 ==="
+
+    echo ""
+    echo "[intv 1/2] Nt Mini Noir (true word count, Intellivoice compatible)..."
+    python3 "$INTV2_SCRIPT" "$LST" "$INTV_NOIR"
+
+    echo ""
+    echo "[intv 2/2] Analogue Pocket (even-padded word count, Chip32 aligned)..."
+    python3 "$INTV2_SCRIPT" "$LST" "$INTV_POCKET" --pocket
+
+    echo ""
+    echo "=== INTV2 Output ==="
+    echo "Nt Mini Noir:     $INTV_NOIR"
+    echo "Analogue Pocket:  $INTV_POCKET"
+    echo ""
+    echo "Nt Mini Noir — copy intruders.intv to SD card."
+    echo "Analogue Pocket — copy intruders-pocket.intv to SD card."
+    echo ""
+    echo "Required BIOS files in /BIOS/ (both consoles):"
+    echo "  intvexec1.bin  — Executive ROM (CRC32: EEB54C63)"
+    echo "  grom.bin       — GROM (CRC32: 683A4158)"
+    echo "  012.bin        — Intellivoice 2K ROM (for speech)"
+    exit 0
+fi
+
 # Publish to itch.io if requested
 if [ "$1" = "publish" ]; then
     echo ""
     echo "=== Publishing to itch.io ==="
 
-    # Step 3: Copy ROM into assets
-    echo "[pub 1/3] Copying ROM to assets..."
-    cp "$ROM" "$ASSETS_DIR/${GAME_TITLE}.rom"
+    # Step 3: Copy ROM + INTV files into assets
+    echo "[pub 1/3] Copying ROM and INTV files to assets..."
+    cp "$ROM"         "$ASSETS_DIR/${GAME_TITLE}.rom"
     echo "          $ROM -> assets/${GAME_TITLE}.rom"
+    cp "$INTV_NOIR"   "$ASSETS_DIR/${GAME_TITLE}-nt-noir.intv"
+    echo "          $INTV_NOIR -> assets/${GAME_TITLE}-nt-noir.intv"
+    cp "$INTV_POCKET" "$ASSETS_DIR/${GAME_TITLE}-pocket.intv"
+    echo "          $INTV_POCKET -> assets/${GAME_TITLE}-pocket.intv"
 
     # Step 4: Create zip from assets (remove first to guarantee a fresh archive)
     echo "[pub 2/3] Packaging ${ZIP_NAME}..."

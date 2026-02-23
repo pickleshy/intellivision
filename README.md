@@ -107,6 +107,8 @@ intv-game-builder/
 │       ├── canon_music.bas
 │       └── nutcracker_intybasic.bas
 ├── docs/                  # Documentation
+├── tools/                 # Development utilities
+│   └── make_intv2.py      # INTV2 ROM converter (see below)
 ├── games/                 # Game projects
 │   └── orchestra-demo/    # Example project
 │       ├── src/main.bas
@@ -145,6 +147,49 @@ USR ZMUS_PLAY(song_label)  ' Start song
 USR ZMUS_UPDATE            ' Call every frame
 USR ZMUS_STOP              ' Stop playback
 ```
+
+## Tools
+
+### make_intv2.py — INTV2 ROM Converter
+
+Converts an IntyBASIC OPTION MAP 2 `.lst` file to the INTV2 chunked format used
+by Intellivision FPGA cores on the **Analogue Nt Mini Noir** and **Analogue Pocket**.
+
+```bash
+# Nt Mini Noir (true word count — required for Intellivoice compatibility)
+python3 tools/make_intv2.py build/game.lst build/game.intv
+
+# Analogue Pocket (even-padded word count — required by Chip32 VM)
+python3 tools/make_intv2.py build/game.lst build/game-pocket.intv --pocket
+```
+
+**Why two builds?**
+
+| Console | Flag | Header word count | Intellivoice |
+|---|---|---|---|
+| Nt Mini Noir | _(none)_ | True count (may be odd) | Works |
+| Analogue Pocket | `--pocket` | Rounded up to even | Works |
+
+The Analogue Pocket's openFPGA Chip32 VM requires both the load address and the
+chunk length to be multiples of 2. Odd-length chunks cause an "Unaligned Value!"
+error at boot. The `--pocket` flag pads odd-length chunks with one zero word and
+reports the padded count in the header so the VM stays aligned.
+
+Game build scripts that produce both variants automatically:
+
+```bash
+./games/space-intruders/build.sh intv
+# → build/intruders.intv         (Nt Mini Noir)
+# → build/intruders-pocket.intv  (Analogue Pocket)
+```
+
+**Required BIOS files** (place in `/BIOS/` on the SD card for both consoles):
+
+| File | Description | CRC32 |
+|---|---|---|
+| `intvexec1.bin` | Executive ROM | `EEB54C63` |
+| `grom.bin` | GROM | `683A4158` |
+| `012.bin` | Intellivoice 2K ROM | — |
 
 ## Documentation
 
