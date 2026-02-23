@@ -168,7 +168,7 @@ _Document existing patterns here as reference._
 ## 6. Performance
 
 ### Known Issues
-- [ ] Saucer animation may cause frame drops (needs profiling)
+- [x] Saucer animation may cause frame drops — **Investigated, not an issue.** `* 8` compiles to `SLL R0,2` + `ADDR R0,R0` (12 cycles, not software multiply). Full SaucerAnimate cost ~325 cycles/frame ≈ 2% of frame budget. No loops, no divisions. Safe to ignore.
 
 ### Completed Optimizations
 - [x] ColMaskData ROM lookup table (replaced 14 shift loops, 27-37% frame savings in heavy action)

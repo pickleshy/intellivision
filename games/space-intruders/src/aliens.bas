@@ -33,6 +33,15 @@ UpdateOrbiter: PROCEDURE
             IF OrbitStep2 >= 10 THEN OrbitStep2 = 0
         END IF
     END IF
+    ' Animate orbiter GRAM card: swap frames every 4 frames (bit 2 of ShimmerCount)
+    IF OrbitStep < 10 OR OrbitStep2 < 10 THEN
+        IF ShimmerCount AND 4 THEN
+            DEFINE GRAM_ORBITER, 1, SmallCrabF2Gfx
+        ELSE
+            DEFINE GRAM_ORBITER, 1, SmallCrabF1Gfx
+        END IF
+    END IF
+
     ' Position SPR_FLYER; alternate between orbiters each frame when both active
     IF OrbitStep < 10 THEN
         IF OrbitStep2 < 10 AND (ShimmerCount AND 1) THEN
@@ -240,9 +249,11 @@ BombExplode: PROCEDURE
     BombExpRow = BossRow(FoundBoss)
     BombExpCol = BossCol(FoundBoss)
     BombExpTimer = 30
-    ' Kill the orbiter matching this bomb boss slot
-    IF FoundBoss = 0 THEN OrbitStep = 255
-    IF FoundBoss = 1 THEN OrbitStep2 = 255
+    ' Kill the orbiter matching this bomb boss slot; set OrbiterDeathTimer so
+    ' UpdateOrbiter runs one more frame after this to hide SPR_FLYER (it already
+    ' ran earlier this frame and drew the sprite before BombExplode fired).
+    IF FoundBoss = 0 THEN OrbitStep = 255 : OrbiterDeathTimer = 1
+    IF FoundBoss = 1 THEN OrbitStep2 = 255 : OrbiterDeathTimer = 1
 
     ' Clear bomb's own two columns (guarded to prevent resurrection)
     #Mask = ColMaskData(BombExpCol)
