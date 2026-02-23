@@ -82,6 +82,9 @@ UpdatePowerUp: PROCEDURE
                     ShieldHits = 2
                     IF VOICE.AVAILABLE THEN VOICE PLAY shield_phrase
                 END IF
+                ' Belt-buckle pickup SFX: metallic snap + rising ring
+                SfxType = 13 : SfxVolume = 14 : #SfxPitch = 600
+                SOUND 2, 600, 14
                 PowerUpState = 0
                 SPRITE SPR_POWERUP, 0, 0, 0
                 ' Clear tutorial message if showing

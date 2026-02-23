@@ -59,9 +59,10 @@ MovePlayer: PROCEDURE
                     ' FLAG_CAPTURE is set only when zip completes (in RogueUpdate).
                     RogueState = ROGUE_CAPTURED
                     RogueTimer = 0
-                    ' Capture SFX: rising tone
+                    ' Capture SFX: rising tone + Zod announces himself
                     SfxType = 2 : SfxVolume = 14 : #SfxPitch = 400
                     SOUND 2, 400, 14
+                    IF VOICE.AVAILABLE THEN VOICE PLAY zod_phrase
                 END IF
             END IF
         END IF
@@ -102,9 +103,9 @@ MovePlayer: PROCEDURE
                 BulletY = PLAYER_Y - 4
                 #GameFlags = #GameFlags OR FLAG_BULLET
                 #GameFlags = #GameFlags AND $FFDF     ' New shot
-                ' Bomb launch SFX: deep thunk
-                SfxType = 7 : SfxVolume = 14 : #SfxPitch = 100
-                SOUND 2, 100, 14
+                ' Bomb launch SFX: deep bass thrum + crack + whoosh arc
+                SfxType = 8 : SfxVolume = 14 : #SfxPitch = 2000
+                SOUND 2, 2000, 14
             END IF
         ELSEIF Sol36SputterTimer = 0 THEN
             ' Normal/beam/rapid: single center shot
@@ -121,20 +122,27 @@ MovePlayer: PROCEDURE
                     #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
                     IF BeamTimer > 0 THEN
                         BeamHits = 2  ' Beam pierces 2 consecutive targets then stops
-                        ' Chain reaction laser SFX: kill music, dual-tone + noise
+                        ' Beam laser SFX: warm dual-tone buzz — lower octave, fast sweep
+                        ' Freq1 280→680Hz, Freq2 180→420Hz — sweeps bass in 20 frames
                         PLAY OFF
-                        ChainTimer = 24
-                        #ChainFreq1 = 150
-                        #ChainFreq2 = 80
-                        ChainVol = 15
-                        POKE $1F9, 12
+                        ChainTimer = 20
+                        #ChainFreq1 = 280
+                        #ChainFreq2 = 180
+                        ChainVol = 13
+                        POKE $1F9, 16
                         POKE $1F8, $18
-                        SOUND 0, 150, 14
-                        SOUND 2, 80, 15
+                        SOUND 0, 280, 13
+                        SOUND 2, 180, 13
+                    ELSEIF #GameFlags AND FLAG_AUTOFIRE THEN
+                        ' Auto-fire: only fire SFX if no higher-priority sound still loud
+                        IF SfxVolume < 8 THEN
+                            SfxType = 11 : SfxVolume = 9 : #SfxPitch = 1500
+                            SOUND 2, 1500, 9
+                        END IF
                     ELSE
-                        ' Pea shooter SFX: descending laser zap
-                        SfxType = 7 : SfxVolume = 14 : #SfxPitch = 150
-                        SOUND 2, 150, 14
+                        ' Manual pea shooter: always takes priority
+                        SfxType = 7 : SfxVolume = 11 : #SfxPitch = 600
+                        SOUND 2, 600, 11
                     END IF
                     IF RapidTimer > 0 THEN
                         FireCooldown = RAPID_COOLDOWN
@@ -190,7 +198,7 @@ MoveBullet: PROCEDURE
     ' alien sharing the same grid cell)
     GOSUB CheckBulletHit
 
-    ' Then move bullet up (rapid fire = 3px, bomb/beam = 2px, normal = 1.25px)
+    ' Then move bullet up (rapid fire = 3px, beam = 2px, bomb = 1.5px avg, normal = 1.25px)
     IF #GameFlags AND FLAG_BULLET THEN
         IF RapidTimer > 0 THEN
             IF BulletY > BULLET_TOP + RAPID_SPEED THEN
@@ -199,8 +207,22 @@ MoveBullet: PROCEDURE
                 #GameFlags = #GameFlags AND $FFFE
                 IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
             END IF
-        ELSEIF (#GameFlags AND FLAG_BOMB) OR BeamTimer > 0 THEN
-            ' Bomb / beam: flat 2px/frame
+        ELSEIF #GameFlags AND FLAG_BOMB THEN
+            ' Bomb: 1.5px/frame avg — slightly slower lob vs laser's 2px
+            ' Alternates 2px/1px each frame using free GameFlags bit 11 ($0800)
+            #GameFlags = #GameFlags XOR $0800
+            IF BulletY > BULLET_TOP + 2 THEN
+                IF #GameFlags AND $0800 THEN
+                    BulletY = BulletY - 2
+                ELSE
+                    BulletY = BulletY - 1
+                END IF
+            ELSE
+                #GameFlags = #GameFlags AND $FFFE
+                IF #GameFlags = #GameFlags AND $FFDF THEN ChainCount = 0   ' Whiff — break chain
+            END IF
+        ELSEIF BeamTimer > 0 THEN
+            ' Beam: flat 2px/frame
             IF BulletY > BULLET_TOP + 2 THEN
                 BulletY = BulletY - 2
             ELSE

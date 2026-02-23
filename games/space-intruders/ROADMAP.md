@@ -11,7 +11,7 @@
 - [x] **'R' in PRESS FIRE shows TinyFont 'E' on game over and title screen** — GRAM card 33 was shared by `GRAM_SHIELD` and `GRAM_FONT_R`. Game over loaded `GOEBlankGfx` into card 33 immediately after the font batch loaded 'R' there, destroying it. `LoadAnimatedFont` preserves cards 19-38 so the corruption persisted on title return. Fixed by moving `GOEBlankGfx` to card 57 (`GRAM_BOMB2_F1`, free during game over and title screen).
 - [x] **Lives counter shows 'E' on first wave** — GRAM card 29 is shared by `GRAM_LIVES_DIG` and `GRAM_FONT_E`. The `game_init.bas` pre-init loop fired 5 `UpdateScoreDisplay` calls (ScoreCard 3-7), stopping at the chain digit (card 28) and never reaching ScoreCard=8 (lives digit, card 29). Card 29 retained 'E' font data from boot. Fixed by adding a 6th pre-init call.
 - [x] **#NextLife overflow awards burst of extra lives at high scores** — `#NextLife` is 16-bit; after the 13th extra life (score ~61,000), adding 5,000 wraps to ~464. Every subsequent frame `#Score >= 464` is true, awarding 12+ lives in one burst. Fixed with unsigned overflow detection: `IF #NextLife < 5000 THEN #NextLife = 65535`.
-- [ ] **CONT.BUTTON bitmask breaks input** — Using `CONT.BUTTON AND bitmask` (e.g., `AND 3` to exclude bottom-right, `AND 4` to isolate bottom-right) causes all controller input to stop working in jzintv. Suspected IntyBASIC compilation quirk with bitwise AND on hardware register reads. Needs assembly listing investigation to see what instructions are generated. Capture currently uses keypad 0 as workaround. Removing `--ecsimg` from jzintv_run resolved ECS keyboard bleed-through into CONT.BUTTON but did not fix the bitmask issue.
+- [x] **CONT.BUTTON bitmask breaks input** — Resolved by rerouting capture trigger to `CONT.KEY = 0 OR cont1.b2` (keypad 0 or bottom-left button). IntyBASIC's individual button accessors (`cont1.b2`) compile differently than `CONT.BUTTON AND mask` and work correctly. No remaining usage of the problematic bitmask AND form in the codebase.
 - [x] **Dead alien pop-in during march** — Root cause: `NeedRedraw = 0` was reset at frame-start, but kills happen in `CheckOneColumn` *after* `DrawAliens` runs. Dead tile persisted until next march/shimmer (up to 24+ frames). Fix: moved `NeedRedraw = 0` reset to *after* `DrawAliens` (`IF NeedRedraw THEN GOSUB DrawAliens : NeedRedraw = 0`), added `NeedRedraw = 1` in `CheckOneColumn` after kill and in `SkullBossDeath`. Latches redraw to next frame for any late-frame kill.
 - [x] **Skull boss split → rogue animation / orphan alien** — Investigated: no double-XOR resurrection found. `SkullBossGridClear` properly guarded for both cells. `RoguePickAlien` rejects boss cells via `FindBossAtCell` + `BossHP > 0` guard. The "orphan tile" was the same stale-BACKTAB issue as the pop-in bug; fixed by the NeedRedraw latch. `SkullBossDeath` now also sets `NeedRedraw = 1`.
 - [x] **Pea shooter fires during SOL-36 sputter phase** — When `MegaTimer` hits 0 and `MegaSputterTimer` is active, the `ELSE` branch in `player.bas` fire logic allowed normal pea shooter firing. Fixed by changing `ELSE` to `ELSEIF MegaSputterTimer = 0 THEN` so the player is locked out of all normal fire while the sputter countdown is running.
@@ -56,6 +56,8 @@
   - [x] Mooninite-style sprite design
   - [x] Persistent across wave/pattern transitions
   - [x] Bullet sponge behavior (absorbs enemy fire)
+- [x] SOL-36 skeleton death effect — beam kills flash invader skeleton at kill cell, 2-frame animated pose swap, restores card 16 on expiry (see Spec #17)
+- [x] Zod voice on capture — Intellivoice "Zod" (ZZ, AA, AA, AA, DD1) fires at capture trigger moment, fire-and-forget overlapping with rising SFX tone
 
 ### In Progress
 - [ ] Color tuning and visual consistency
@@ -74,11 +76,16 @@
 - [x] Wingman capture bullet now reaches saucer at row 0 (deactivation threshold fix)
 - [x] SOL-36 beam column alien bitmap bleed fixed (full-column clear before beam draw)
 - [x] Wave announcement repositioned to row 6 (was overlapping bottom alien row at row 5)
+- [x] Pea shooter SFX redesigned — short bassy thump (period 400, 3-frame decay) replaces thin whine; bomb launch now SfxType=8 (period 600, deeper, 5-frame decay)
+- [x] Zod death SFX — descending PSG squeal when rogue killed or kills wingman; wingman death now shows 6-frame yellow/green skeleton flash animation
 
 ### Backlog
 - [ ] Impact pause / "dopamine moments" (see spec #7)
 - [ ] Saucer animation refactor (see spec #11)
 - [ ] **Kill counter on game over screen** — Display total aliens killed during the session (e.g. "KILLS: NNN") on the game over screen as a fun stat. Cost: 2 × 8-bit vars (`KillCount` 0-99, `KillCountHi` 0-9, tracking up to 999 kills), ~80-100 ROM words. Increment at each `#AlienRow XOR #Mask` kill site across player.bas, aliens.bas, waves.bas, ai.bas. Display using GROM digits on row 8 of the game over screen. Add only after all primary features are complete.
+- [ ] **New alien sprite art** — Replace borrowed Space Invaders tiles with original designs inspired by Space Invader (French graffiti artist). Pure art task in `graphics.bas` bitmap data, no code changes. Design 1-wide and 2-wide variants.
+- [ ] **3-frame alien animation** — Extend current 2-frame DEFINE-swap animation to 3 frames. AnimFrame cycles 0→1→2→0. Third bitmap per alien type added to `graphics.bas`. Zero GRAM card cost (still 1 card per type, content swapped on tick). See Spec #18.
+- [ ] **2-tile boss shattering death animation** — Demon Attack style: on boss death, redefine the boss GRAM cards with 2-3 "shard" bitmaps and animate for ~15 frames before clearing. Zero net GRAM cost (cards freed at death). See Spec #19.
 
 ---
 
@@ -141,13 +148,15 @@ _Document existing patterns here as reference._
 ### Current State
 - Background music: DNB track via PLAY SIMPLE (4 speed gears: slow/mid/fast/panic)
 - SFX: Player shoot, alien death, explosions, powerup pickup, shield ping, saucer hit, chain combo noise, rogue dive rumble
-- Intellivoice: **Active in gameplay** — wave number announcement ("Wave One", "Wave Two", etc.) and "Shields Down" callout
+- Intellivoice: **Active in gameplay** — wave number, "Extra Life", "Shields Down", powerup names, auto-cannon on/off, "Incoming Horde", "Zod" on capture
 
 ### Tasks
+- [x] **Pea shooter SFX redesign** — Period 400 (~559 Hz), SfxType=7, vol 12, 3-frame bassy thump. Bomb launch given own SfxType=8, period 600 (~373 Hz), 5-frame deep thud. player.bas + waves.bas UpdateSfx.
+- [x] **Zod death cry (PSG-only)** — SfxType=10 descending squeal (pitch 70→+15/frame, vol 10→-1/frame, ~10 frames). Fires at all 3 rogue-kill sites: DestroyRogue, wingman-bullet-kills-rogue, rogue-body-kills-wingman. Voice removed (heard too frequently). waves.bas + ai.bas.
+- [x] **Wingman death animation** — 6-frame skeleton flash (yellow/green alternating) when rogue body-kills the wingman. Uses GRAM_SKELETON (card 16) + SPR_POWERUP, keeps FLAG_CAPTURE set during animation via WingmanExpTimer. Stores death position in CaptureTimer/CaptureStep. ai.bas + variables.bas.
 - [ ] Audit SFX variety (enough feedback for all events?)
 - [ ] Consider wave-specific music variation
 - [ ] Tune SFX volumes relative to music
-- [ ] Intellivoice callouts? ("WAVE 3", "EXTRA LIFE", etc.)
 
 ### Ideas
 - Victory fanfare on wave clear
@@ -212,7 +221,12 @@ See detailed spec #14 below — only pursue after feature-complete.
 - [x] Wave announcement transition (spec #6) — spinning WAVE N letters with color cascade, ALERT! and INCOMING HORDE! variants, wave banner spin-in/spin-out animation
 
 ### Near-Term
-- [ ] **SOL-36 skeleton death effect** (spec #17) — When the SOL-36 beam kills an alien, flash an invader skeleton sprite at that cell instead of the normal death pop. See spec below.
+- [x] **SOL-36 skeleton death effect** (spec #17) — Implemented: beam kills flash 2-frame animated skeleton at kill cells, restores card 16 on expiry.
+- [x] **Zod death cry** (spec #20) — PSG descending squeal SFX at all rogue-kill sites; wingman death gets 6-frame yellow/green skeleton flash animation.
+- [x] **Pea shooter SFX redesign** — Short bassy thump (period 400, 3 frames). Bomb launch given own SfxType=8 (period 600, 5 frames, deeper).
+- [ ] **New alien sprite art** — Replace borrowed tiles (see Polish Backlog).
+- [ ] **3-frame alien animation** (spec #18) — Extend DEFINE-swap to 3-frame cycle.
+- [ ] **2-tile boss shattering death** (spec #19) — Demon Attack style shard animation.
 - [ ] Destructible barriers/shields (spec #2)
 
 ### Medium-Term
@@ -222,6 +236,7 @@ See detailed spec #14 below — only pursue after feature-complete.
 - [ ] Player 2 controls Zod on title/game over (spec #4)
 - [ ] Zod shoots away letters on game over (spec #5)
 - [ ] Saucer explosion: escaping aliens (spec #12)
+- [ ] **In-game options menu with voice test** — Title screen option (e.g. keypad CLEAR) opens a minimal options screen: sound test, voice test (cycle phrases with disc/fire), difficulty toggle. The standalone `build_voice_test.sh` ROM serves as the dev prototype; this is the polished in-game version. Low priority — only pursue if ROM space permits after all primary features complete.
 
 ---
 
@@ -544,27 +559,68 @@ SkeletonGfx:
 
 ---
 
+### Spec #18: 3-Frame Alien Animation
+
+**Concept:** Extend current 2-frame DEFINE-swap animation to a 3-frame cycle for richer movement.
+
+**Implementation:**
+- Add a third bitmap table per alien type in `graphics.bas` (8 words each)
+- Change `AnimFrame` cycle from `XOR 1` (0↔1) to modulo-3 (`AnimFrame = AnimFrame + 1 : IF AnimFrame > 2 THEN AnimFrame = 0`)
+- DEFINE fires only on animation tick (every 24 frames) — negligible CPU impact
+
+**GRAM cost:** 0 (still 1 card per alien type, content swapped)
+**ROM cost:** ~8 words per alien type per new frame (bitmap data only)
+**Variable cost:** 0 (AnimFrame already exists)
+
+---
+
+### Spec #19: 2-Tile Boss Shattering Death Animation
+
+**Concept:** Demon Attack style — when a 2-wide boss dies, its two GRAM cards are briefly redefined with "shard" bitmaps that animate for ~15 frames before the tiles clear.
+
+**Implementation:**
+- On boss HP → 0: set `BossDeathTimer = 15`, store boss column/row
+- Each frame of timer: DEFINE boss cards with one of 2-3 shard bitmaps (cycling via timer bits)
+- At `BossDeathTimer = 0`: clear BACKTAB tiles, restore card content
+
+**GRAM cost:** 0 net (boss cards already allocated; shard bitmaps reuse those same cards)
+**ROM cost:** ~3 shard bitmaps × 8 words + render loop (~50 words total)
+**Variable cost:** 1 × 8-bit (`BossDeathTimer`)
+
+---
+
+### Spec #20: Zod Death Cry
+
+**Concept:** Intellivoice bark when Zod dies — either (a) the captured wingman is destroyed by an attacking rogue, or (b) the rogue itself is killed mid-dive.
+
+**Trigger locations:**
+- `ai.bas` ~line 68-73: wingman destroyed by rogue body collision → add `IF VOICE.AVAILABLE THEN VOICE PLAY zod_death_phrase`
+- Rogue killed in flight (bullet hit, MegaBeam, wingman bullet) → same call
+
+**Phoneme options (short, punchy):**
+- `GG1, AO, DD1, PA1, 0` — guttural "Gawd!" grunt
+- `ZZ, AO, PA2, 0` — cut-off "Zo—" like a death cry
+- User to decide character of the sound
+
+**ROM cost:** ~5 words (phoneme data) + 1-2 VOICE PLAY call sites
+
+---
+
 ## Resource Budget Summary
 
 ### GRAM (64 cards)
-**Currently allocated:** ~61 of 64 cards
-**Free slots:** 3 (cards 13, 41, 53)
-**Reclaimable during gameplay:** 12 (title font, cards 25-36)
-**Available for new features during gameplay:** 15 cards
+**Currently allocated:** 62 of 64 cards
+**Free slots during gameplay:** 2 (cards 32, 47)
+**Time-shared:** cards 19-20, 21-24, 25-27, 30-32 (title↔gameplay)
 
 ### Variables
-**8-bit:** 168/187 used (19 free) — *updated 2026-02-21*
+**8-bit:** 164/187 used (23 free) — *updated 2026-02-22*
 **16-bit:** 25/25 used (0 free — use bit-packing in #GameFlags for new booleans)
 **#GameFlags:** 15/16 bits used (bit 11 free)
 
-### ROM — *updated 2026-02-21 (36,306 words)*
-**Total:** 36,306 of 42,016 words used (5,710 available)
-**Seg 0:** 2,017 words free (main loop + Intellivoice runtime)
-**Seg 1:** 172 words free ⚠️ very tight — add new procedures to Seg 2 via `SEGMENT 2` directive
-**Seg 2:** 1,845 words free (collision, alien drawing, DATA tables)
-**Seg 3:** 639 words free (title animation + music data)
-**Seg 4:** 537 words free (AI systems + PlayerBombExplode)
-**Seg 5:** 901 words free (compact_score + PackedPairs)
+### ROM — *updated 2026-02-22 (36,869 words)*
+**Total:** 36,869 of 42,016 words used (5,147 available)
+**Seg 1:** ⚠️ AT LIMIT — all new code must go to Seg 2 via `SEGMENT 2`
 
 **If Seg 1 overflows:** Move procedures to Seg 2 with `SEGMENT 2` directive; cross-segment GOSUB works with MAP 2.
 

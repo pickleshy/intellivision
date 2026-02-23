@@ -193,7 +193,7 @@ GameLoop:
         ' Top-to-bottom row reveal with warp-in animation
         IF WaveRevealRow < ALIEN_ROWS - 1 THEN
             MarchCount = MarchCount + 1
-            IF MarchCount >= 3 THEN
+            IF MarchCount >= 2 THEN
                 ' Warp complete for this row, advance to next
                 MarchCount = 0
                 WaveRevealRow = WaveRevealRow + 1
@@ -204,7 +204,7 @@ GameLoop:
         ' Standard left-to-right reveal with warp-in animation
         IF WaveRevealCol < ALIEN_COLS - 1 THEN
             MarchCount = MarchCount + 1
-            IF MarchCount >= 3 THEN
+            IF MarchCount >= 2 THEN
                 ' Warp complete for this column, advance to next
                 MarchCount = 0
                 WaveRevealCol = WaveRevealCol + 1
@@ -445,8 +445,8 @@ GameLoop:
     ' Chain reaction laser SFX decay (takes priority over regular SFX)
     IF ChainTimer > 0 THEN
         ChainTimer = ChainTimer - 1
-        #ChainFreq1 = #ChainFreq1 + 10
-        #ChainFreq2 = #ChainFreq2 + 6
+        #ChainFreq1 = #ChainFreq1 + 20
+        #ChainFreq2 = #ChainFreq2 + 12
         IF (ChainTimer AND 1) = 0 THEN
             IF ChainVol > 0 THEN ChainVol = ChainVol - 1
         END IF

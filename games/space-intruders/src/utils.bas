@@ -294,8 +294,8 @@ SkullBossDeath: PROCEDURE
         PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + COL_RED + $1800
     END IF
     NeedRedraw = 1  ' Boss cells cleared — ensure stale tiles are wiped next frame
-    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 80
-    SOUND 2, 80, 15
+    SfxType = 1 : SfxVolume = 15 : #SfxPitch = 180
+    SOUND 2, 180, 15
     RETURN
 END
 

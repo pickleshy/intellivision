@@ -255,7 +255,21 @@ END
 ' UpdateSfx - Noise channel explosion with attack-decay
 ' --------------------------------------------
 UpdateSfx: PROCEDURE
-    IF SfxVolume = 0 THEN RETURN
+    IF SfxVolume = 0 THEN
+        IF FlyState > 0 THEN
+            ' Saucer ambient: lawnmower bass wobble (~124Hz <-> ~101Hz)
+            ' Toggles every 8 frames (~7.5Hz) — motor-cycling putt-putt rate
+            ' Period 1800/2200 = very deep bass square wave
+            IF ShimmerCount AND 8 THEN
+                SOUND 2, 1800, 8
+            ELSE
+                SOUND 2, 2200, 8
+            END IF
+        ELSE
+            SOUND 2, , 0  ' Silence channel C (covers saucer leaving screen without kill)
+        END IF
+        RETURN
+    END IF
 
     ' All SFX on channel 3 (SOUND 2) to coexist with PLAY SIMPLE music
     SOUND 2, #SfxPitch, SfxVolume
@@ -336,13 +350,55 @@ UpdateSfx: PROCEDURE
             SfxVolume = 0
         END IF
     ELSEIF SfxType = 7 THEN
-        ' Pea shooter: descending laser zap (pitch rises = lower tone)
-        #SfxPitch = #SfxPitch + 15
-        IF #SfxPitch > 800 THEN #SfxPitch = 800
-        IF SfxVolume > 1 THEN
-            SfxVolume = SfxVolume - 1
+        ' Pea shooter: static noise crack + deep hollow boom, then fast rising decay
+        ' Attack (vol>=9): noise period 14 (~4kHz) + tone ($DB) = static crackle on the boom
+        ' Decay (vol<9): pure tone only, pitch sweeps UP (-60/frame), -3/frame fast out
+        IF SfxVolume >= 9 THEN
+            #SfxPitch = #SfxPitch + 75  ' Descend: boom gets deeper on attack
+            POKE $1F9, 14               ' Static noise ~4kHz — crackle texture
+            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = boom + static
+            IF SfxVolume > 2 THEN
+                SfxVolume = SfxVolume - 2
+            ELSE
+                SfxVolume = 0
+            END IF
         ELSE
-            SfxVolume = 0
+            POKE $1F8, PEEK($1F8) OR $20   ' Noise off — pure tone for decay tail
+            IF #SfxPitch > 60 THEN
+                #SfxPitch = #SfxPitch - 60  ' Ascend: pitch rises on decay tail
+            END IF
+            IF SfxVolume > 3 THEN
+                SfxVolume = SfxVolume - 3   ' Faster decay on tail
+            ELSE
+                SfxVolume = 0
+            END IF
+        END IF
+    ELSEIF SfxType = 8 THEN
+        ' Bomb launch: deep bass thrum + crack + whoosh arc (~28 frames, 0.47 sec)
+        ' Phase 1 (vol>=12, ~4 frames): tone 2000 (~112Hz) + noise 4 (~14kHz)
+        '   = deep bass thrum layered with bright crack — cannon body + punch
+        '   $DB clears bits 2+5: enables both tone C AND noise C
+        ' Phase 2 (vol 7-11, ~10 frames): noise 15 (~3.7kHz) — mid hiss
+        '   tone switches to inaudible 4000 (~56Hz)
+        ' Phase 3 (vol<=6, ~14 frames): noise 28 (~2kHz) — deep whoosh
+        IF SfxVolume >= 12 THEN
+            POKE $1F9, 4
+            POKE $1F8, PEEK($1F8) AND $DB  ' Enable tone C + noise C (bass thrum + crack)
+        ELSEIF SfxVolume >= 7 THEN
+            #SfxPitch = 4000               ' Switch tone to inaudible
+            POKE $1F9, 15
+            POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only
+        ELSE
+            POKE $1F9, 28
+            POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only
+        END IF
+        ' Decay every other frame (ShimmerCount parity) — doubles total duration
+        IF (ShimmerCount AND 1) = 0 THEN
+            IF SfxVolume > 1 THEN
+                SfxVolume = SfxVolume - 1
+            ELSE
+                SfxVolume = 0
+            END IF
         END IF
     ELSEIF SfxType = 9 THEN
         ' Shield absorb: high-pitched ping with fast decay
@@ -353,10 +409,93 @@ UpdateSfx: PROCEDURE
         ELSE
             SfxVolume = 0
         END IF
+    ELSEIF SfxType = 10 THEN
+        ' Zod death: soft descending cry — heard frequently, must not grate
+        ' Starts ~2556 Hz (pitch 70), slides ~1 octave over ~10 frames at vol 10
+        #SfxPitch = #SfxPitch + 15
+        IF SfxVolume > 1 THEN
+            SfxVolume = SfxVolume - 1
+        ELSE
+            SfxVolume = 0
+        END IF
+    ELSEIF SfxType = 11 THEN
+        ' Auto-fire machine gun chk: deep thunk, muted, repeats at bullet cadence
+        ' Tone 1500 (~149Hz) + noise 26 (~2.1kHz) layered = deeper chunky body
+        ' $DB enables both tone C + noise C for each short burst
+        POKE $1F9, 26
+        POKE $1F8, PEEK($1F8) AND $DB  ' Enable tone C + noise C
+        IF SfxVolume > 5 THEN
+            SfxVolume = SfxVolume - 5
+        ELSE
+            SfxVolume = 0
+        END IF
+    ELSEIF SfxType = 12 THEN
+        ' Saucer kill: metallic "schwing" — noisy schw attack + long tonal ring
+        ' Pitch ~1118Hz (period 200), gentle drift +2/frame = natural ring decay feel
+        ' Attack (vol>=12, ~2 frames at -3/frame): noise period 8 (~7kHz) + tone ($DB)
+        '   = "schw" metallic blade/impact
+        ' Ring (vol<12): pure tone only, decay every other frame = ~18 frame sustain
+        #SfxPitch = #SfxPitch + 2
+        IF SfxVolume >= 12 THEN
+            POKE $1F9, 8
+            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = schw attack
+            IF SfxVolume > 3 THEN
+                SfxVolume = SfxVolume - 3
+            ELSE
+                SfxVolume = 0
+            END IF
+        ELSE
+            POKE $1F8, PEEK($1F8) OR $20   ' Tone C only = pure metallic ring
+            IF (ShimmerCount AND 1) = 0 THEN
+                IF SfxVolume > 1 THEN
+                    SfxVolume = SfxVolume - 1
+                ELSE
+                    SfxVolume = 0
+                END IF
+            END IF
+        END IF
+    ELSEIF SfxType = 13 THEN
+        ' Powerup pickup: metallic belt-buckle snap + rising tonal ring (~7 frames)
+        ' Period sweeps 600→250 (-50/frame) = rising pitch ~373Hz→890Hz = positive acquire feel
+        ' Attack (vol>=10, ~2 frames): noise period 6 (~9kHz) + tone ($DB) = metallic clank
+        ' Ring (vol<10, ~5 frames): pure tone only ($20), rising pitch sustain
+        IF #SfxPitch > 50 THEN
+            #SfxPitch = #SfxPitch - 50    ' Sweep up: rising pitch = "acquired!" feel
+        END IF
+        IF SfxVolume >= 10 THEN
+            POKE $1F9, 6
+            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = metallic snap
+            IF SfxVolume > 3 THEN
+                SfxVolume = SfxVolume - 3
+            ELSE
+                SfxVolume = 0
+            END IF
+        ELSE
+            POKE $1F8, PEEK($1F8) OR $20   ' Tone C only = clean ring
+            IF SfxVolume > 2 THEN
+                SfxVolume = SfxVolume - 2
+            ELSE
+                SfxVolume = 0
+            END IF
+        END IF
     ELSE
-        ' Alien: fast decay (2 per frame)
-        IF SfxVolume > 2 THEN
-            SfxVolume = SfxVolume - 2
+        ' Alien hit: deep bass thump attack + rising noisy decay (~6 frames)
+        ' Start period 1800 (~124Hz), sweep up -160/frame to ~760 (~279Hz)
+        ' Attack (vol>=9, ~2 frames): bass tone + bright noise crack = punchy thunk
+        '   $DB clears bits 2+5: tone C + noise C both on
+        ' Decay tail (vol<9, ~4 frames): noise only, mid-range period 22 (~2.5kHz)
+        IF #SfxPitch > 160 THEN
+            #SfxPitch = #SfxPitch - 160   ' Sweep upward faster: bass → mid
+        END IF
+        IF SfxVolume >= 9 THEN
+            POKE $1F9, 8                   ' Bright crack ~7kHz on attack
+            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = bass thump + crack
+        ELSE
+            POKE $1F9, 22                  ' Mid noise on decay tail
+            POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only
+        END IF
+        IF SfxVolume > 3 THEN
+            SfxVolume = SfxVolume - 3
         ELSE
             SfxVolume = 0
         END IF
@@ -471,8 +610,8 @@ Sol36Kill: PROCEDURE
             IF #ScreenPos <= FlyX + 15 THEN
                 ' Destroy saucer
                 GOSUB DeactivateSaucer
-                SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-                SOUND 2, 150, 15
+                SfxType = 12 : SfxVolume = 15 : #SfxPitch = 200
+                SOUND 2, 200, 15
                 #Mask = 100 : GOSUB AddToScore
                 ' Drop power-up from saucer position
                 PowerUpState = 1
@@ -512,8 +651,8 @@ DestroyRogue: PROCEDURE
     #Mask = 50 : GOSUB AddToScore
     #GameFlags = #GameFlags OR FLAG_SHOTLAND
     GOSUB BumpChain
-    SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
-    SOUND 2, 180, 14
+    SfxType = 10 : SfxVolume = 10 : #SfxPitch = 70
+    SOUND 2, 70, 10
     RETURN
 END
 
@@ -684,7 +823,7 @@ LoadPatternB: PROCEDURE
     FOR LoopVar = 0 TO MAX_BOSSES - 1
         BossHP(LoopVar) = 0
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0 : WingmanExpTimer = 0
 
     ' ── LEVEL DESIGN: Boss Placement — data-driven (edit tables in data_tables.bas) ──
     ' BossHeader bits: 0-2=BossCount, 3=OrbitStep=0, 4=OrbitStep2=5
@@ -843,7 +982,7 @@ ReloadHorde: PROCEDURE
     FOR LoopVar = 0 TO ALIEN_ROWS - 1
         #AlienRow(LoopVar) = $1FF
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0 : WingmanExpTimer = 0
     ' Reset positions
     GOSUB ResetAlienGrid
     CurrentMarchSpeed = BaseMarchSpeed
@@ -909,7 +1048,7 @@ StartNewWave: PROCEDURE
     FOR LoopVar = 0 TO MAX_BOSSES - 1
         BossHP(LoopVar) = 0
     NEXT LoopVar
-    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0
+    BossCount = 0 : BombExpTimer = 0 : ExplosionTimer = 0 : OrbitStep = 255 : OrbitStep2 = 255 : SkeletonTimer = 0 : SkeletonPos = 0 : SkeletonRowsB = 0 : WingmanExpTimer = 0
 
     ' Pattern A = pure small alien horde (no bosses)
     ' Bosses only appear in Pattern B formations
@@ -1138,6 +1277,12 @@ auto_off_phrase:
 
 reinforce_phrase:
     VOICE IH, NN1, KK2, AX, MM, IH, NN1, PA2, HH1, OR, DD1, PA1, 0
+
+zod_phrase:
+    VOICE ZZ, AA, AA, AA, DD1, PA1, 0
+
+zod_death_phrase:
+    VOICE ZZ, AA, AA, AA, AA, DD1, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
 ' Index by PowerUpType (0=beam, 1=rapid, 2=bomb, 3=mega, 4=shield)

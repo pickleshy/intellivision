@@ -121,8 +121,8 @@ OrbiterHitEffect: PROCEDURE
     #GameFlags = #GameFlags OR FLAG_SHOTLAND
     GOSUB BumpChain
     #Mask = 25 : GOSUB AddToScore
-    SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
-    SOUND 2, 200, 12
+    SfxType = 1 : SfxVolume = 12 : #SfxPitch = 1800
+    SOUND 2, 1800, 12
     RETURN
 END
 
@@ -384,8 +384,8 @@ CheckOneColumn: PROCEDURE
                         END IF
                         #GameFlags = #GameFlags OR FLAG_SHOTLAND  ' Hit landed — chain preserved
                         GOSUB UpdateBossColor
-                        SfxType = 1 : SfxVolume = 14 : #SfxPitch = 120
-                        SOUND 2, 120, 14
+                        SfxType = 1 : SfxVolume = 14 : #SfxPitch = 220
+                        SOUND 2, 220, 14
                         ' Bomb weapon: area explosion even on non-kill hit
                         GOSUB TriggerPlayerBomb
                         RETURN
@@ -445,8 +445,8 @@ CheckOneColumn: PROCEDURE
                 END IF
 
                 ' Noise explosion SFX (short punchy crunch)
-                SfxType = 1 : SfxVolume = 12 : #SfxPitch = 200
-                SOUND 2, 200, 12  ' Immediate tone hit on channel 3
+                SfxType = 1 : SfxVolume = 12 : #SfxPitch = 1800
+                SOUND 2, 1800, 12  ' Immediate bass hit on channel 3
 
                 ' Clear previous explosion tile if still active
                 GOSUB ClearPrevExplosion

@@ -33,6 +33,28 @@ END
 ' UpdateCapture - Orbit captured wingman around player ship
 ' --------------------------------------------
 UpdateCapture: PROCEDURE
+    ' Wingman death skeleton flash — FLAG_CAPTURE stays set so we keep being called
+    IF WingmanExpTimer > 0 THEN
+        WingmanExpTimer = WingmanExpTimer - 1
+        IF WingmanExpTimer = 0 THEN
+            ' Animation done: clear capture, hide sprite, restore card 16
+            #GameFlags = #GameFlags AND $FFFB   ' Clear FLAG_CAPTURE (bit 2)
+            SPRITE SPR_POWERUP, 0, 0, 0
+            IF SkeletonTimer = 0 THEN DEFINE GRAM_SKELETON, 1, ExplosionGfx3
+            RETURN
+        END IF
+        ' Alternate yellow/green each frame — CaptureTimer=death X, CaptureStep=death Y
+        IF WingmanExpTimer AND 1 THEN
+            SPRITE SPR_POWERUP, CaptureTimer + SPR_VISIBLE, CaptureStep, GRAM_SKELETON * 8 + COL_YELLOW + $0800
+        ELSE
+            SPRITE SPR_POWERUP, CaptureTimer + SPR_VISIBLE, CaptureStep, GRAM_SKELETON * 8 + COL_GREEN + $0800
+        END IF
+        RETURN
+    END IF
+
+    ' Normal guard — exit if no capture active
+    IF (#GameFlags AND FLAG_CAPTURE) = 0 THEN RETURN
+
     ' Advance orbit step every 2 frames (16-step circle, slower orbit)
     IF (CaptureTimer AND 1) = 0 THEN
         CaptureStep = CaptureStep + 1
@@ -65,15 +87,22 @@ UpdateCapture: PROCEDURE
             IF HitCol + 8 >= RogueX THEN
                 IF RogueY + 6 >= HitRow THEN
                     IF HitRow + 6 >= RogueY THEN
-                        ' Rogue destroys wingman! Release capture
+                        ' Rogue destroys wingman! Skeleton death flash
+                        ' Clear any in-flight capture bullet tile immediately
                         IF #GameFlags AND FLAG_CAPBULLET THEN
                             #ScreenPos = Row20Data(CapBulletRow) + CapBulletCol
                             IF #ScreenPos < 240 THEN PRINT AT #ScreenPos, 0
                         END IF
-                        #GameFlags = #GameFlags AND $FFF3  ' Clear FLAG_CAPTURE + FLAG_CAPBULLET
-                        SPRITE SPR_POWERUP, 0, 0, 0
-                        SfxType = 1 : SfxVolume = 12 : #SfxPitch = 150
-                        SOUND 2, 150, 12
+                        #GameFlags = #GameFlags AND $FFF7  ' Clear FLAG_CAPBULLET only; keep FLAG_CAPTURE
+                        ' Store death position in freed vars (CaptureTimer=X, CaptureStep=Y)
+                        CaptureTimer = HitCol
+                        CaptureStep  = HitRow
+                        WingmanExpTimer = 6
+                        ' Load skeleton bitmap into card 16 — takes effect at next VBLANK
+                        DEFINE GRAM_SKELETON, 1, IntruderSkeletonGfx
+                        ShakeTimer = 5
+                        SfxType = 10 : SfxVolume = 10 : #SfxPitch = 70
+                        SOUND 2, 70, 10
                         RETURN
                     END IF
                 END IF
@@ -147,8 +176,8 @@ UpdateCapture: PROCEDURE
                                     #Mask = 50 : GOSUB AddToScore
                                     #GameFlags = #GameFlags OR FLAG_SHOTLAND
                                     GOSUB BumpChain
-                                    SfxType = 1 : SfxVolume = 14 : #SfxPitch = 180
-                                    SOUND 2, 180, 14
+                                    SfxType = 10 : SfxVolume = 10 : #SfxPitch = 70
+                                    SOUND 2, 70, 10
                                 END IF
                             END IF
                         END IF
@@ -914,9 +943,9 @@ SaucerHit: PROCEDURE
     #GameFlags = #GameFlags AND $FFFE
     ChainCount = 0  ' Saucer is not an alien — break chain
     GOSUB DeactivateSaucer
-    ' Saucer crash SFX (deep rumble + descending pitch)
-    SfxType = 2 : SfxVolume = 15 : #SfxPitch = 150
-    SOUND 2, 150, 15  ' Immediate tone hit on channel 3
+    ' Saucer kill SFX: metallic schwing
+    SfxType = 12 : SfxVolume = 15 : #SfxPitch = 200
+    SOUND 2, 200, 15
     ' Bonus points
     #Mask = 100 : GOSUB AddToScore
     ' Drop power-up from saucer position
