@@ -1587,7 +1587,6 @@ sprite_2_1:
     BITMAP "X.X..X.."
     BITMAP "....XX.."
 
-' sprite_0  |  GRAM 0–1  |  MOB Sprite  |  White (7)
 sprite_3_0:
     BITMAP "........"
     BITMAP ".......X"
@@ -1687,3 +1686,113 @@ sprite_8:
     BITMAP "..X...X."
     BITMAP ".X.X.X.X"
     BITMAP "........"
+
+sprite_9:
+    BITMAP "........"
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP ".X.XX.X."
+    BITMAP "XXXXXXXX"
+    BITMAP "X.X..X.X"
+    BITMAP "X.X..X.X"
+    BITMAP "........"
+
+sprite_10_0:
+    BITMAP "........"
+    BITMAP "......X."
+    BITMAP ".....XXX"
+    BITMAP ".....X.X"
+    BITMAP ".....XXX"
+    BITMAP "....XXXX"
+    BITMAP "...XX.X."
+    BITMAP "........"
+
+sprite_10_1:
+    BITMAP "........"
+    BITMAP "X......."
+    BITMAP "XX......"
+    BITMAP ".X......"
+    BITMAP "XX......"
+    BITMAP "XXX....."
+    BITMAP "X.XX...."
+    BITMAP "........"
+
+sprite_11_0:
+    BITMAP "........"
+    BITMAP "......X."
+    BITMAP "....X.XX"
+    BITMAP ".....X.."
+    BITMAP "......XX"
+    BITMAP ".....X.X"
+    BITMAP "..X.X.X."
+    BITMAP "........"
+
+sprite_11_1:
+    BITMAP "........"
+    BITMAP ".X......"
+    BITMAP "XXX.X..."
+    BITMAP "X..X...."
+    BITMAP "XXX....."
+    BITMAP ".X.X...."
+    BITMAP "X.X....."
+    BITMAP "........"
+
+sprite_12_0:
+    BITMAP ".....XXX"
+    BITMAP "...XX..X"
+    BITMAP "..XXXXXX"
+    BITMAP "..XX.XX."
+    BITMAP "..XX...X"
+    BITMAP "....XX.X"
+    BITMAP "....XX.X"
+    BITMAP "....XX.."
+
+sprite_12_1:
+    BITMAP "XXXX...."
+    BITMAP "XX..XX.."
+    BITMAP "XXXXXX.."
+    BITMAP "..XX.XX."
+    BITMAP "XX...XX."
+    BITMAP "XX.XX..."
+    BITMAP "XX.XX..."
+    BITMAP "...XX..."
+
+sprite_13_0:
+    BITMAP "......X."
+    BITMAP "......XX"
+    BITMAP "...X.XXX"
+    BITMAP "...XXX.X"
+    BITMAP ".....X.X"
+    BITMAP "....XXXX"
+    BITMAP "...XX.X."
+    BITMAP "..XX...X"
+
+sprite_13_1:
+    BITMAP ".X......"
+    BITMAP "XX......"
+    BITMAP "XXX.X..."
+    BITMAP "X.XXX..."
+    BITMAP "X.X....."
+    BITMAP "XXXX...."
+    BITMAP ".X.XX..."
+    BITMAP "X...XX.."
+
+sprite_14_0:
+    BITMAP "......X."
+    BITMAP ".......X"
+    BITMAP "......XX"
+    BITMAP ".....XX."
+    BITMAP "....XXX."
+    BITMAP "......XX"
+    BITMAP ".....XXX"
+    BITMAP ".....X.X"
+
+sprite_14_1:
+    BITMAP "..X....."
+    BITMAP "XX......"
+    BITMAP "XXX....."
+    BITMAP "X.XX...."
+    BITMAP "X.XXX..."
+    BITMAP "XXX....."
+    BITMAP "XXXX...."
+    BITMAP ".X.X...."
