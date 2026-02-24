@@ -149,6 +149,22 @@ GOLetterStaticGram:
 EyeShimmerColors:
     DATA COL_RED, COL_RED, COL_YELLOW, COL_WHITE, COL_YELLOW, COL_RED
 
+' Zod exit wobble Y path — 48 precalculated positions for smooth non-linear flight.
+' 4 sine phases with changing period and amplitude. All steps differ by ≤2 pixels.
+'   Phase 1 (steps  0-15): period 16, amp 3 — long slow undulation on departure
+'   Phase 2 (steps 16-25): period 10, amp 4 — building energy, wider swings
+'   Phase 3 (steps 26-37): period 12, amp 4 — peak dynamics, most expressive
+'   Phase 4 (steps 38-47): period 12, amp 2 — settling out as Zod exits
+ZodExitY:
+    DATA 56, 57, 58, 59, 59, 59, 58, 57   ' Phase 1a
+    DATA 56, 55, 54, 53, 53, 53, 54, 55   ' Phase 1b
+    DATA 56, 58, 60, 60, 58, 56, 54, 52   ' Phase 2a
+    DATA 52, 54                            ' Phase 2b
+    DATA 56, 58, 59, 60, 59, 58, 56, 54   ' Phase 3a
+    DATA 53, 52, 53, 54                    ' Phase 3b
+    DATA 56, 57, 58, 58, 58, 57, 56, 55   ' Phase 4a
+    DATA 54, 54                            ' Phase 4b
+
     SEGMENT 2  ' Title drawing procs moved to Seg 2 (Seg 1 critically full)
 
 ' --- Draw 3x3 alien grid on BACKTAB ---

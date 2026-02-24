@@ -134,20 +134,14 @@ TitleLoop:
             #FlyPhase = 0
         END IF
     ELSEIF FlyState = 4 THEN
-        ' Exit right with Y wobble (hand-coded)
+        ' Exit right with smooth non-linear wobble (ZodExitY table, 48 steps)
         FlySpeed = FlySpeed + 1
         IF FlySpeed >= 3 THEN
             FlySpeed = 0
             FlyX = FlyX + 4
-            #FlyPhase = #FlyPhase + 1
-            IF (#FlyPhase AND 3) = 0 THEN
-                FlyY = 53
-            ELSEIF (#FlyPhase AND 3) = 1 THEN
-                FlyY = 56
-            ELSEIF (#FlyPhase AND 3) = 2 THEN
-                FlyY = 59
-            ELSE
-                FlyY = 56
+            FlyY = ZodExitY(#FlyPhase)      ' Lookup before advance
+            IF #FlyPhase < 47 THEN
+                #FlyPhase = #FlyPhase + 1   ' Clamp at last entry if exit is slow
             END IF
             IF FlyX > 167 THEN
                 FlyState = 5       ' Offscreen pause

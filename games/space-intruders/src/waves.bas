@@ -277,6 +277,7 @@ UpdateSfx: PROCEDURE
     ' Decay based on type
     IF SfxType = 2 THEN
         ' Saucer crash: slow decay + descending pitch (sustained crunch)
+        POKE $1F8, PEEK($1F8) OR $20   ' Noise C off — clear stale state from pea shot
         IF (BulletColor AND 1) = 0 THEN
             IF SfxVolume > 1 THEN
                 SfxVolume = SfxVolume - 1
@@ -343,6 +344,7 @@ UpdateSfx: PROCEDURE
         END IF
     ELSEIF SfxType = 6 THEN
         ' Parry: bright zap - fast ascending pitch + very fast decay
+        POKE $1F8, PEEK($1F8) OR $20   ' Noise C off — clear stale state from pea shot
         #SfxPitch = #SfxPitch + 12
         IF SfxVolume > 3 THEN
             SfxVolume = SfxVolume - 3
@@ -350,28 +352,17 @@ UpdateSfx: PROCEDURE
             SfxVolume = 0
         END IF
     ELSEIF SfxType = 7 THEN
-        ' Pea shooter: static noise crack + deep hollow boom, then fast rising decay
-        ' Attack (vol>=9): noise period 14 (~4kHz) + tone ($DB) = static crackle on the boom
-        ' Decay (vol<9): pure tone only, pitch sweeps UP (-60/frame), -3/frame fast out
-        IF SfxVolume >= 9 THEN
-            #SfxPitch = #SfxPitch + 75  ' Descend: boom gets deeper on attack
-            POKE $1F9, 14               ' Static noise ~4kHz — crackle texture
-            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = boom + static
-            IF SfxVolume > 2 THEN
-                SfxVolume = SfxVolume - 2
-            ELSE
-                SfxVolume = 0
-            END IF
+        ' Pea shooter: pure noise burst — classic Intellivision shot crack
+        ' Period 6 (~9.3kHz) drifts to ~15 (~3.7kHz) as vol drops = crack → pop → gone
+        ' #SfxPitch = 0 → tone at ~56kHz (ultrasonic, silent) — noise does all the work
+        ' Total: ~4 frames at -3/frame = ~67ms, short and punchy
+        #SfxPitch = 0
+        POKE $1F9, 6 + (12 - SfxVolume)    ' Period 6→~14 as vol drops (crack deepens)
+        POKE $1F8, PEEK($1F8) AND $DF       ' Noise C on
+        IF SfxVolume > 3 THEN
+            SfxVolume = SfxVolume - 3
         ELSE
-            POKE $1F8, PEEK($1F8) OR $20   ' Noise off — pure tone for decay tail
-            IF #SfxPitch > 60 THEN
-                #SfxPitch = #SfxPitch - 60  ' Ascend: pitch rises on decay tail
-            END IF
-            IF SfxVolume > 3 THEN
-                SfxVolume = SfxVolume - 3   ' Faster decay on tail
-            ELSE
-                SfxVolume = 0
-            END IF
+            SfxVolume = 0
         END IF
     ELSEIF SfxType = 8 THEN
         ' Bomb launch: deep bass thrum + crack + whoosh arc (~28 frames, 0.47 sec)
@@ -401,9 +392,18 @@ UpdateSfx: PROCEDURE
             END IF
         END IF
     ELSEIF SfxType = 9 THEN
-        ' Shield absorb: high-pitched ping with fast decay
-        #SfxPitch = #SfxPitch + 50
-        IF #SfxPitch > 1200 THEN #SfxPitch = 1200
+        ' Shield impact: lasery crash — high noise+tone attack, descending laser tail
+        ' Period 65→215 over 7 frames @ +25/frame: 3.4kHz→828Hz (bright → mid)
+        ' Attack (vol>=9, ~3 frames): noise period 4 (~14kHz) + tone = crash impact crack
+        ' Tail   (vol<9,  ~4 frames): pure tone, still descending = laser bleed-off
+        ' Vol 13 @ -2/frame: 7 frames (~117ms) — punchy but not lingering
+        #SfxPitch = #SfxPitch + 25     ' Sweep down in frequency each frame
+        IF SfxVolume >= 9 THEN
+            POKE $1F9, 4               ' High noise ~14kHz = crash impact
+            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C
+        ELSE
+            POKE $1F8, PEEK($1F8) OR $20   ' Tone C only = laser tail
+        END IF
         IF SfxVolume > 2 THEN
             SfxVolume = SfxVolume - 2
         ELSE
@@ -412,6 +412,7 @@ UpdateSfx: PROCEDURE
     ELSEIF SfxType = 10 THEN
         ' Zod death: soft descending cry — heard frequently, must not grate
         ' Starts ~2556 Hz (pitch 70), slides ~1 octave over ~10 frames at vol 10
+        POKE $1F8, PEEK($1F8) OR $20   ' Noise C off — clear stale state from pea shot
         #SfxPitch = #SfxPitch + 15
         IF SfxVolume > 1 THEN
             SfxVolume = SfxVolume - 1
@@ -478,24 +479,24 @@ UpdateSfx: PROCEDURE
                 SfxVolume = 0
             END IF
         END IF
-    ELSE
-        ' Alien hit: deep bass thump attack + rising noisy decay (~6 frames)
-        ' Start period 1800 (~124Hz), sweep up -160/frame to ~760 (~279Hz)
-        ' Attack (vol>=9, ~2 frames): bass tone + bright noise crack = punchy thunk
-        '   $DB clears bits 2+5: tone C + noise C both on
-        ' Decay tail (vol<9, ~4 frames): noise only, mid-range period 22 (~2.5kHz)
-        IF #SfxPitch > 160 THEN
-            #SfxPitch = #SfxPitch - 160   ' Sweep upward faster: bass → mid
-        END IF
-        IF SfxVolume >= 9 THEN
-            POKE $1F9, 8                   ' Bright crack ~7kHz on attack
-            POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = bass thump + crack
+    ELSEIF SfxType = 14 THEN
+        ' Alien kill: spongey bwop — pure tone, slow decay, gentle pitch descent
+        ' Period 180→444 over 12 frames @ +22/frame: 1.24kHz→505Hz (mid → mid-low)
+        ' Vol 12 @ -1/frame: 12→1→0 = 12 frames (~200ms) — real body, not a blip
+        ' Pure tone only — no noise keeps the attack soft and rounded
+        POKE $1F8, PEEK($1F8) OR $20   ' Noise C off — pure tone only
+        #SfxPitch = #SfxPitch + 22     ' Gentle pitch descent each frame
+        IF SfxVolume > 1 THEN
+            SfxVolume = SfxVolume - 1
         ELSE
-            POKE $1F9, 22                  ' Mid noise on decay tail
-            POKE $1F8, PEEK($1F8) AND $DF  ' Noise C only
+            SfxVolume = 0
         END IF
-        IF SfxVolume > 3 THEN
-            SfxVolume = SfxVolume - 3
+    ELSE
+        ' Misc tonal SFX (SfxType 1): wingman pew, boss ping, soft zap
+        ' Pure tone, no noise — clear any stale noise C from prior SFX
+        POKE $1F8, PEEK($1F8) OR $20   ' Noise C off
+        IF SfxVolume > 2 THEN
+            SfxVolume = SfxVolume - 2
         ELSE
             SfxVolume = 0
         END IF

@@ -455,9 +455,9 @@ CheckOneColumn: PROCEDURE
                     #Mask = 50 : GOSUB AddToScore
                 END IF
 
-                ' Noise explosion SFX (short punchy crunch)
-                SfxType = 1 : SfxVolume = 12 : #SfxPitch = 1800
-                SOUND 2, 1800, 12  ' Immediate bass hit on channel 3
+                ' Spongey bwop kill SFX: slow decay descending tone (~200ms)
+                SfxType = 14 : SfxVolume = 12 : #SfxPitch = 180
+                SOUND 2, 180, 12  ' Mid-range start on channel 3
 
                 ' Clear previous explosion tile if still active
                 GOSUB ClearPrevExplosion
@@ -936,8 +936,8 @@ SpinWaveBannerLetter: PROCEDURE
     IF WaveBannerPhase >= 4 THEN RETURN     ' All letters done, no-op
     Col = 127 + WaveBannerPhase             ' W=127, A=128, V=129, E=130
     IF WaveBannerFrame = 1 THEN
-        ' Narrow frame: card 32 holds current phase's narrow bitmap
-        PRINT AT Col, GRAM_FONT_T * 8 + 1 + $0800
+        ' Narrow frame: white — letter catching light as it turns
+        PRINT AT Col, GRAM_FONT_T * 8 + COL_WHITE + $0800
         ' Pre-load NEXT phase's narrow bitmap into card 32 for next phase Frame 1
         IF WaveBannerPhase = 0 THEN
             DEFINE GRAM_FONT_T, 1, WaveSpinAGfx
@@ -948,8 +948,8 @@ SpinWaveBannerLetter: PROCEDURE
         END IF
         ' No DEFINE at Phase 3 (E is the last)
     ELSEIF WaveBannerFrame = 2 THEN
-        ' Edge-on: card 47 holds WaveSpinEdgeGfx (pre-loaded at StartNewWave)
-        PRINT AT Col, GRAM_ORBITER * 8 + 1 + $0800
+        ' Edge-on: white — light glint at the moment the letter is fully side-on
+        PRINT AT Col, GRAM_ORBITER * 8 + COL_WHITE + $0800
     ELSEIF WaveBannerFrame = 3 THEN
         ' Blank: letter has spun away
         PRINT AT Col, 0

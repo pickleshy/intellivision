@@ -1545,3 +1545,145 @@ ShieldArcGfx:
     BITMAP "#.####.#"
     BITMAP "###..###"
 
+' === SPRITES from the French grafitti artist, SPACE INVADER
+
+sprite_0_0:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "......X."
+    BITMAP "....XXXX"
+    BITMAP "....X..X"
+    BITMAP "...XXXXX"
+    BITMAP "...X..X."
+    BITMAP "........"
+
+sprite_0_1:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".X......"
+    BITMAP "XXX....."
+    BITMAP "..X....."
+    BITMAP "XXX....."
+    BITMAP "X.XX...."
+    BITMAP "........"
+
+sprite_2_0:
+    BITMAP "........"
+    BITMAP "......XX"
+    BITMAP ".....XXX"
+    BITMAP ".....X.."
+    BITMAP "...XXXXX"
+    BITMAP "...X.XXX"
+    BITMAP "...X..X."
+    BITMAP "...XX..."
+
+sprite_2_1:
+    BITMAP "..XXXX.."
+    BITMAP "XXXXXX.."
+    BITMAP "XXX.XX.."
+    BITMAP "XX..X..."
+    BITMAP "XXXXXX.."
+    BITMAP "XXXX.X.."
+    BITMAP "X.X..X.."
+    BITMAP "....XX.."
+
+' sprite_0  |  GRAM 0–1  |  MOB Sprite  |  White (7)
+sprite_3_0:
+    BITMAP "........"
+    BITMAP ".......X"
+    BITMAP "......XX"
+    BITMAP "......X."
+    BITMAP ".....XXX"
+    BITMAP "....XX.X"
+    BITMAP "........"
+    BITMAP "........"
+
+sprite_3_1:
+    BITMAP "........"
+    BITMAP "XX......"
+    BITMAP "XXX....."
+    BITMAP "X.X....."
+    BITMAP "XXXX...."
+    BITMAP ".X.XX..."
+    BITMAP "X......."
+    BITMAP "........"
+
+sprite_4:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "...X.X.."
+    BITMAP "..XXXXX."
+    BITMAP "..X.X.X."
+    BITMAP ".XXXXXXX"
+    BITMAP ".X.X.X.X"
+    BITMAP "........"
+
+sprite_5_0:
+    BITMAP ".......X"
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".......X"
+    BITMAP "...XX.XX"
+    BITMAP ".......X"
+    BITMAP "........"
+    BITMAP ".X.X.X.X"
+
+sprite_5_1:
+    BITMAP "..X....."
+    BITMAP "X..X...."
+    BITMAP "XXXXX..."
+    BITMAP "XXXXXX.."
+    BITMAP "..X..X.."
+    BITMAP "XXXXXXX."
+    BITMAP "X..X..X."
+    BITMAP "..X..X.."
+
+sprite_6_0:
+    BITMAP "......XX"
+    BITMAP "...X.XXX"
+    BITMAP "...XX..X"
+    BITMAP "...X.XXX"
+    BITMAP "......X."
+    BITMAP ".......X"
+    BITMAP "........"
+    BITMAP "........"
+
+sprite_6_1:
+    BITMAP "XX......"
+    BITMAP "XXX.X..."
+    BITMAP "..XXX..."
+    BITMAP "XXX.X..."
+    BITMAP ".X......"
+    BITMAP "..X....."
+    BITMAP "X..X...."
+    BITMAP "........"
+
+sprite_7_0:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP ".......X"
+    BITMAP "......XX"
+    BITMAP "........"
+    BITMAP ".....XXX"
+    BITMAP ".....X.X"
+    BITMAP "....XX.."
+
+sprite_7_1:
+    BITMAP "........"
+    BITMAP "........"
+    BITMAP "XXX....."
+    BITMAP "XXX....."
+    BITMAP "X..X...."
+    BITMAP "XXXX...."
+    BITMAP ".X.X...."
+    BITMAP "...XX..."
+
+sprite_8:
+    BITMAP "........"
+    BITMAP "...X.X.."
+    BITMAP "..XXXXX."
+    BITMAP ".X..X..X"
+    BITMAP ".XXXXXXX"
+    BITMAP "..X...X."
+    BITMAP ".X.X.X.X"
+    BITMAP "........"

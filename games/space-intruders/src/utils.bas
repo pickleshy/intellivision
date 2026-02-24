@@ -202,8 +202,8 @@ END
 ' --- HitShield: Absorb a hit on the shield, announce if shields down ---
 HitShield: PROCEDURE
     ShieldHits = ShieldHits - 1  ' audit-ignore: all callers guard with IF ShieldHits > 0 THEN
-    SfxType = 9 : SfxVolume = 12 : #SfxPitch = 800
-    SOUND 2, 800, 12
+    SfxType = 9 : SfxVolume = 13 : #SfxPitch = 65
+    SOUND 2, 65, 13
     IF ShieldHits = 0 THEN
         IF VOICE.AVAILABLE THEN VOICE PLAY shields_down_phrase
     END IF

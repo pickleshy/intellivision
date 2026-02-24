@@ -83,8 +83,8 @@
 - [ ] Impact pause / "dopamine moments" (see spec #7)
 - [ ] Saucer animation refactor (see spec #11)
 - [ ] **Kill counter on game over screen** — Display total aliens killed during the session (e.g. "KILLS: NNN") on the game over screen as a fun stat. Cost: 2 × 8-bit vars (`KillCount` 0-99, `KillCountHi` 0-9, tracking up to 999 kills), ~80-100 ROM words. Increment at each `#AlienRow XOR #Mask` kill site across player.bas, aliens.bas, waves.bas, ai.bas. Display using GROM digits on row 8 of the game over screen. Add only after all primary features are complete.
-- [ ] **New alien sprite art** — Replace borrowed Space Invaders tiles with original designs inspired by Space Invader (French graffiti artist). Pure art task in `graphics.bas` bitmap data, no code changes. Design 1-wide and 2-wide variants.
-- [ ] **3-frame alien animation** — Extend current 2-frame DEFINE-swap animation to 3 frames. AnimFrame cycles 0→1→2→0. Third bitmap per alien type added to `graphics.bas`. Zero GRAM card cost (still 1 card per type, content swapped on tick). See Spec #18.
+- [ ] **New alien sprite art** *(in progress)* — Replace borrowed Space Invaders tiles with original designs inspired by Space Invader (French street artist). Pure art task in `graphics.bas` bitmap data, no code changes required. Design 1-wide and 2-wide variants. Each new character needs **3 animation frames** (see below).
+- [ ] **3-frame animation for Space Invader characters** — For each new Space Invader-inspired character added in `graphics.bas`, design 3 animation frames (frame 0, frame 1, frame 2) capturing a distinct movement or personality pose. AnimFrame cycles 0→1→2→0 at the DEFINE-swap tick (every 24 frames). Zero GRAM card cost — still 1 card per alien type, content swapped. Zero variable cost — AnimFrame already exists. Art task only once code (spec #18) is wired up. See Spec #18.
 - [ ] **2-tile boss shattering death animation** — Demon Attack style: on boss death, redefine the boss GRAM cards with 2-3 "shard" bitmaps and animate for ~15 frames before clearing. Zero net GRAM cost (cards freed at death). See Spec #19.
 
 ---
@@ -224,8 +224,8 @@ See detailed spec #14 below — only pursue after feature-complete.
 - [x] **SOL-36 skeleton death effect** (spec #17) — Implemented: beam kills flash 2-frame animated skeleton at kill cells, restores card 16 on expiry.
 - [x] **Zod death cry** (spec #20) — PSG descending squeal SFX at all rogue-kill sites; wingman death gets 6-frame yellow/green skeleton flash animation.
 - [x] **Pea shooter SFX redesign** — Short bassy thump (period 400, 3 frames). Bomb launch given own SfxType=8 (period 600, 5 frames, deeper).
-- [ ] **New alien sprite art** — Replace borrowed tiles (see Polish Backlog).
-- [ ] **3-frame alien animation** (spec #18) — Extend DEFINE-swap to 3-frame cycle.
+- [ ] **New alien sprite art** *(in progress)* — Space Invader-inspired characters in `graphics.bas`. Each character requires 3 animation frames.
+- [ ] **3-frame alien animation** (spec #18) — Wire up AnimFrame 0→1→2→0 cycle + DEFINE-swap in `aliens.bas`. Art (3 frames per character) tracked alongside sprite art task above.
 - [ ] **2-tile boss shattering death** (spec #19) — Demon Attack style shard animation.
 - [ ] Destructible barriers/shields (spec #2)
 

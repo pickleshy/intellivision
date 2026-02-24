@@ -140,9 +140,11 @@ MovePlayer: PROCEDURE
                             SOUND 2, 1500, 9
                         END IF
                     ELSE
-                        ' Manual pea shooter: always takes priority
-                        SfxType = 7 : SfxVolume = 11 : #SfxPitch = 600
-                        SOUND 2, 600, 11
+                        ' Manual pea shooter: yield to fresh/loud sounds (vol >= 10)
+                        IF SfxVolume < 10 THEN
+                            SfxType = 7 : SfxVolume = 12 : #SfxPitch = 0
+                            SOUND 2, 0, 12
+                        END IF
                     END IF
                     IF RapidTimer > 0 THEN
                         FireCooldown = RAPID_COOLDOWN
