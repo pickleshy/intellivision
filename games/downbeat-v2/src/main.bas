@@ -12,9 +12,9 @@
 
     ' --- Constants ---
     CONST PLAYER_X = 40
-    CONST GROUND_Y = 48
+    CONST GROUND_Y = 56
     CONST JUMP_FRAMES = 36
-    CONST NOTE_Y = 56           ' Note 8x8, bottom at Y=64 = ground
+    CONST NOTE_Y = 60           ' Note 8x8, sitting on ground line
     CONST NOTE_SPAWN_X = 168    ' Just off right edge
     CONST SCROLL_FRAC = 171     ' Fractional speed per frame (171/256)
                                 ' Total: 1 + 171/256 = 1.668 px/frame = 100 px/sec
@@ -83,6 +83,12 @@
     ' Level selector
     CurrentLevel = 0
     #LevelOffset = 0
+
+    ' Per-stage hazard windows (loaded at level select)
+    PencilWinStart = 0
+    PencilWinEnd = 0
+    FlowerWinStart = 0
+    FlowerWinEnd = 0
 
     ' --- Color Stack mode: all black ---
     MODE 0, 0, 0, 0, 0
@@ -155,18 +161,32 @@ RestartGame:
     PRINT AT 25 COLOR 7, "DOWNBEAT!"
     PRINT AT 85 COLOR 5, "SELECT LEVEL"
     PRINT AT 102 COLOR 6, "1 MAPLE LEAF RAG"
-    PRINT AT 122 COLOR 3, "2 PENCIL DROP"
-    PRINT AT 142 COLOR 3, "3 LEVEL 3"
+    PRINT AT 122 COLOR 3, "2 B STRAIN"
+    PRINT AT 142 COLOR 3, "3 A TO C STRAIN"
+    PRINT AT 162 COLOR 3, "4 C TO D HARD"
+
+    ' Let ISR settle on cold boot, then drain any held key
+    FOR Slot = 0 TO 29
+        WAIT
+    NEXT Slot
+LevelRelease:
+    WAIT
+    IF CONT.key < 12 THEN GOTO LevelRelease
 
 LevelSelect:
     WAIT
     IF CONT.key = 1 THEN CurrentLevel = 0 : GOTO LevelConfirm
     IF CONT.key = 2 THEN CurrentLevel = 1 : GOTO LevelConfirm
     IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO LevelConfirm
+    IF CONT.key = 4 THEN CurrentLevel = 3 : GOTO LevelConfirm
     GOTO LevelSelect
 
 LevelConfirm:
     #LevelOffset = LevelOffsets(CurrentLevel)
+    PencilWinStart = PencilWindowStarts(CurrentLevel)
+    PencilWinEnd = PencilWindowEnds(CurrentLevel)
+    FlowerWinStart = FlowerWindowStarts(CurrentLevel)
+    FlowerWinEnd = FlowerWindowEnds(CurrentLevel)
     CLS
     WAIT
     ' Redraw HUD after CLS — only show hearts the player has
@@ -248,10 +268,10 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Pencil spawn (Level 2 only) ---
-    IF CurrentLevel = 1 THEN
+    ' --- Pencil spawn (Stages 2+) ---
+    IF CurrentLevel >= 1 THEN
         IF PencilsSpawned < 2 AND SongDone = 0 THEN
-            IF BeatCounter >= 20 AND BeatCounter < 108 THEN
+            IF BeatCounter >= PencilWinStart AND BeatCounter < PencilWinEnd THEN
                 IF PencilSpawnTimer > 0 THEN
                     PencilSpawnTimer = PencilSpawnTimer - 1
                 END IF
@@ -283,10 +303,10 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Flower spawn (Level 2 only) ---
-    IF CurrentLevel = 1 THEN
+    ' --- Flower spawn (Stages 2+) ---
+    IF CurrentLevel >= 1 THEN
         IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 THEN
-            IF BeatCounter >= 55 AND BeatCounter < 95 THEN
+            IF BeatCounter >= FlowerWinStart AND BeatCounter < FlowerWinEnd THEN
                 IF FlowerSpawnTimer > 0 THEN
                     FlowerSpawnTimer = FlowerSpawnTimer - 1
                 END IF
@@ -296,7 +316,7 @@ MainLoop:
                         FlowerSpawnTimer = 30
                     ELSE
                         FlowerState = 1
-                        FlowerX = RANDOM(60) + 80
+                        FlowerX = RANDOM(60) + 100
                         FlowerY = 0
                         FlowerDriftY = 0
                         FlowersSpawned = FlowersSpawned + 1
@@ -320,6 +340,12 @@ MainLoop:
                 ' Record jump position for rehearsal
                 IF BeatCounter < MELODY_LENGTH THEN
                     JumpMap(BeatCounter) = 1
+                END IF
+                ' Rehearsal mode: show beat number on screen (set to 255 = disabled)
+                IF CurrentLevel = 255 THEN
+                    PRINT AT 200 COLOR 6, "BEAT "
+                    PRINT AT 205 COLOR 7, <> BeatCounter
+                    PRINT AT 208, 0 : PRINT AT 209, 0
                 END IF
             ELSEIF FloatUsed < 3 THEN
                 IF FloatActive = 0 THEN
@@ -395,7 +421,7 @@ MainLoop:
     ' --- Update pencils (Level 2 only) ---
     ' Pencils fall through the ground and off-screen. They only hurt
     ' the player by landing on them mid-fall — no grounded obstacles.
-    IF CurrentLevel = 1 THEN
+    IF CurrentLevel >= 1 THEN
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 ' Scroll left with the world
@@ -431,8 +457,8 @@ MainLoop:
         NEXT Slot
     END IF
 
-    ' --- Update flower (Level 2 only) ---
-    IF CurrentLevel = 1 THEN
+    ' --- Update flower (Stages 2+) ---
+    IF CurrentLevel >= 1 THEN
         IF FlowerState = 1 THEN
             ' Slow diagonal drift: ~0.5px left per frame, ~1px down every 3 frames
             FlowerDriftY = FlowerDriftY + 1
@@ -468,13 +494,11 @@ MainLoop:
                     IF FlowerX < PLAYER_X + 8 THEN
                         IF FlowerY + 8 > PlayerY THEN
                             IF FlowerY < PlayerY + 16 THEN
-                                ' Collected! Heal 2 hearts
+                                ' Collected! Heal 1 heart
                                 FlowerState = 0
                                 SPRITE 5, 0, 0, 0
-                                IF HitCount > 1 THEN
-                                    HitCount = HitCount - 2
-                                ELSE
-                                    HitCount = 0
+                                IF HitCount > 0 THEN
+                                    HitCount = HitCount - 1
                                 END IF
                                 ' Redraw hearts
                                 FOR Col = 0 TO MAX_HITS - 1
@@ -529,9 +553,9 @@ MainLoop:
         END IF
     NEXT Slot
 
-    ' --- Pencil collision (Level 2 only) ---
+    ' --- Pencil collision (Stages 2+) ---
     ' Pencils hurt the player by falling on them (overlap check while falling).
-    IF CurrentLevel = 1 THEN
+    IF CurrentLevel >= 1 THEN
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 IF PencilCleared(Slot) = 0 THEN
@@ -569,11 +593,12 @@ MainLoop:
     ' After all 128 beats are spawned (SongDone=1), wait for remaining
     ' obstacles to scroll off-screen, then pause 0.5 sec before ending.
     IF SongDone THEN
+        SOUND 0, , 0              ' Silence melody — song is over
         ActiveCount = 0
         FOR Slot = 0 TO 3
             IF NoteActive(Slot) THEN ActiveCount = ActiveCount + 1
         NEXT Slot
-        IF CurrentLevel = 1 THEN
+        IF CurrentLevel >= 1 THEN
             FOR Slot = 0 TO 1
                 IF PencilState(Slot) THEN ActiveCount = ActiveCount + 1
             NEXT Slot
@@ -605,10 +630,34 @@ GameOverScreen:
     IF GameOver = 2 THEN
         ' Song complete — celebration pose
         SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
-        IF DamageTaken = 0 THEN
-            PRINT AT 163 COLOR 6, "PERFECT RUN!"
+        IF CurrentLevel = 255 THEN
+            ' Rehearsal mode: show jump beat numbers (set to 255 = disabled)
+            SPRITE 0, 0, 0, 0
+            PRINT AT 22 COLOR 6, "JUMP BEATS:"
+            ' List beat numbers where jumps were recorded
+            ' Use Col as screen cursor (start at row 2, col 0 = position 40)
+            Col = 40
+            FOR Slot = 0 TO 127
+                IF JumpMap(Slot) THEN
+                    IF Col < 220 THEN
+                        PRINT AT Col COLOR 7, <> Slot
+                        ' Advance cursor: 4 chars per number
+                        IF Slot >= 100 THEN
+                            Col = Col + 4
+                        ELSEIF Slot >= 10 THEN
+                            Col = Col + 3
+                        ELSE
+                            Col = Col + 2
+                        END IF
+                    END IF
+                END IF
+            NEXT Slot
         ELSE
-            PRINT AT 162 COLOR 5, "SONG COMPLETE!"
+            IF DamageTaken = 0 THEN
+                PRINT AT 163 COLOR 6, "PERFECT RUN!"
+            ELSE
+                PRINT AT 162 COLOR 5, "SONG COMPLETE!"
+            END IF
         END IF
         PRINT AT 183 COLOR 7, "PRESS TO REPLAY"
     ELSE
@@ -616,6 +665,13 @@ GameOverScreen:
         SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 0 * 8 + 2 + $0800
         PRINT AT 164 COLOR 2, "GAME OVER!"
         PRINT AT 183 COLOR 7, "PRESS TO RETRY"
+    END IF
+
+    ' --- Rehearsal mode: hold end screen for 10 seconds (set to 255 = disabled) ---
+    IF CurrentLevel = 255 AND GameOver = 2 THEN
+        FOR Slot = 0 TO 599
+            WAIT
+        NEXT Slot
     END IF
 
     ' --- Wait for button release then press ---
@@ -693,73 +749,79 @@ AllMelodyData:
     DATA  855,  539,  428,  539           ' M31: C4   G#4  C5   G#4
     DATA  480,    0,  539,    0           ' M32: A#4  ---  G#4  ---  (final cadence)
 
-    ' === Level 1: Same melody as Maple Leaf Rag (obstacles differ) ===
-    DATA 1438,    0, 1077,  539
-    DATA  360,  539,  428,  360
-    DATA 1017,  571,  360,  571
-    DATA  480,  360,  807,    0
-    DATA 1438,    0, 1077,  539
-    DATA  360,  539,  428,  360
-    DATA 1017,  571,  360,  571
-    DATA  480,  360,  807,    0
-    DATA 1438,  360, 1357,  539
-    DATA  453,  339, 1438,  360
-    DATA 1438,  360, 1357,  539
-    DATA  453,  339, 1438,  360
-    DATA    0,    0, 2155, 2155
-    DATA 1812, 1077, 2155, 1077
-    DATA  906,  539, 1077,  539
-    DATA  453,  269,  539,  269
-    DATA  226,  135,  135,    0
-    DATA  135,    0,  135,    0
-    DATA  135,  135,  428,  180
-    DATA  160,  214,  180,  160
-    DATA  428,  269,  453,  240
-    DATA  226,  269,  240,  214
-    DATA  428,  269,  214,  269
-    DATA  240,    0,  269,    0
-    DATA    0,  269,  906,    0
-    DATA  269,    0,  269,    0
-    DATA  269,  269,  855,  360
-    DATA  320,  428,  360,  320
-    DATA  855,  539,  906,  480
-    DATA  453,  539,  480,  428
-    DATA  855,  539,  428,  539
-    DATA  480,    0,  539,    0
+    ' === Stage 1: B Strain (B-to-A from stage2_b_to_a_final.mid) ===
+    ' --- B section (bars 1-8) ---
+    DATA  360,  360,  960,  285   ' M01: D#5  D#5  A#3  G5
+    DATA  180,  285,  240,  190   ' M01: D#6  G5   A#5  D6
+    DATA  190,  285,  202,  285   ' M02: D6   G5   C#6  G5
+    DATA  240,  214,  214,  360   ' M02: A#5  C6   C6   D#5
+    DATA  240,  360, 1077,  428   ' M03: A#5  D#5  G#3  C5
+    DATA  269,  428,  360,  320   ' M03: G#5  C5   D#5  F5
+    DATA  320,  428,  269,  428   ' M04: F5   C5   G#5  C5
+    DATA  360,  320,  320,  428   ' M04: D#5  F5   F5   C5
+    DATA  320,  320,  960,  360   ' M05: F5   F5   A#3  D#5
+    DATA  285,  480,  404,  320   ' M05: G5   A#4  C#5  F5
+    DATA  320,  360,  285,  480   ' M06: F5   D#5  G5   A#4
+    DATA  404,  320,  320,  404   ' M06: C#5  F5   F5   C#5
+    DATA  320,  320,  855,  428   ' M07: F5   F5   C4   C5
+    DATA  269,  428,  360,  320   ' M07: G#5  C5   D#5  F5
+    DATA  320,  428,  269,  428   ' M08: F5   C5   G#5  C5
+    DATA  360,  320,  320,  428   ' M08: D#5  F5   F5   C5
+    ' --- A section return (bars 9-16) ---
+    DATA  320,  320,  960,  285   ' M09: F5   F5   A#3  G5
+    DATA  180,  285,  240,  190   ' M09: D#6  G5   A#5  D6
+    DATA  190,  285,  202,  285   ' M10: D6   G5   C#6  G5
+    DATA  240,  214,  214,  360   ' M10: A#5  C6   C6   D#5
+    DATA  240,  360, 1077,  428   ' M11: A#5  D#5  G#3  C5
+    DATA  269,  428,  360,  320   ' M11: G#5  C5   D#5  F5
+    DATA  320,  428,  269,  269   ' M12: F5   C5   G#5  G#5
+    DATA  269,  269,  285,  285   ' M12: G#5  G#5  G5   G5
+    DATA  302,  302, 1281,  641   ' M13: F#5  F#5  F3   F4
+    DATA  508,  428,  320,  428   ' M13: A4   C5   F5   C5
+    DATA  508,  641,  960,  641   ' M14: A4   F4   A#3  F4
+    DATA  480,  404,  320,  320   ' M14: A#4  C#5  F5   F5
+    DATA  404,  404,  428,  428   ' M15: C#5  C#5  C5   C5
+    DATA  960,  428, 1438,  480   ' M15: A#3  C5   D#3  A#4
+    DATA  480,  719, 1077,  539   ' M16: A#4  D#4  G#3  G#4
+    DATA  428,  360,  269,  269   ' M16: C5   D#5  G#5  G#5
 
-    ' === Level 2: Same melody as Maple Leaf Rag (obstacles differ) ===
-    DATA 1438,    0, 1077,  539
-    DATA  360,  539,  428,  360
-    DATA 1017,  571,  360,  571
-    DATA  480,  360,  807,    0
-    DATA 1438,    0, 1077,  539
-    DATA  360,  539,  428,  360
-    DATA 1017,  571,  360,  571
-    DATA  480,  360,  807,    0
-    DATA 1438,  360, 1357,  539
-    DATA  453,  339, 1438,  360
-    DATA 1438,  360, 1357,  539
-    DATA  453,  339, 1438,  360
-    DATA    0,    0, 2155, 2155
-    DATA 1812, 1077, 2155, 1077
-    DATA  906,  539, 1077,  539
-    DATA  453,  269,  539,  269
-    DATA  226,  135,  135,    0
-    DATA  135,    0,  135,    0
-    DATA  135,  135,  428,  180
-    DATA  160,  214,  180,  160
-    DATA  428,  269,  453,  240
-    DATA  226,  269,  240,  214
-    DATA  428,  269,  214,  269
-    DATA  240,    0,  269,    0
-    DATA    0,  269,  906,    0
-    DATA  269,    0,  269,    0
-    DATA  269,  269,  855,  360
-    DATA  320,  428,  360,  320
-    DATA  855,  539,  906,  480
-    DATA  453,  539,  480,  428
-    DATA  855,  539,  428,  539
-    DATA  480,    0,  539,    0
+    ' === Stage 2: A-to-C Strain (from stage3_a_to_c_final.mid) ===
+    ' --- First half (bars 1-8): Theme + Contrast + Arpeggio ---
+    DATA 1438,1438,1077,  539,  360,  539,  428,  360   ' M01: D#3 D#3 G#3 G#4 D#5 G#4 C5 D#5
+    DATA  360,  571,  360,  571,  480,  360,  360,  360   ' M02: D#5 G4 D#5 G4 A#4 D#5 D#5 D#5
+    DATA  360,  360, 1077,  539,  360,  539,  428,  360   ' M03: D#5 D#5 G#3 G#4 D#5 G#4 C5 D#5
+    DATA  360,  571,  360,  571,  480,  360,  360,  360   ' M04: D#5 G4 D#5 G4 A#4 D#5 D#5 D#5
+    DATA 1438,  360, 1357,  539,  453,  339, 1438,  360   ' M05: D#3 D#5 E3 G#4 B4 E5 D#3 D#5
+    DATA 1438,  360, 1357,  539,  453,  339, 1438,  360   ' M06: D#3 D#5 E3 G#4 B4 E5 D#3 D#5
+    DATA    0,    0, 2155, 2155, 1812, 1077, 2155, 1077   ' M07: --- --- G#2 G#2 B2 G#3 G#2 G#3
+    DATA  906,  539, 1077,  539,  453,  269,  539,  269   ' M08: B3 G#4 G#3 G#4 B4 G#5 G#4 G#5
+    ' --- Second half (bars 9-16): High chord + melody + resolution ---
+    DATA  226,  135,  135,  135,  135,  135,  135,  135   ' M09: B5 G#6 G#6 G#6 G#6 G#6 G#6 G#6
+    DATA  135,  135,  135,  180,  160,  214,  180,  160   ' M10: G#6 G#6 G#6 D#6 F6 C6 D#6 F6
+    DATA  160,  269,  269,  240,  226,  269,  240,  214   ' M11: F6 G#5 G#5 A#5 B5 G#5 A#5 C6
+    DATA  214,  269,  214,  269,  240,  240,  269,  269   ' M12: C6 G#5 C6 G#5 A#5 A#5 G#5 G#5
+    DATA    0,  269,  269,  269,  269,  269,  269,  269   ' M13: --- G#5 G#5 G#5 G#5 G#5 G#5 G#5
+    DATA  269,  269,  269,  360,  320,  428,  360,  320   ' M14: G#5 G#5 G#5 D#5 F5 C5 D#5 F5
+    DATA  320,  539,  539,  480,  453,  539,  480,  428   ' M15: F5 G#4 G#4 A#4 B4 G#4 A#4 C5
+    DATA  428,  539,  428,  539,  480,  480,  539,  539   ' M16: C5 G#4 C5 G#4 A#4 A#4 G#4 G#4
+
+    ' === Stage 3: C-to-D Strain [hard] (36 obstacles) ===
+    DATA    0,  269,  320,  269,  428,  360,  269,    0   ' pos 0-7
+    DATA  428,  480,  539,  269,  428,  360,  269,    0   ' pos 8-15
+    DATA  428,  480,  428,  539,  404,  480,  404,  320   ' pos 16-23
+    DATA  539,  404,  320,  480,  404,  320,  539,  404   ' pos 24-31
+    DATA  320,  480,  320,  269,  539,  428,  269,    0   ' pos 32-39
+    DATA  428,  480,  539,  269,  539,  428,  269,    0   ' pos 40-47
+    DATA  428,  480,  428,  539,  404,  480,  404,  320   ' pos 48-55
+    DATA  539,  404,  320,  480,  404,  320,  539,  480   ' pos 56-63
+    DATA  320,  508,  320,  240,  480,  381,  240,    0   ' pos 64-71
+    DATA  320,  428,  480,  240,  381,  320,  240,    0   ' pos 72-79
+    DATA  320,  428,  320,    0,  360,  240,  360,  302   ' pos 80-87
+    DATA  214,    0,  360,  240,  360,  302,    0,    0   ' pos 88-95
+    DATA  360,  240,    0,  202,    0,  202,    0,  214   ' pos 96-103
+    DATA    0,  240,    0,  320,  404,  360,  302,    0   ' pos 104-111
+    DATA  480,  320,  404,    0,  404,    0,  320,    0   ' pos 112-119
+    DATA  428,  605, 1077,  641,  404,  320,  269,  202   ' pos 120-127
 
     ' ============================================
     ' Obstacle Map
@@ -786,25 +848,35 @@ AllObstacleData:
     DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M25-28: pos 97,99,105 (G#5,B3,G#5) DOUBLE
     DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0     ' M29-32: pos 112,114,121 (C4,B3,G#4) DOUBLE
 
-    ' === Level 1: Same obstacles as Level 0 (will be modified) ===
-    DATA 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0
-    DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0
-    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1
-    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 1,0,0,0
-    DATA 0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0
-    DATA 0,0,1,0, 1,0,0,0, 0,0,0,1, 0,0,0,0
-    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0
-    DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0
+    ' === Stage 1: B Strain (from rehearsal: 5,11,20,27,36,43,51,59,67,72,77,82,87,92,96,102,110,119,125) ===
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,1, 0,0,0,0   ' pos 0-15:   5,11
+    DATA 0,0,0,0, 1,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 16-31:  20,27
+    DATA 0,0,0,0, 1,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 32-47:  36,43
+    DATA 0,0,0,1, 0,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 48-63:  51,59
+    DATA 0,0,0,1, 0,0,0,0, 1,0,0,0, 0,1,0,0   ' pos 64-79:  67,72,77
+    DATA 0,0,1,0, 0,0,0,1, 0,0,0,0, 1,0,0,0   ' pos 80-95:  82,87,92
+    DATA 1,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,1,0   ' pos 96-111: 96,102,110
+    DATA 0,0,0,0, 0,0,0,1, 0,0,0,0, 0,1,0,0   ' pos 112-127: 119,125
 
-    ' === Level 2: Same obstacles as Level 0 (will be modified) ===
-    DATA 0,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0
-    DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0
-    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1
-    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 1,0,0,0
-    DATA 0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0
-    DATA 0,0,1,0, 1,0,0,0, 0,0,0,1, 0,0,0,0
-    DATA 0,1,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0
-    DATA 1,0,1,0, 0,0,0,0, 0,1,0,0, 0,0,0,0
+    ' === Stage 2: A-to-C Strain (18 obstacles from rehearsal) ===
+    DATA 1,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 0-15: 0, 11
+    DATA 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 16-31: 20, 28
+    DATA 0,0,0,1, 0,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 32-47: 35, 43
+    DATA 0,0,0,1, 0,0,0,0, 0,0,1,0, 0,0,0,0   ' pos 48-63: 51, 58
+    DATA 0,0,0,0, 1,0,0,0, 1,0,0,0, 0,0,0,0   ' pos 64-79: 68, 72, 76
+    DATA 0,0,0,0, 1,0,0,0, 0,0,1,0, 0,0,0,0   ' pos 80-95: 84, 90
+    DATA 1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0   ' pos 96-111: 96, 106
+    DATA 0,0,0,1, 0,0,0,1, 0,0,0,0, 0,0,0,1   ' pos 112-127: 115, 119, 127
+
+    ' === Stage 3: C-to-D Strain [hard] (36 obstacles) ===
+    DATA 0,0,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0   ' pos 0-15: beat 5,9,13
+    DATA 0,1,0,0, 0,1,0,0, 0,1,1,0, 0,1,0,0   ' pos 16-31: beat 17,21,25,26,29
+    DATA 0,1,1,0, 0,1,0,0, 0,1,0,0, 0,1,0,0   ' pos 32-47: beat 33,34,37,41,45
+    DATA 0,1,0,0, 0,1,1,0, 0,1,0,0, 0,1,1,0   ' pos 48-63: beat 49,53,54,57,61,62
+    DATA 0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0   ' pos 64-79: beat 65,69,73,77
+    DATA 0,1,0,0, 0,1,1,0, 0,1,0,0, 0,1,0,0   ' pos 80-95: beat 81,85,86,89,93
+    DATA 0,1,0,0, 0,1,1,1, 0,0,0,0, 0,0,0,0   ' pos 96-111: beat 97,101,102,103
+    DATA 0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0   ' pos 112-127: beat 113,117,121,125
 
     ' ============================================
     ' Note Color Palette (5 cycling colors)
@@ -815,7 +887,20 @@ HeartPositions:
 
 
 LevelOffsets:
-    DATA 0, 128, 256
+    DATA 0, 128, 256, 384
+
+    ' Per-stage hazard spawn windows (indexed by CurrentLevel)
+    ' Stage 0: no hazards (window [0,0] = never spawns)
+    ' Stages 1-2: pencils [20,108], flowers [55,95]
+    ' Stage 3: pencils [20,108], flowers [30,126]
+PencilWindowStarts:
+    DATA 0, 20, 20, 20
+PencilWindowEnds:
+    DATA 0, 108, 108, 108
+FlowerWindowStarts:
+    DATA 0, 55, 55, 30
+FlowerWindowEnds:
+    DATA 0, 95, 95, 126
 
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
