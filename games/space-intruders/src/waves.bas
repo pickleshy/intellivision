@@ -491,6 +491,18 @@ UpdateSfx: PROCEDURE
         ELSE
             SfxVolume = 0
         END IF
+    ELSEIF SfxType = 15 THEN
+        ' Beam laser: descending warm buzz on channel C only (music stays running)
+        ' Period 280→580 over ~13 frames at +23/frame: ~800Hz→385Hz falling buzz
+        ' Noise period 16 adds texture; $DB enables tone C + noise C together
+        #SfxPitch = #SfxPitch + 23
+        POKE $1F9, 16
+        POKE $1F8, PEEK($1F8) AND $DB  ' Tone C + noise C = warm buzz
+        IF SfxVolume > 1 THEN
+            SfxVolume = SfxVolume - 1
+        ELSE
+            SfxVolume = 0
+        END IF
     ELSE
         ' Misc tonal SFX (SfxType 1): wingman pew, boss ping, soft zap
         ' Pure tone, no noise — clear any stale noise C from prior SFX
@@ -609,21 +621,8 @@ Sol36Kill: PROCEDURE
         ' Saucer spans FlyX to FlyX+15, beam spans #ScreenPos to #ScreenPos+15
         IF #ScreenPos + 15 >= FlyX THEN
             IF #ScreenPos <= FlyX + 15 THEN
-                ' Destroy saucer
-                GOSUB DeactivateSaucer
-                SfxType = 12 : SfxVolume = 15 : #SfxPitch = 200
-                SOUND 2, 200, 15
-                #Mask = 100 : GOSUB AddToScore
-                ' Drop power-up from saucer position
-                PowerUpState = 1
-                PowerUpX = FlyX
-                PowerUpY = FlyY
-                CapsuleFrame = 0
-                ' Clear previous explosion tile if still active
-                GOSUB ClearPrevExplosion
-                #ExplosionPos = FlyX / 8
-                ExplosionTimer = 15
-                PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+                ' Destroy saucer (beam hit)
+                GOSUB SaucerKilled
             END IF
         END IF
     END IF
@@ -1249,41 +1248,17 @@ wave_phrase:
 extra_life_phrase:
     VOICE EH, EH, KK1, SS, TT1, RR1, AX, PA2, LL, AY, FF, PA1, 0
 
-beam_phrase:
-    VOICE BB1, IH, GG1, PA1, LL, EY, ZZ, ER1, PA1, 0
-
-rapid_phrase:
-    VOICE RR1, AA, PP, IH, DD2, PA1, FF, AY, ER1, PA1, 0
-
-bomb_phrase:
-    VOICE BB1, AO, MM, BB2, PA1, 0
-
-mega_phrase:
-    VOICE SS, OW, LL, PA2, TH, ER1, TT2, IY, PA1, SS, IH, KK2, SS, PA1, 0
-
-shield_phrase:
-    VOICE SH, IY, LL, DD1, PA1, AO, NN1, PA1, 0
-
 shields_down_phrase:
     VOICE SH, IY, LL, DD1, ZZ, PA2, DD1, AW, NN1, PA1, 0
 
 game_over_phrase:
     VOICE GG1, EY, MM, PA2, OW, VV, ER1, PA2, 0
 
-auto_on_phrase:
-    VOICE AO, TT2, OW, PA2, AO, NN1, PA1, 0
-
-auto_off_phrase:
-    VOICE AO, TT2, OW, PA2, AO, FF, PA1, 0
-
 reinforce_phrase:
     VOICE IH, NN1, KK2, AX, MM, IH, NN1, PA2, HH1, OR, DD1, PA1, 0
 
 zod_phrase:
     VOICE ZZ, AA, AA, AA, DD1, PA1, 0
-
-zod_death_phrase:
-    VOICE ZZ, AA, AA, AA, AA, DD1, PA1, 0
 
 ' Saucer primary/secondary colors per power-up type
 ' Index by PowerUpType (0=beam, 1=rapid, 2=bomb, 3=mega, 4=shield)

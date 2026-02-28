@@ -422,6 +422,14 @@ SkipPressfire:
         END IF
     END IF
 
+    ' ENTER (BR button / NES B): enter controller test screen
+    ' jzintv: = key   NT Noir: B button   Real hardware: ENTER keypad
+    ' Safe: fire requires BOTH A+B (CLEAR+ENTER), so B alone won't start game
+    IF CONT.KEY = 11 THEN
+        GOSUB CtrlTest
+        GOTO TitleScreen
+    END IF
+
     ' Fire button: hold 4 frames to start (state-transition debounce, not ECS guard)
     IF cont1.b0 THEN
         IF Key1Held < 4 THEN Key1Held = Key1Held + 1

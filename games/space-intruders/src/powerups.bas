@@ -61,26 +61,21 @@ UpdatePowerUp: PROCEDURE
                     BeamTimer = 1
                     RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0
                     DEFINE GRAM_PWR1, 2, PowerupBeamGfx
-                    IF VOICE.AVAILABLE THEN VOICE PLAY beam_phrase
                 ELSEIF PowerUpType = 1 THEN
                     RapidTimer = 1
                     BeamTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB) : Sol36Timer = 0
                     DEFINE GRAM_PWR1, 3, PowerupRapidGfx
-                    IF VOICE.AVAILABLE THEN VOICE PLAY rapid_phrase
                 ELSEIF PowerUpType = 2 THEN
                     #GameFlags = #GameFlags OR FLAG_BOMB
                     BeamTimer = 0 : RapidTimer = 0 : Sol36Timer = 0
                     DEFINE GRAM_PWR1, 2, PowerupBombGfx
-                    IF VOICE.AVAILABLE THEN VOICE PLAY bomb_phrase
                 ELSEIF PowerUpType = 3 THEN
                     Sol36Timer = 120
                     BeamTimer = 0 : RapidTimer = 0 : #GameFlags = #GameFlags AND ($FFFF XOR FLAG_BOMB)
                     DEFINE GRAM_PWR1, 3, PowerupSol36Gfx
-                    IF VOICE.AVAILABLE THEN VOICE PLAY mega_phrase
                 ELSE
                     ' Shield - coexists with weapons, just set hits
                     ShieldHits = 2
-                    IF VOICE.AVAILABLE THEN VOICE PLAY shield_phrase
                 END IF
                 ' Belt-buckle pickup SFX: metallic snap + rising ring
                 SfxType = 13 : SfxVolume = 14 : #SfxPitch = 600

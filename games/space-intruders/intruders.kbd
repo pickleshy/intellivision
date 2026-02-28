@@ -1,18 +1,26 @@
 ; ============================================
 ; Space Intruders - jzIntv Keyboard Mapping
 ; ============================================
-; Maps keyboard to Controller 1 (PD0L)
+; Maps keyboard to Controller 1 (PD0L = left controller = P1)
 ;
 ; Number row  → Keypad 1-9, 0, Clear, Enter
 ; Arrow keys  → Disc (jzIntv defaults, no mapping needed)
-; Left Shift  → Top action button (fire)
-; Left Ctrl   → Bottom-left action button
-; Left Alt    → Bottom-right action button
+;
+; Action buttons — DO NOT use Left-modifier keys here!
+;   jzIntv default Map 0 maps LSHIFT/LALT/LCTRL to P2 action buttons.
+;   kbdhackfiles are additive, so using L-keys for P1 contaminates P2.
+;   jzIntv default already maps R-keys to P1 action buttons (no override needed):
+;
+;   Right Shift  → Top action button (fire)    = cont1.b0
+;   Right Alt    → Bottom-left action button   = cont1.b1  (= CLEAR key)
+;   Right Ctrl   → Bottom-right action button  = cont1.b2  (= ENTER key)
+;   Arrow keys   → Disc                        = cont1.up/down/left/right
 ; ============================================
 
 MAP 0
 
 ; --- Keypad (number row → Controller 1) ---
+; jzIntv default maps number row to P2; remap to P1 here.
 1               PD0L_KP1
 2               PD0L_KP2
 3               PD0L_KP3
@@ -26,7 +34,8 @@ MAP 0
 -               PD0L_KPC       ; Clear
 =               PD0L_KPE       ; Enter
 
-; --- Side buttons (Controller 1) ---
-LSHIFT          PD0L_A_T       ; Top action button
-LCTRL           PD0L_A_L       ; Bottom-left action button
-LALT            PD0L_A_R       ; Bottom-right action button
+; --- P1 action buttons ---
+; SPACE = fire. jzIntv default already maps RShift/RAlt/RCtrl to P1 b0/b1/b2.
+; SPACE is not in jzIntv default map so no P2 contamination.
+SPACE           PD0L_A_T       ; P1 fire (top action button)
+

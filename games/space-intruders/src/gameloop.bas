@@ -367,8 +367,12 @@ GameLoop:
             ' Frame 2: expanding scatter (frames 10-6) - White
             PRINT AT #ExplosionPos, GRAM_EXPLOSION2 * 8 + COL_WHITE + $0800
         ELSE
-            ' Frames 5-1: card 16 (GRAM_EXPLOSION3) time-shares with GRAM_SKELETON — just clear
-            PRINT AT #ExplosionPos, 0
+            ' Frame 3: dissipate (frames 5-1) — show when skeleton inactive, else clear
+            IF SkeletonTimer = 0 THEN
+                PRINT AT #ExplosionPos, GRAM_EXPLOSION3 * 8 + COL_WHITE + $0800
+            ELSE
+                PRINT AT #ExplosionPos, 0
+            END IF
         END IF
         END IF
     END IF
@@ -382,8 +386,12 @@ GameLoop:
         ELSEIF BombExpTimer > 9 THEN
             AlienCard = GRAM_EXPLOSION2
         ELSE
-            ' Card 16 (GRAM_EXPLOSION3) time-shares with GRAM_SKELETON — hold scatter frame instead
-            AlienCard = GRAM_EXPLOSION2
+            ' Frame 3: dissipate — safe when skeleton inactive
+            IF SkeletonTimer = 0 THEN
+                AlienCard = GRAM_EXPLOSION3
+            ELSE
+                AlienCard = GRAM_EXPLOSION2
+            END IF
         END IF
         IF BombExpTimer AND 1 THEN
             AlienColor = COL_RED
@@ -439,37 +447,6 @@ GameLoop:
             ELSE
                 GOSUB ClearWaveBanner
             END IF
-        END IF
-    END IF
-
-    ' Chain reaction laser SFX decay (takes priority over regular SFX)
-    IF ChainTimer > 0 THEN
-        ChainTimer = ChainTimer - 1
-        #ChainFreq1 = #ChainFreq1 + 20
-        #ChainFreq2 = #ChainFreq2 + 12
-        IF (ChainTimer AND 1) = 0 THEN
-            IF ChainVol > 0 THEN ChainVol = ChainVol - 1
-        END IF
-        POKE $1F9, ChainNoiseFreq(ChainTimer)   ' Replaces /3 division (was 0-7 iters/frame)
-        SOUND 0, #ChainFreq1, ChainVol
-        SOUND 2, #ChainFreq2, ChainVol
-        IF ChainTimer = 0 THEN
-            ' SFX done — silence and restart music
-            SOUND 0, 0, 0
-            SOUND 2, 0, 0
-            POKE $1F8, $3F
-            SfxVolume = 0 : SfxType = 0
-            PLAY SIMPLE
-            PLAY VOLUME 12
-            ON MusicGear GOTO ChainGearFast, ChainGearPanic
-            PLAY si_bg_mid
-            GOTO ChainDone
-ChainGearFast:
-            PLAY si_bg_fast
-            GOTO ChainDone
-ChainGearPanic:
-            PLAY si_bg_panic
-ChainDone:
         END IF
     END IF
 

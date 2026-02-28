@@ -9,18 +9,19 @@
 ' === Player Control ===
 
 MovePlayer: PROCEDURE
-    ' Left movement — disc (arrow keys), guarded so keypad keys don't bleed into disc
-    IF CONT.LEFT THEN
-        IF CONT.KEY >= 12 THEN
+    ' Raw port keypad check — same technique as ctrltest_inline.bas.
+    ' Keypad keys set exactly ONE column bit in bits 5-7 ($20/$40/$80).
+    ' Pure disc = $00, action buttons = two bits ($60+). CONT.KEY has a
+    ' 2-3 frame debounce lag; PEEK gives same-frame detection, no bleed.
+    HitRow = (PEEK($01FF) XOR $FF) AND $E0   ' column bits active on P1 port
+    IF HitRow <> $20 AND HitRow <> $40 AND HitRow <> $80 THEN
+        ' Disc or action button — movement is valid
+        IF CONT.LEFT THEN
             IF PlayerX > PLAYER_MIN_X THEN
                 PlayerX = PlayerX - PLAYER_SPEED
             END IF
         END IF
-    END IF
-
-    ' Right movement — disc (arrow keys), guarded so keypad keys don't bleed into disc
-    IF CONT.RIGHT THEN
-        IF CONT.KEY >= 12 THEN
+        IF CONT.RIGHT THEN
             IF PlayerX < PLAYER_MAX_X THEN
                 PlayerX = PlayerX + PLAYER_SPEED
             END IF
@@ -33,11 +34,6 @@ MovePlayer: PROCEDURE
             Key1Held = 1
             #GameFlags = #GameFlags XOR FLAG_AUTOFIRE
             AutoFireFlash = 60  ' 1 second fast-blink flash at row 10
-            IF #GameFlags AND FLAG_AUTOFIRE THEN
-                IF VOICE.AVAILABLE THEN VOICE PLAY auto_on_phrase
-            ELSE
-                IF VOICE.AVAILABLE THEN VOICE PLAY auto_off_phrase
-            END IF
         END IF
     ELSE
         Key1Held = 0
@@ -122,17 +118,9 @@ MovePlayer: PROCEDURE
                     #GameFlags = #GameFlags AND $FFDF     ' New shot — hasn't hit anything yet
                     IF BeamTimer > 0 THEN
                         BeamHits = 2  ' Beam pierces 2 consecutive targets then stops
-                        ' Beam laser SFX: warm dual-tone buzz — lower octave, fast sweep
-                        ' Freq1 280→680Hz, Freq2 180→420Hz — sweeps bass in 20 frames
-                        PLAY OFF
-                        ChainTimer = 20
-                        #ChainFreq1 = 280
-                        #ChainFreq2 = 180
-                        ChainVol = 13
-                        POKE $1F9, 16
-                        POKE $1F8, $18
-                        SOUND 0, 280, 13
-                        SOUND 2, 180, 13
+                        ' Beam laser SFX on channel C only — music stays uninterrupted
+                        SfxType = 15 : SfxVolume = 13 : #SfxPitch = 280
+                        SOUND 2, 280, 13
                     ELSEIF #GameFlags AND FLAG_AUTOFIRE THEN
                         ' Auto-fire: only fire SFX if no higher-priority sound still loud
                         IF SfxVolume < 8 THEN

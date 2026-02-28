@@ -101,10 +101,6 @@ ExplosionTimer = 0              ' Explosion display countdown (0 = no explosion)
 ChainCount  = 0                 ' Consecutive successful shots (chain combo)
 ChainMax    = 0                 ' Best chain this game
 ChainTimeout = 0                ' Frames until chain goes cold (90 = 1.5 sec)
-ChainTimer  = 0                 ' Chain reaction laser SFX countdown (0 = inactive)
-#ChainFreq1 = 0                ' Chain SFX channel A frequency (mid crunch)
-#ChainFreq2 = 0                ' Chain SFX channel C frequency (sub rumble)
-ChainVol   = 0                 ' Chain SFX shared volume (0-15, converted from 16-bit to free slot)
 BombExpTimer = 0                ' Chain explosion countdown (0=inactive, 20=active)
 BombExpRow   = 0                ' Grid row of exploded bomb
 BombExpCol   = 0                ' Left grid column of exploded bomb
@@ -209,6 +205,12 @@ VanishCol   = 255               ' Current letter vanishing (255=not started)
 GOAnimIdx    = 255               ' Game over: animating letter (255=none, 0-7=letter)
 GOAnimFrame  = 0                 ' Game over: animation frame (0=full, 1=60°, 2=edge, 3=done)
 ScorePairM   = 0                 ' Cached million+hundred-thousands pair from ScoreCard=4 computation
+
+' -- Controller Test --
+' No dedicated variables. ctrltest_inline.bas aliases dormant gameplay vars:
+'   HitRow=CtKey  HitCol=CtBL      FoundBoss=CtBR   Row=CtFire
+'   AlienGridRow=CtUp  AlienGridCol=CtDn  BombExpRow=CtLft  BombExpCol=CtRgt
+'   ShakeTimer=CtPB (0=P1, 10=P2)  ExplosionTimer=CtColor (scratch)
 
 ' --------------------------------------------
 ' Main Program

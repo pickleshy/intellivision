@@ -1796,3 +1796,4 @@ sprite_14_1:
     BITMAP "XXX....."
     BITMAP "XXXX...."
     BITMAP ".X.X...."
+

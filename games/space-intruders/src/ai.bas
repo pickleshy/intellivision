@@ -938,29 +938,29 @@ END
 ' --------------------------------------------
 ' SaucerHit - Handle saucer destruction (shared by player and wingman bullets)
 ' --------------------------------------------
-SaucerHit: PROCEDURE
-    ' Deactivate player bullet if it was the one that hit
-    #GameFlags = #GameFlags AND $FFFE
-    ChainCount = 0  ' Saucer is not an alien — break chain
+SaucerKilled: PROCEDURE
+    ' Common saucer death sequence: deactivate, SFX, score, powerup drop, explosion
     GOSUB DeactivateSaucer
-    ' Saucer kill SFX: metallic schwing
     SfxType = 12 : SfxVolume = 15 : #SfxPitch = 200
     SOUND 2, 200, 15
-    ' Bonus points
     #Mask = 100 : GOSUB AddToScore
-    ' Drop power-up from saucer position
-    PowerUpState = 1       ' Falling
-    PowerUpX = FlyX        ' Drop from saucer X
-    PowerUpY = FlyY      ' Start falling from saucer Y
+    PowerUpState = 1
+    PowerUpX = FlyX
+    PowerUpY = FlyY
     CapsuleFrame = 0
-    ' First powerup tutorial hint (flashing)
     IF TutorialTimer = 255 THEN TutorialTimer = 180
-    ' Clear previous explosion tile if still active
     GOSUB ClearPrevExplosion
-    ' Show explosion at saucer position using BACKTAB
     #ExplosionPos = FlyX / 8
     ExplosionTimer = 15
     PRINT AT #ExplosionPos, GRAM_EXPLOSION * 8 + 4 + $1800
+    RETURN
+END
+
+SaucerHit: PROCEDURE
+    ' Player bullet kills saucer: clear bullet, break chain, then shared kill sequence
+    #GameFlags = #GameFlags AND $FFFE
+    ChainCount = 0
+    GOSUB SaucerKilled
     RETURN
 END
 

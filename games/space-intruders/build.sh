@@ -28,6 +28,7 @@ EXEC_ROM=~/jzintv/bin/exec.bin
 GROM_ROM=~/jzintv/bin/grom.bin
 ECS_ROM=~/jzintv/bin/ecs.bin
 BUTLER=~/bin/butler
+INTV2CONVERT=~/bin/intv2convert
 
 # itch.io publishing config
 ITCH_TARGET="paisleyboxers/space-intruders:rom"
@@ -47,7 +48,6 @@ ROM="$BUILD_DIR/intruders.rom"
 LST="$BUILD_DIR/intruders.lst"
 INTV_NOIR="$BUILD_DIR/intruders-nt-noir.intv"
 INTV_POCKET="$BUILD_DIR/intruders-pocket.intv"
-INTV2_SCRIPT="$PROJECT_ROOT/tools/make_intv2.py"
 
 echo "=== Space Intruders Build ==="
 echo "Project root: $PROJECT_ROOT"
@@ -87,11 +87,11 @@ if [ "$1" = "intv" ]; then
 
     echo ""
     echo "[intv 1/2] Nt Mini Noir (true word count, Intellivoice compatible)..."
-    python3 "$INTV2_SCRIPT" "$LST" "$INTV_NOIR"
+    $INTV2CONVERT lst "$LST" "$INTV_NOIR"
 
     echo ""
     echo "[intv 2/2] Analogue Pocket (even-padded word count, Chip32 aligned)..."
-    python3 "$INTV2_SCRIPT" "$LST" "$INTV_POCKET" --pocket
+    $INTV2CONVERT lst "$LST" "$INTV_POCKET" --pocket
 
     echo ""
     echo "=== INTV2 Output ==="
@@ -115,8 +115,8 @@ if [ "$1" = "publish" ]; then
 
     # Step 3: Generate INTV files for both FPGA targets
     echo "[pub 1/4] Converting to INTV2..."
-    python3 "$INTV2_SCRIPT" "$LST" "$INTV_NOIR"
-    python3 "$INTV2_SCRIPT" "$LST" "$INTV_POCKET" --pocket
+    $INTV2CONVERT lst "$LST" "$INTV_NOIR"
+    $INTV2CONVERT lst "$LST" "$INTV_POCKET" --pocket
 
     # Step 4: Copy ROM + INTV files into assets
     echo "[pub 2/4] Copying ROM and INTV files to assets..."
