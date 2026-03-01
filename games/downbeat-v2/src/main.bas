@@ -40,6 +40,7 @@
     DamageTaken = 0
     GameOver = 0
     SfxTimer = 0
+    HurtTimer = 0
     ButtonReleased = 1
 
     ' Melody system
@@ -60,6 +61,7 @@
     DIM NoteCleared(4)
     DIM #NotePitch(4)           ' PSG period for each obstacle (16-bit)
     DIM NoteColor(4)            ' Color per note slot (for varied colors)
+    DIM NoteWobble(4)           ' Wobble timer per note slot (counts down from 12 on hit)
     DIM JumpMap(128)            ' Rehearsal: record jump positions
 
 
@@ -94,6 +96,9 @@
     MODE 0, 0, 0, 0, 0
     WAIT
 
+    ' --- Initialize Intellivoice (once at startup) ---
+    IF VOICE.AVAILABLE THEN VOICE INIT
+
 RestartGame:
     ' --- Reset all game state ---
     PlayerY = GROUND_Y
@@ -106,6 +111,7 @@ RestartGame:
     DamageTaken = 0
     GameOver = 0
     SfxTimer = 0
+    HurtTimer = 0
     ButtonReleased = 1
     BeatCounter = 0
     SpawnCountdown = FRAMES_PER_NOTE
@@ -114,21 +120,23 @@ RestartGame:
     #CurPSG = 0
     #PrevPSG = 0
     MelodyMute = 0
-    SOUND 0, 0, 0
-    SOUND 1, 0, 0
+    SOUND 0, , 0
+    SOUND 1, , 0
+    SOUND 2, , 0
 
     ' --- Clear screen ---
     CLS
     WAIT
 
-    ' --- Define GRAM cards 0-6 (player, ground, note, heart, celebration, pencil, flower) ---
-    DEFINE 0, 7, GramData
+    ' --- Define GRAM cards 0-7 (player, ground, note, heart, celebration, pencil, flower, scream) ---
+    DEFINE 0, 8, GramData
     WAIT
 
     ' --- Initialize all note slots ---
     FOR Slot = 0 TO 3
         NoteActive(Slot) = 0
         NoteCleared(Slot) = 0
+        NoteWobble(Slot) = 0
         #NotePitch(Slot) = 0
         NoteColor(Slot) = 0
         SPRITE Slot + 1, 0, 0, 0
@@ -389,6 +397,8 @@ MainLoop:
     ' --- Update player sprite (8x8 stretched to 8x16 via YSIZE) ---
     IF SongEndTimer > 0 AND DamageTaken = 0 THEN
         SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 4 * 8 + 2 + $0800
+    ELSEIF HurtTimer > 0 THEN
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 7 * 8 + 2 + $0800
     ELSE
         SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 0 * 8 + 2 + $0800
     END IF
@@ -411,7 +421,15 @@ MainLoop:
             ' Deactivate at left edge (< 2 avoids unsigned wrap)
             IF NoteX(Slot) < 2 THEN
                 NoteActive(Slot) = 0
+                NoteWobble(Slot) = 0
                 SPRITE Slot + 1, 0, 0, 0
+            ELSEIF NoteWobble(Slot) > 0 THEN
+                NoteWobble(Slot) = NoteWobble(Slot) - 1
+                IF NoteWobble(Slot) AND 1 THEN
+                    SPRITE Slot + 1, NoteX(Slot) + 2 + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
+                ELSE
+                    SPRITE Slot + 1, NoteX(Slot) - 2 + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
+                END IF
             ELSE
                 SPRITE Slot + 1, NoteX(Slot) + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
             END IF
@@ -533,8 +551,8 @@ MainLoop:
                         HitCount = HitCount + 1
                         DamageTaken = 1
                         NoteCleared(Slot) = 1
-                        NoteActive(Slot) = 0
-                        SPRITE Slot + 1, 0, 0, 0
+                        NoteWobble(Slot) = 12
+                        HurtTimer = 10
                         ' Dud sound: flat by ~1 semitone on Channel B
                         IF #NotePitch(Slot) > 0 THEN
                             SOUND 1, #NotePitch(Slot) + #NotePitch(Slot) / 16, 12
@@ -542,6 +560,10 @@ MainLoop:
                             SOUND 1, 200, 12
                         END IF
                         SfxTimer = 6
+                        ' Ouch voice
+                        IF VOICE.AVAILABLE THEN
+                            IF VOICE.PLAYING = 0 THEN VOICE PLAY OuchPhrase
+                        END IF
                         ' Remove a heart (rightmost first)
                         PRINT AT HeartPositions(MAX_HITS - HitCount), 0
                         IF HitCount >= MAX_HITS THEN GameOver = 1
@@ -570,8 +592,12 @@ MainLoop:
                                     PencilCleared(Slot) = 1
                                     PencilState(Slot) = 0
                                     SPRITE Slot + 6, 0, 0, 0
+                                    HurtTimer = 10
                                     SOUND 1, 200, 12
                                     SfxTimer = 6
+                                    IF VOICE.AVAILABLE THEN
+                            IF VOICE.PLAYING = 0 THEN VOICE PLAY OuchPhrase
+                        END IF
                                     PRINT AT HeartPositions(MAX_HITS - HitCount), 0
                                     IF HitCount >= MAX_HITS THEN GameOver = 1
                                 END IF
@@ -588,6 +614,9 @@ MainLoop:
         SfxTimer = SfxTimer - 1
         IF SfxTimer = 0 THEN SOUND 1, 0, 0
     END IF
+
+    ' --- Hurt timer (scream sprite on player) ---
+    IF HurtTimer > 0 THEN HurtTimer = HurtTimer - 1
 
     ' --- Check song completion ---
     ' After all 128 beats are spawned (SongDone=1), wait for remaining
@@ -616,8 +645,9 @@ MainLoop:
     ' End Screen (overlaid on game area)
     ' ==========================================
 GameOverScreen:
-    SOUND 0, 0, 0
-    SOUND 1, 0, 0
+    SOUND 0, , 0
+    SOUND 1, , 0
+    SOUND 2, , 0
     ' Hide all sprites except player (MOB 0)
     FOR Slot = 1 TO 7
         SPRITE Slot, 0, 0, 0
@@ -690,6 +720,9 @@ GameOverWait:
 JumpArc:
     DATA 0, 2, 4, 6, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 19, 20, 20, 20
     DATA 20, 20, 20, 19, 19, 18, 17, 16, 15, 14, 13, 11, 10, 8, 6, 4, 2, 0
+
+OuchPhrase:
+    VOICE AW,PA1,0
 
     ' ============================================
     ' Maple Leaf Rag - A Strain Background Melody
@@ -976,3 +1009,13 @@ GramData:
     BITMAP "...X...."
     BITMAP "..XX...."
     BITMAP "........"
+
+    ' Card 7: Player scream (arms way up, wide scared eyes, open O mouth)
+    BITMAP "X..XX..X"
+    BITMAP ".XXXXXX."
+    BITMAP "XX....XX"
+    BITMAP "XXXXXXXX"
+    BITMAP "...XX..."
+    BITMAP "..X..X.."
+    BITMAP "...XX..."
+    BITMAP "..X..X.."
