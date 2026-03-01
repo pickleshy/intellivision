@@ -10,6 +10,8 @@
     ' sync with the music.
     ' ============================================
 
+    OPTION MAP 2        ' 42K memory map — required for voice library + melody data
+
     ' --- Constants ---
     CONST PLAYER_X = 40
     CONST GROUND_Y = 56
@@ -71,6 +73,18 @@
     DIM PencilY(2)
     DIM PencilFrac(2)           ' Fall tick (falling) / scroll fraction (grounded)
     DIM PencilCleared(2)        ' Collision flag
+
+    ' Sneeze system (Level 5: random screen shake distraction)
+    DIM SneezeTimer         ' Frames remaining in current shake (0-180)
+    DIM SneezeSpawnTimer    ' Frames until next sneeze check (counts down)
+    DIM SneezesSpawned      ' How many sneezes have occurred this level
+    DIM SneezeX             ' X shake offset: 0-6, applied as (SneezeX-3) to sprites
+    DIM SneezeY             ' Y shake offset: 0-6, applied as (SneezeY-3) to sprites
+    DIM SneezeActive        ' Cached: does current level have sneezes? (0/1)
+    DIM SneezeMaxSneezes    ' Cached: max sneezes for current level
+    DIM SneezeStart         ' Cached: earliest beat for sneeze spawning
+    DIM SneezeEnd           ' Cached: latest beat for sneeze spawning
+
     PencilSpawnTimer = 0
     PencilsSpawned = 0
 
@@ -123,6 +137,11 @@ RestartGame:
     SOUND 0, , 0
     SOUND 1, , 0
     SOUND 2, , 0
+    SneezeTimer = 0
+    SneezesSpawned = 0
+    SneezeX = 3
+    SneezeY = 3
+    SneezeSpawnTimer = RANDOM(120) + 180
 
     ' --- Clear screen ---
     CLS
@@ -172,6 +191,7 @@ RestartGame:
     PRINT AT 122 COLOR 3, "2 B STRAIN"
     PRINT AT 142 COLOR 3, "3 A TO C STRAIN"
     PRINT AT 162 COLOR 3, "4 C TO D HARD"
+    PRINT AT 182 COLOR 2, "5 D STRAIN HARDEST"
 
     ' Let ISR settle on cold boot, then drain any held key
     FOR Slot = 0 TO 29
@@ -187,6 +207,7 @@ LevelSelect:
     IF CONT.key = 2 THEN CurrentLevel = 1 : GOTO LevelConfirm
     IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO LevelConfirm
     IF CONT.key = 4 THEN CurrentLevel = 3 : GOTO LevelConfirm
+    IF CONT.key = 5 THEN CurrentLevel = 4 : GOTO LevelConfirm
     GOTO LevelSelect
 
 LevelConfirm:
@@ -195,6 +216,10 @@ LevelConfirm:
     PencilWinEnd = PencilWindowEnds(CurrentLevel)
     FlowerWinStart = FlowerWindowStarts(CurrentLevel)
     FlowerWinEnd = FlowerWindowEnds(CurrentLevel)
+    SneezeActive = SneezeEnabled(CurrentLevel)
+    SneezeMaxSneezes = SneezeMaxCount(CurrentLevel)
+    SneezeStart = SneezeStartBeat(CurrentLevel)
+    SneezeEnd = SneezeEndBeat(CurrentLevel)
     CLS
     WAIT
     ' Redraw HUD after CLS — only show hearts the player has
@@ -206,6 +231,36 @@ LevelConfirm:
     FOR Col = 0 TO 19
         PRINT AT 140 + Col, 1 * 8 + 7 + $0800
     NEXT Col
+
+    ' --- Pre-spawn notes for beat positions 0 to SPAWN_OFFSET-1 ---
+    ' Normal spawn logic reads SPAWN_OFFSET beats ahead of BeatCounter,
+    ' so beats 0-8 are never reached. Pre-place them at the X position
+    ' they would occupy if they had been spawned before the game started.
+    ' Formula: StartX = NOTE_SPAWN_X - (SPAWN_OFFSET - beat) * 15
+    ' (15 px/beat = FRAMES_PER_NOTE * scroll_speed ≈ 9 * 1.668)
+    FOR Col = 0 TO SPAWN_OFFSET - 1
+        IF AllObstacleData(#LevelOffset + Col) = 1 THEN
+            HurtTimer = NOTE_SPAWN_X - (SPAWN_OFFSET - Col) * 15
+            IF HurtTimer > PLAYER_X THEN
+                FreeSlot = 255
+                FOR Slot = 0 TO 3
+                    IF NoteActive(Slot) = 0 THEN
+                        IF FreeSlot = 255 THEN FreeSlot = Slot
+                    END IF
+                NEXT Slot
+                IF FreeSlot < 255 THEN
+                    NoteActive(FreeSlot) = 1
+                    NoteX(FreeSlot) = HurtTimer
+                    NoteFrac(FreeSlot) = 0
+                    NoteCleared(FreeSlot) = 0
+                    NoteWobble(FreeSlot) = 0
+                    #NotePitch(FreeSlot) = AllMelodyData(#LevelOffset + Col)
+                    NoteColor(FreeSlot) = 1
+                END IF
+            END IF
+        END IF
+    NEXT Col
+    HurtTimer = 0
 
     ' ==========================================
     ' Main loop
@@ -335,6 +390,36 @@ MainLoop:
         END IF
     END IF
 
+    ' --- Sneeze distraction (Level 5) ---
+    ' SneezeX/Y are offsets stored as 0-6; applied as (val-3) to sprites,
+    ' giving -3 to +3 pixels of shake. Default 3 = zero offset (no shake).
+    IF SneezeActive THEN
+        IF SneezeTimer > 0 THEN
+            SneezeTimer = SneezeTimer - 1
+            SneezeX = RANDOM(7)
+            SneezeY = RANDOM(7)
+            IF SneezeTimer = 0 THEN     ' Sneeze just ended — reset to zero offset
+                SneezeX = 3
+                SneezeY = 3
+            END IF
+        ELSE
+            IF SneezesSpawned < SneezeMaxSneezes AND SongDone = 0 THEN
+                IF BeatCounter >= SneezeStart AND BeatCounter <= SneezeEnd THEN
+                    IF SneezeSpawnTimer > 0 THEN
+                        SneezeSpawnTimer = SneezeSpawnTimer - 1
+                    ELSE
+                        SneezeTimer = 180
+                        SneezesSpawned = SneezesSpawned + 1
+                        SneezeSpawnTimer = RANDOM(120) + 360
+                        IF VOICE.AVAILABLE THEN
+                            IF VOICE.PLAYING = 0 THEN VOICE PLAY SneezePhrase
+                        END IF
+                    END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
     ' --- Input: jump + peak float ---
     ' First press starts jump. Second press near peak (frames 15-20)
     ' triggers float: snap to peak height, hang 10 frames, then descend.
@@ -396,11 +481,11 @@ MainLoop:
 
     ' --- Update player sprite (8x8 stretched to 8x16 via YSIZE) ---
     IF SongEndTimer > 0 AND DamageTaken = 0 THEN
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 4 * 8 + 2 + $0800
+        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 4 * 8 + 2 + $0800
     ELSEIF HurtTimer > 0 THEN
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 7 * 8 + 2 + $0800
+        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 7 * 8 + 2 + $0800
     ELSE
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, PlayerY + SPR_YSIZE, 0 * 8 + 2 + $0800
+        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 0 * 8 + 2 + $0800
     END IF
 
     ' --- Scroll obstacles ---
@@ -418,20 +503,20 @@ MainLoop:
                 NoteX(Slot) = NoteX(Slot) - 1
             END IF
 
-            ' Deactivate at left edge (< 2 avoids unsigned wrap)
-            IF NoteX(Slot) < 2 THEN
+            ' Deactivate at left edge: < 8 for normal exit, > 200 catches 8-bit unsigned wrap (e.g. 1-2=255)
+            IF NoteX(Slot) < 8 OR NoteX(Slot) > 200 THEN
                 NoteActive(Slot) = 0
                 NoteWobble(Slot) = 0
                 SPRITE Slot + 1, 0, 0, 0
             ELSEIF NoteWobble(Slot) > 0 THEN
                 NoteWobble(Slot) = NoteWobble(Slot) - 1
                 IF NoteWobble(Slot) AND 1 THEN
-                    SPRITE Slot + 1, NoteX(Slot) + 2 + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
+                    SPRITE Slot + 1, NoteX(Slot) + 2 + SneezeX - 3 + SPR_VISIBLE, NOTE_Y + SneezeY - 3, 2 * 8 + NoteColor(Slot) + $0800 + $1000
                 ELSE
-                    SPRITE Slot + 1, NoteX(Slot) - 2 + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
+                    SPRITE Slot + 1, NoteX(Slot) - 2 + SneezeX - 3 + SPR_VISIBLE, NOTE_Y + SneezeY - 3, 2 * 8 + NoteColor(Slot) + $0800 + $1000
                 END IF
             ELSE
-                SPRITE Slot + 1, NoteX(Slot) + SPR_VISIBLE, NOTE_Y, 2 * 8 + NoteColor(Slot) + $0800 + $1000
+                SPRITE Slot + 1, NoteX(Slot) + SneezeX - 3 + SPR_VISIBLE, NOTE_Y + SneezeY - 3, 2 * 8 + NoteColor(Slot) + $0800 + $1000
             END IF
         END IF
     NEXT Slot
@@ -468,7 +553,7 @@ MainLoop:
                         PencilState(Slot) = 0
                         SPRITE Slot + 6, 0, 0, 0
                     ELSE
-                        SPRITE Slot + 6, PencilX(Slot) + SPR_VISIBLE, PencilY(Slot), 5 * 8 + 6 + $0800
+                        SPRITE Slot + 6, PencilX(Slot) + SneezeX - 3 + SPR_VISIBLE, PencilY(Slot) + SneezeY - 3, 5 * 8 + 6 + $0800
                     END IF
                 END IF
             END IF
@@ -500,7 +585,7 @@ MainLoop:
                     FlowerState = 0
                     SPRITE 5, 0, 0, 0
                 ELSE
-                    SPRITE 5, FlowerX + SPR_VISIBLE, FlowerY, 6 * 8 + 4 + $0800 + $1000
+                    SPRITE 5, FlowerX + SneezeX - 3 + SPR_VISIBLE, FlowerY + SneezeY - 3, 6 * 8 + 4 + $0800 + $1000
                 END IF
             END IF
 
@@ -537,15 +622,18 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Check collisions (crossing-point detection) ---
-    ' Fires once when obstacle crosses PLAYER_X (NoteCleared prevents re-fire).
+    ' --- Check collisions (overlap detection) ---
+    ' Note sprite: [NoteX, NoteX+8]. Player sprite: [PLAYER_X, PLAYER_X+8] = [40, 48].
+    ' First overlap: NoteX < PLAYER_X + 8 (note right edge enters player space).
+    ' Last overlap:  NoteX > PLAYER_X - 8 (note left edge exits player space, i.e. NoteX >= 32).
+    ' Active window: NoteX in (32, 48). Clear at NoteX < 32 (note fully past player).
     ' Vertical check: if PlayerY + 12 > NOTE_Y, player's feet are below the
     ' note top = HIT. The 12px offset gives a 4px grace zone at the feet.
     ' On hit: detuned "dud" SFX on Ch1 (period + period/16 ≈ 1 semitone flat).
     FOR Slot = 0 TO 3
         IF NoteActive(Slot) THEN
             IF NoteCleared(Slot) = 0 THEN
-                IF NoteX(Slot) < PLAYER_X THEN
+                IF NoteX(Slot) < PLAYER_X + 8 THEN
                     ' Vertical: player body > note top = HIT (4px grace at feet)
                     IF PlayerY + 12 > NOTE_Y THEN
                         HitCount = HitCount + 1
@@ -568,8 +656,8 @@ MainLoop:
                         PRINT AT HeartPositions(MAX_HITS - HitCount), 0
                         IF HitCount >= MAX_HITS THEN GameOver = 1
                     END IF
-                    ' Only mark cleared once note is well past player
-                    IF NoteX(Slot) < PLAYER_X - 10 THEN NoteCleared(Slot) = 1
+                    ' Clear once note has fully exited player space (NoteX < PLAYER_X - 8 = 32)
+                    IF NoteX(Slot) < PLAYER_X - 8 THEN NoteCleared(Slot) = 1
                 END IF
             END IF
         END IF
@@ -657,6 +745,19 @@ GameOverScreen:
         PRINT AT Col, 0
     NEXT Col
     WAIT
+    ' --- End screen voice feedback ---
+    IF VOICE.AVAILABLE THEN
+        Col = RANDOM(3)
+        IF GameOver = 2 THEN
+            IF Col = 0 THEN VOICE PLAY EncorePhrase
+            IF Col = 1 THEN VOICE PLAY BravoPhrase
+            IF Col = 2 THEN VOICE PLAY CarnegiePhrase
+        ELSE
+            IF Col = 0 THEN VOICE PLAY NeedsPracticePhrase
+            IF Col = 1 THEN VOICE PLAY TechniquePhrase
+            IF Col = 2 THEN VOICE PLAY PracticeScalesPhrase
+        END IF
+    END IF
     IF GameOver = 2 THEN
         ' Song complete — celebration pose
         SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
@@ -723,6 +824,25 @@ JumpArc:
 
 OuchPhrase:
     VOICE AW,PA1,0
+
+SneezePhrase:
+    VOICE AA,CH,UW2,PA1,0
+
+' --- End screen voice phrases ---
+EncorePhrase:
+    VOICE AA,NN1,KK2,OR,PA1,0
+BravoPhrase:
+    VOICE PP,RR1,AA,VV,OW,PA2,BB1,EH,LL,IY,SS,IY,MM,OW,PA1,0
+CarnegiePhrase:
+    VOICE KK1,AR,NN1,EH,GG1,IY,PA2,HH1,AO,LL,PA2,LL,UH,KK3,SS,PA2,GG1,UH,DD1,PA2,AO,NN1,PA2,YY1,UW2,PA1,0
+NeedsPracticePhrase:
+    VOICE NN1,EY,DD1,SS,PA2,PP,RR1,AA,KK2,TT1,IH,SS,PA1,0
+TechniquePhrase:
+    VOICE TT2,EH,KK3,NN1,IY,KK3,PA2,NN1,IY,DD1,ZZ,PA2,WW,ER2,KK3,PA1,0
+PracticeScalesPhrase:
+    VOICE PP,RR1,AX,KK3,TT2,IH,SS,PA2,MM,OR,PA2,SS,KK3,EY,LL,ZZ,PA1,0
+
+    SEGMENT 1           ' Melody + obstacle data tables overflow to $A000-$BFFF
 
     ' ============================================
     ' Maple Leaf Rag - A Strain Background Melody
@@ -856,6 +976,24 @@ AllMelodyData:
     DATA  480,  320,  404,    0,  404,    0,  320,    0   ' pos 112-119
     DATA  428,  605, 1077,  641,  404,  320,  269,  202   ' pos 120-127
 
+    ' === Stage 4: D Strain [hardest] (26 obstacles) ===
+    DATA  360,    0,  269,    0,  320,    0,  269,    0   ' pos 0-7
+    DATA  320,    0,  269,    0,  240,  214,    0,  240   ' pos 8-15
+    DATA  269,  320,  360,  320,    0,  428,    0,    0   ' pos 16-23
+    DATA    0, 1438, 2155,  360,  320,  428,  360,  320   ' pos 24-31
+    DATA    0,  428,  360,    0,  320,  480,    0,    0   ' pos 32-39
+    DATA    0, 2034, 1920,  404,  320,  480,  404,  320   ' pos 40-47
+    DATA    0,  428,    0,  360,  320,  428,  360,  320   ' pos 48-55
+    DATA    0,  428,    0,  360,  320,  428,  360,  320   ' pos 56-63
+    DATA    0,  360,  269,    0,  320,    0,  269,    0   ' pos 64-71
+    DATA  320,    0,  269,    0,  240,  214,    0,  240   ' pos 72-79
+    DATA  269,  320,  269,    0,  320,    0,  360,  269   ' pos 80-87
+    DATA    0,  428,    0,  360,  320,  428,  360,  320   ' pos 88-95
+    DATA    0,  539,    0,  480,  539,    0,  539,    0   ' pos 96-103
+    DATA  480,  539,    0,  480,  428,  539,  480,  428   ' pos 104-111
+    DATA    0,  539,    0,  480,  428,  539,    0,  480   ' pos 112-119
+    DATA  807,  719,  539,    0,  360,    0,  269,    0   ' pos 120-127
+
     ' ============================================
     ' Obstacle Map
     ' 128 entries (one per 16th-note position).
@@ -911,6 +1049,16 @@ AllObstacleData:
     DATA 0,1,0,0, 0,1,1,1, 0,0,0,0, 0,0,0,0   ' pos 96-111: beat 97,101,102,103
     DATA 0,1,0,0, 0,1,0,0, 0,1,0,0, 0,1,0,0   ' pos 112-127: beat 113,117,121,125
 
+    ' === Stage 4: D Strain [hardest] ===
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 0,0,0,1   ' pos 0-15: beat 5,15
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 0,0,0,1   ' pos 16-31: beat 21,31
+    DATA 0,0,0,0, 0,1,0,0, 0,0,0,0, 0,0,0,1   ' pos 32-47: beat 37,47
+    DATA 1,1,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,1   ' pos 48-63: beat 48,49,57,63
+    DATA 1,1,0,0, 0,0,0,0, 0,1,0,0, 0,0,0,0   ' pos 64-79: beat 64,65,73
+    DATA 0,0,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,0   ' pos 80-95: beat 83,89
+    DATA 0,0,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1   ' pos 96-111: beat 99,105,111
+    DATA 1,1,0,0, 0,0,0,0, 0,1,1,0, 0,0,0,1   ' pos 112-127: beat 112,113,121,122,127
+
     ' ============================================
     ' Note Color Palette (5 cycling colors)
     ' ============================================
@@ -920,20 +1068,28 @@ HeartPositions:
 
 
 LevelOffsets:
-    DATA 0, 128, 256, 384
+    DATA 0, 128, 256, 384, 512
 
     ' Per-stage hazard spawn windows (indexed by CurrentLevel)
     ' Stage 0: no hazards (window [0,0] = never spawns)
     ' Stages 1-2: pencils [20,108], flowers [55,95]
     ' Stage 3: pencils [20,108], flowers [30,126]
 PencilWindowStarts:
-    DATA 0, 20, 20, 20
+    DATA 0, 20, 20, 20, 20
 PencilWindowEnds:
-    DATA 0, 108, 108, 108
+    DATA 0, 108, 108, 108, 117
 FlowerWindowStarts:
-    DATA 0, 55, 55, 30
+    DATA 0, 55, 55, 30, 30
 FlowerWindowEnds:
-    DATA 0, 95, 95, 126
+    DATA 0, 95, 95, 126, 126
+SneezeEnabled:
+    DATA 0, 0, 0, 0, 1          ' Level 5 only
+SneezeMaxCount:
+    DATA 0, 0, 0, 0, 2          ' Level 5: up to 2 sneezes
+SneezeStartBeat:
+    DATA 0, 0, 0, 0, 12         ' Level 5: start at beat 12 (~10% of 128)
+SneezeEndBeat:
+    DATA 0, 0, 0, 0, 115        ' Level 5: end at beat 115 (~90% of 128)
 
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
