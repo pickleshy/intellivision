@@ -32,7 +32,7 @@ Stages within a level are played sequentially. The player hears the full piece o
 - FRAMES_PER_NOTE = 9 (150ms per grid position)
 - SPAWN_OFFSET = 9 beats (obstacles spawn early to sync with melody)
 - Scroll speed: ~1.668 px/frame (SCROLL_FRAC = 171/256)
-- PLAYER_X = 40, GROUND_Y = 48, NOTE_Y = 56
+- PLAYER_X = 40, GROUND_Y = 56, NOTE_Y = 60
 
 ---
 
@@ -180,36 +180,51 @@ Healing power-ups that restore hearts when collected mid-jump.
 | `spawn_x_range` | [int, int] | `[min_x, min+random_x]` horizontal spawn position |
 | `heal_amount` | int | Hearts restored on collection (currently 1) |
 
-**Behavior:** Drift diagonally (left + down). Collected only while jumping. Pink/magenta (pastel 12). Won't spawn while a pencil is falling.
+**Behavior:** Drift diagonally (left + down). Collected on any overlap with player (no jump required). Pink/magenta (pastel 12). Won't spawn while tuba is active.
 
-#### Tuba (power-up — invincibility) [NOT YET IMPLEMENTED]
+#### Tuba (power-up — invincibility)
 
-A floating tuba that grants temporary invincibility when collected.
+The Golden Tuba of Immunity — grants 10 seconds of invincibility when collected.
 
 ```json
 "tuba": {
-    "enabled": false,
+    "enabled": true,
     "max_count": 1,
-    "spawn_window": [40, 100],
-    "invincibility_frames": 180
+    "spawn_window": [32, 96],
+    "invincibility_frames": 600
 }
 ```
 
-The tool should include this in the schema so stages can be designed with tuba placement in mind, even before the engine supports it.
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | bool | Whether the tuba appears in this stage |
+| `max_count` | int | Total tubas per run (always 1) |
+| `spawn_window` | [int, int] | `[first_beat, last_beat]` — only spawns once within this range |
+| `invincibility_frames` | int | Immunity duration in frames (600 = 10 seconds at 60fps) |
 
-#### Sneeze (hazard — screen shake) [NOT YET IMPLEMENTED]
+**Behavior:** Enters from the top of the screen (Y=0), falls to the bob zone (Y=30) at 1px/2 frames, then oscillates between Y=30 (catchable at jump peak) and Y=50 (catchable standing) at 1px/4 frames. Drifts left at 1px/2 frames; spawns at X=RANDOM(60)+100. Shares MOB 5 with flower (mutually exclusive). On collection, plays a C-E-G-C fanfare and flashes the player yellow↔white for the duration.
 
-A sneeze event that shakes the screen, disorienting the player.
+#### Sneeze (hazard — screen shake)
+
+Random screen-shake events that disorient the player by jittering all sprites ±3 pixels.
 
 ```json
 "sneeze": {
-    "enabled": false,
-    "beat_triggers": [64, 96],
-    "shake_frames": 30
+    "enabled": true,
+    "max_count": 2,
+    "spawn_window": [12, 115],
+    "shake_frames": 180
 }
 ```
 
-The tool should include this in the schema. `beat_triggers` is an array of beat positions where the sneeze fires (like the obstacle array but for screen-shake events).
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | bool | Whether sneezes occur in this stage |
+| `max_count` | int | Total sneezes per run |
+| `spawn_window` | [int, int] | `[first_beat, last_beat]` — sneezes only trigger within this range |
+| `shake_frames` | int | Duration of each shake in frames (180 = 3 seconds at 60fps) |
+
+**Behavior:** At random intervals (within the spawn window), all sprites shift by a random ±3px offset each frame for `shake_frames` frames. A voice "ah-choo" phrase plays at sneeze start. Sneezes fire with a random delay (360 + RANDOM(120) frames) between events. Currently enabled on Level 5 only (hardest stage).
 
 ---
 
@@ -338,7 +353,7 @@ The tool should include this in the schema. `beat_triggers` is an array of beat 
 
 ### Current workflow (manual)
 
-1. MIDI file → `extract_melody.py` → 128 PSG periods
+1. MIDI file → `tools/parse_midi.py` → 128 PSG periods
 2. Rehearsal play → screenshot jump beats → obstacle array
 3. Paste both arrays into `AllMelodyData:` and `AllObstacleData:` in main.bas
 4. Each stage block is 128 entries, indexed by `#LevelOffset` (0, 128, 256...)
@@ -401,8 +416,10 @@ When sequential play is implemented, the selector will choose a **level** (piece
 | 4 | Player celebration (hands up) |
 | 5 | Pencil |
 | 6 | Flower |
-| 7-63 | Available for tuba, sneeze effects, etc. |
+| 7 | Scream | Hurt player pose (arms up, scared eyes) |
+| 8 | Tuba | Golden Tuba of Immunity power-up |
+| 9-63 | Available | Free for future graphics |
 
 ### ROM Budget
 
-Each stage adds 256 words of ROM (128 melody + 128 obstacles). With OPTION MAP 2 providing 42K+ words, there's room for many stages. Current usage is ~5.5K.
+Each stage adds 256 words of ROM (128 melody + 128 obstacles). With OPTION MAP 2 providing 42K+ words, there's room for many stages. Current usage: ~6885 words (Seg 0) + ~2403 words (Seg 1) = ~9.3K total across two 8K segments.

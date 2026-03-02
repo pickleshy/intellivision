@@ -7,15 +7,15 @@ Rehearsal mode is how we design obstacle patterns for new stages. Instead of gue
 ## Prerequisites
 
 - A MIDI file for the new stage (128 positions, 2/4 time, 100 BPM)
-- The extraction script: `assets/extract_melody.py`
+- The extraction script: `tools/parse_midi.py`
 
 ## Step-by-Step Workflow
 
 ### 1. Extract Melody from MIDI
 
 ```bash
-cd games/downbeat-v2/assets
-python3 extract_melody.py your_stage.mid
+cd games/downbeat-v2
+python3 tools/parse_midi.py your_stage.mid
 ```
 
 This outputs 128 PSG period values (one per 16th-note position). The script uses "highest note per tick" extraction — trust this method; it sounds right for Maple Leaf Rag.
@@ -26,8 +26,12 @@ In `src/main.bas`, find the `AllMelodyData:` section and replace the target stag
 
 ### 3. Set Up Rehearsal Slot
 
-The stage being rehearsed must be the **highest-numbered stage** (currently index 2, keypad 3). The code activates rehearsal features when `CurrentLevel = 2`:
+The code activates rehearsal features when `CurrentLevel = 255` (a sentinel value). To rehearse a new stage:
 
+1. Add the stage's melody data to `AllMelodyData:` and set its obstacle data to all zeros
+2. In the keypad handler, temporarily change the target stage's `CurrentLevel` assignment from its real index to `255`
+
+With `CurrentLevel = 255` active:
 - **During gameplay:** Each jump prints "BEAT [number]" at the bottom of the screen
 - **On song complete:** Displays "JUMP BEATS:" followed by all recorded beat positions
 - **End screen holds for 10 seconds** so you can screenshot/photograph the beat numbers
@@ -37,7 +41,7 @@ The obstacle map for the rehearsal stage must be **all zeros** (blank runner —
 ### 4. Play the Rehearsal
 
 1. Build and run: `cd games/downbeat-v2 && bash build.sh run`
-2. Select the rehearsal stage (keypad 3)
+2. Select the rehearsal stage
 3. Listen to the melody and **jump wherever feels natural** — don't overthink it
 4. At the end, the JUMP BEATS screen appears with all your positions
 5. Screenshot or photograph the numbers (you have 10 seconds)
@@ -75,17 +79,19 @@ Once the obstacle pattern feels good:
 
 | Feature | Where | Trigger |
 |---------|-------|---------|
-| Beat display on jump | ~line 325 | `IF CurrentLevel = 2 THEN` |
-| Jump recording | ~line 321 | Always active (JumpMap array) |
-| End screen beat list | ~line 612 | `IF CurrentLevel = 2 THEN` |
-| 10-second hold | ~line 650 | `IF CurrentLevel = 2 AND GameOver = 2 THEN` |
+| Jump recording | ~line 459 | Always active (JumpMap array, every jump) |
+| Beat display on jump | ~line 462 | `IF CurrentLevel = 255 THEN` |
+| End screen beat list | ~line 992 | `IF CurrentLevel = 255 THEN` |
+| 10-second hold | ~line 1026 | `IF CurrentLevel = 255 AND GameOver = 2 THEN` |
 
-### Moving the Rehearsal Slot
+### Enabling Rehearsal for a Stage
 
-When adding a new stage after the current one, the rehearsal features follow `CurrentLevel = 2`. To rehearse a stage at a different slot:
+The sentinel value `255` is never a real stage index, so it's safe to use temporarily:
 
-1. Change all `CurrentLevel = 2` checks to the new slot index
-2. Or: always use the highest slot for new stages, moving completed stages down
+1. Find the keypad handler for your target stage (search for `CurrentLevel =` assignments)
+2. Change that assignment to `CurrentLevel = 255`
+3. Build, play, record jumps
+4. Change it back to the real stage index before committing
 
 ### MIDI Extraction Script Details
 
