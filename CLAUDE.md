@@ -919,6 +919,26 @@ NEXT LoopVar
 
 **Rule:** Never use `VOICE WAIT` in production code. Schedule speech with `VOICE PLAY` and let it run during existing WAIT loops (wave announcements, transition pauses, etc.). The 1.5-second standard pause (90 frames) is more than enough for any speech phrase.
 
+### VOICE phrases require a trailing pause before the `0` terminator
+
+The `0` terminator alone does not stop playback of the final phoneme — the Intellivoice hardware requires an explicit pause phoneme (`PA1` or `PA2`) to end it. Without one, the last phoneme keeps playing indefinitely.
+
+```basic
+' BAD — last phoneme sustains forever:
+OuchPhrase:
+    VOICE AW,0
+
+' GOOD — PA1 terminates the phoneme, then 0 ends the phrase:
+OuchPhrase:
+    VOICE AW,PA1,0
+
+' GOOD — longer phrase, PA1 at end:
+BravoPhrase:
+    VOICE PP,RR1,AA,VV,OW,PA2,BB1,EH,LL,IY,SS,IY,MM,OW,PA1,0
+```
+
+**Rule:** Always end VOICE phrase data with `PA1,0` (or `PA2,PA1,0` for a longer closing pause). Never terminate directly with a phoneme followed by `0`.
+
 ### Button debounce at state transitions
 
 When transitioning between game states (gameplay → game over → title screen → gameplay), the fire button is often still held from the previous state. Without debounce, the player blows through screens instantly.

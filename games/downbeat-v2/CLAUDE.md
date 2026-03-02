@@ -283,6 +283,8 @@ Built-in recording workflow for designing obstacle patterns:
 
 9. **GameOverScreen reconstruction pitfall**: The GameOverScreen PROCEDURE was reconstructed from an old git diff, accidentally reverting per-level phrase changes. When refactoring large blocks into procedures, always compare against the most recent commit, not `git diff HEAD`.
 
+10. **VOICE phrases need a trailing pause before the `0` terminator**: The `0` terminator alone does not stop the final phoneme — the Intellivoice hardware requires an explicit `PA1` (or `PA2`) to end playback. Without it, the last phoneme keeps playing indefinitely. Always end phrases with `...,PA1,0`. Example: `VOICE AW,PA1,0` not `VOICE AW,0`.
+
 ## Visual Verification via AVI Recording
 
 ```bash
