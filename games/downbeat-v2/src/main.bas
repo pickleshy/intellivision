@@ -589,8 +589,8 @@ MainLoop:
                 END IF
             END IF
 
-            ' --- Flower collection (must be jumping/floating) ---
-            IF FlowerState = 1 AND JumpActive THEN
+            ' --- Flower collection ---
+            IF FlowerState = 1 THEN
                 ' Check overlap: player at (PLAYER_X, PlayerY) 8x16
                 ' Flower at (FlowerX, FlowerY) 8x8
                 IF FlowerX + 8 > PLAYER_X THEN
