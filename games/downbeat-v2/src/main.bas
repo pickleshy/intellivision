@@ -831,7 +831,7 @@ SpawnTuba: PROCEDURE
     END IF
     ' Spawn: enters from top of screen, drifts left as it falls into bob zone
     tubaState = 1
-    tubaX = NOTE_SPAWN_X
+    tubaX = RANDOM(60) + 100    ' Spawn 100-159, same range as flower
     tubaY = 0               ' Starts above screen, falls into bob zone
     tubaDriftX = 0
     tubaDriftY = 0
@@ -845,9 +845,9 @@ END
     ' ============================================
 UpdateTuba: PROCEDURE
     IF tubaState <> 1 THEN RETURN
-    ' Drift left every 3 frames
+    ' Drift left every 2 frames (same speed as flower)
     tubaDriftX = tubaDriftX + 1
-    IF tubaDriftX >= 3 THEN
+    IF tubaDriftX >= 2 THEN
         tubaDriftX = 0
         IF tubaX > 0 THEN tubaX = tubaX - 1
     END IF
