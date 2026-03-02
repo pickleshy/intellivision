@@ -26,6 +26,7 @@
     CONST NOTE_VOLUME = 10      ' Background melody volume
     CONST SPAWN_OFFSET = 9      ' Spawn obstacles early to sync with melody
                                 ' 128px / 1.668px/frame / 9 frames = ~8.5 beats
+    CONST TUBA_IMMTIME = 600    ' Immunity duration: 10 seconds at 60fps
 
     ' Sprite register flags
     CONST SPR_VISIBLE = $0200
@@ -143,12 +144,25 @@ RestartGame:
     SneezeY = 3
     SneezeSpawnTimer = RANDOM(120) + 180
 
+    ' --- Tuba/immunity state ---
+    tubaActive = 0
+    tubaX = 0
+    tubaY = 0
+    tubaDriftX = 0
+    tubaDriftY = 0
+    tubaSpawnTimer = RANDOM(90) + 60
+    tubasSpawned = 0
+    #immunityTimer = 0
+    ImmuneFlash = 0
+    FanfareStep = 0
+    FanfareTimer = 0
+
     ' --- Clear screen ---
     CLS
     WAIT
 
-    ' --- Define GRAM cards 0-7 (player, ground, note, heart, celebration, pencil, flower, scream) ---
-    DEFINE 0, 8, GramData
+    ' --- Define GRAM cards 0-8 (player, ground, note, heart, celebration, pencil, flower, scream, tuba) ---
+    DEFINE 0, 9, GramData
     WAIT
 
     ' --- Initialize all note slots ---
@@ -220,6 +234,8 @@ LevelConfirm:
     SneezeMaxSneezes = SneezeMaxCount(CurrentLevel)
     SneezeStart = SneezeStartBeat(CurrentLevel)
     SneezeEnd = SneezeEndBeat(CurrentLevel)
+    TubaWinStart = TubaWindowStarts(CurrentLevel)
+    TubaWinEnd = TubaWindowEnds(CurrentLevel)
     CLS
     WAIT
     ' Redraw HUD after CLS — only show hearts the player has
@@ -267,7 +283,7 @@ LevelConfirm:
     ' ==========================================
 MainLoop:
     WAIT
-    IF GameOver THEN GOTO GameOverScreen
+    IF GameOver THEN GOSUB GameOverScreen : GOTO RestartGame
 
     ' --- Retrigger melody note after 1-frame mute ---
     ' AY-3-8914 doesn't restart waveform on same period write.
@@ -368,7 +384,7 @@ MainLoop:
 
     ' --- Flower spawn (Stages 2+) ---
     IF CurrentLevel >= 1 THEN
-        IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 THEN
+        IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 AND tubaActive = 0 THEN
             IF BeatCounter >= FlowerWinStart AND BeatCounter < FlowerWinEnd THEN
                 IF FlowerSpawnTimer > 0 THEN
                     FlowerSpawnTimer = FlowerSpawnTimer - 1
@@ -418,6 +434,14 @@ MainLoop:
                 END IF
             END IF
         END IF
+    END IF
+
+    ' --- Tuba spawn (procedure in Seg 1) ---
+    GOSUB SpawnTuba
+
+    ' --- Immunity timer (counts down from TUBA_IMMTIME each frame) ---
+    IF #immunityTimer > 0 THEN
+        #immunityTimer = #immunityTimer - 1
     END IF
 
     ' --- Input: jump + peak float ---
@@ -479,14 +503,33 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Update player sprite (8x8 stretched to 8x16 via YSIZE) ---
+    ' --- Update player sprite (compute card first, single SPRITE call saves ROM) ---
     IF SongEndTimer > 0 AND DamageTaken = 0 THEN
-        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 4 * 8 + 2 + $0800
+        #PlayerCard = 4 * 8 + 2 + $0800    ' Celebration
     ELSEIF HurtTimer > 0 THEN
-        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 7 * 8 + 2 + $0800
+        #PlayerCard = 7 * 8 + 2 + $0800    ' Scream
+    ELSEIF #immunityTimer > 0 THEN
+        ' Flash yellow<->white. Faster in last 2 seconds (< 120 frames).
+        ImmuneFlash = ImmuneFlash + 1
+        IF #immunityTimer < 120 THEN
+            IF ImmuneFlash >= 8 THEN ImmuneFlash = 0
+            IF ImmuneFlash < 4 THEN
+                #PlayerCard = 0 * 8 + 6 + $0800  ' Yellow fast
+            ELSE
+                #PlayerCard = 0 * 8 + 7 + $0800  ' White fast
+            END IF
+        ELSE
+            IF ImmuneFlash >= 16 THEN ImmuneFlash = 0
+            IF ImmuneFlash < 8 THEN
+                #PlayerCard = 0 * 8 + 6 + $0800  ' Yellow slow
+            ELSE
+                #PlayerCard = 0 * 8 + 7 + $0800  ' White slow
+            END IF
+        END IF
     ELSE
-        SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, 0 * 8 + 2 + $0800
+        #PlayerCard = 0 * 8 + 2 + $0800    ' Normal red
     END IF
+    SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, #PlayerCard
 
     ' --- Scroll obstacles ---
     ' Fixed-point scrolling: each frame adds SCROLL_FRAC (171) to NoteFrac.
@@ -622,6 +665,9 @@ MainLoop:
         END IF
     END IF
 
+    ' --- Update tuba (procedure in Seg 1) ---
+    GOSUB UpdateTuba
+
     ' --- Check collisions (overlap detection) ---
     ' Note sprite: [NoteX, NoteX+8]. Player sprite: [PLAYER_X, PLAYER_X+8] = [40, 48].
     ' First overlap: NoteX < PLAYER_X + 8 (note right edge enters player space).
@@ -635,26 +681,29 @@ MainLoop:
             IF NoteCleared(Slot) = 0 THEN
                 IF NoteX(Slot) < PLAYER_X + 8 THEN
                     ' Vertical: player body > note top = HIT (4px grace at feet)
-                    IF PlayerY + 12 > NOTE_Y THEN
-                        HitCount = HitCount + 1
-                        DamageTaken = 1
-                        NoteCleared(Slot) = 1
-                        NoteWobble(Slot) = 12
-                        HurtTimer = 10
-                        ' Dud sound: flat by ~1 semitone on Channel B
-                        IF #NotePitch(Slot) > 0 THEN
-                            SOUND 1, #NotePitch(Slot) + #NotePitch(Slot) / 16, 12
-                        ELSE
-                            SOUND 1, 200, 12
+                    ' Skip damage if immunity is active — player runs through freely.
+                    IF #immunityTimer = 0 THEN
+                        IF PlayerY + 12 > NOTE_Y THEN
+                            HitCount = HitCount + 1
+                            DamageTaken = 1
+                            NoteCleared(Slot) = 1
+                            NoteWobble(Slot) = 12
+                            HurtTimer = 10
+                            ' Dud sound: flat by ~1 semitone on Channel B
+                            IF #NotePitch(Slot) > 0 THEN
+                                SOUND 1, #NotePitch(Slot) + #NotePitch(Slot) / 16, 12
+                            ELSE
+                                SOUND 1, 200, 12
+                            END IF
+                            SfxTimer = 6
+                            ' Ouch voice
+                            IF VOICE.AVAILABLE THEN
+                                IF VOICE.PLAYING = 0 THEN VOICE PLAY OuchPhrase
+                            END IF
+                            ' Remove a heart (rightmost first)
+                            PRINT AT HeartPositions(MAX_HITS - HitCount), 0
+                            IF HitCount >= MAX_HITS THEN GameOver = 1
                         END IF
-                        SfxTimer = 6
-                        ' Ouch voice
-                        IF VOICE.AVAILABLE THEN
-                            IF VOICE.PLAYING = 0 THEN VOICE PLAY OuchPhrase
-                        END IF
-                        ' Remove a heart (rightmost first)
-                        PRINT AT HeartPositions(MAX_HITS - HitCount), 0
-                        IF HitCount >= MAX_HITS THEN GameOver = 1
                     END IF
                     ' Clear once note has fully exited player space (NoteX < PLAYER_X - 8 = 32)
                     IF NoteX(Slot) < PLAYER_X - 8 THEN NoteCleared(Slot) = 1
@@ -669,25 +718,28 @@ MainLoop:
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 IF PencilCleared(Slot) = 0 THEN
-                    ' Check X overlap: pencil 8px wide vs player 8px wide
-                    IF PencilX(Slot) + 8 > PLAYER_X THEN
-                        IF PencilX(Slot) < PLAYER_X + 8 THEN
-                            ' Check Y overlap: pencil 8px tall vs player 16px tall
-                            IF PencilY(Slot) + 8 > PlayerY THEN
-                                IF PencilY(Slot) < PlayerY + 16 THEN
-                                    HitCount = HitCount + 1
-                                    DamageTaken = 1
-                                    PencilCleared(Slot) = 1
-                                    PencilState(Slot) = 0
-                                    SPRITE Slot + 6, 0, 0, 0
-                                    HurtTimer = 10
-                                    SOUND 1, 200, 12
-                                    SfxTimer = 6
-                                    IF VOICE.AVAILABLE THEN
+                    ' Skip damage if immunity is active — pencil passes through.
+                    IF #immunityTimer = 0 THEN
+                        ' Check X overlap: pencil 8px wide vs player 8px wide
+                        IF PencilX(Slot) + 8 > PLAYER_X THEN
+                            IF PencilX(Slot) < PLAYER_X + 8 THEN
+                                ' Check Y overlap: pencil 8px tall vs player 16px tall
+                                IF PencilY(Slot) + 8 > PlayerY THEN
+                                    IF PencilY(Slot) < PlayerY + 16 THEN
+                                        HitCount = HitCount + 1
+                                        DamageTaken = 1
+                                        PencilCleared(Slot) = 1
+                                        PencilState(Slot) = 0
+                                        SPRITE Slot + 6, 0, 0, 0
+                                        HurtTimer = 10
+                                        SOUND 1, 200, 12
+                                        SfxTimer = 6
+                                        IF VOICE.AVAILABLE THEN
                             IF VOICE.PLAYING = 0 THEN VOICE PLAY OuchPhrase
                         END IF
-                                    PRINT AT HeartPositions(MAX_HITS - HitCount), 0
-                                    IF HitCount >= MAX_HITS THEN GameOver = 1
+                                        PRINT AT HeartPositions(MAX_HITS - HitCount), 0
+                                        IF HitCount >= MAX_HITS THEN GameOver = 1
+                                    END IF
                                 END IF
                             END IF
                         END IF
@@ -702,6 +754,9 @@ MainLoop:
         SfxTimer = SfxTimer - 1
         IF SfxTimer = 0 THEN SOUND 1, 0, 0
     END IF
+
+    ' --- Fanfare sequencer (procedure in Seg 1) ---
+    GOSUB FanfareUpdate
 
     ' --- Hurt timer (scream sprite on player) ---
     IF HurtTimer > 0 THEN HurtTimer = HurtTimer - 1
@@ -728,91 +783,6 @@ MainLoop:
     END IF
 
     GOTO MainLoop
-
-    ' ==========================================
-    ' End Screen (overlaid on game area)
-    ' ==========================================
-GameOverScreen:
-    SOUND 0, , 0
-    SOUND 1, , 0
-    SOUND 2, , 0
-    ' Hide all sprites except player (MOB 0)
-    FOR Slot = 1 TO 7
-        SPRITE Slot, 0, 0, 0
-    NEXT Slot
-    ' Clear play area (rows 1-6) but keep row 0 (hearts) and row 7 (ground)
-    FOR Col = 20 TO 139
-        PRINT AT Col, 0
-    NEXT Col
-    WAIT
-    ' --- End screen voice feedback ---
-    IF VOICE.AVAILABLE THEN
-        Col = RANDOM(3)
-        IF GameOver = 2 THEN
-            IF Col = 0 THEN VOICE PLAY EncorePhrase
-            IF Col = 1 THEN VOICE PLAY BravoPhrase
-            IF Col = 2 THEN VOICE PLAY CarnegiePhrase
-        ELSE
-            IF Col = 0 THEN VOICE PLAY NeedsPracticePhrase
-            IF Col = 1 THEN VOICE PLAY TechniquePhrase
-            IF Col = 2 THEN VOICE PLAY PracticeScalesPhrase
-        END IF
-    END IF
-    IF GameOver = 2 THEN
-        ' Song complete — celebration pose
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
-        IF CurrentLevel = 255 THEN
-            ' Rehearsal mode: show jump beat numbers (set to 255 = disabled)
-            SPRITE 0, 0, 0, 0
-            PRINT AT 22 COLOR 6, "JUMP BEATS:"
-            ' List beat numbers where jumps were recorded
-            ' Use Col as screen cursor (start at row 2, col 0 = position 40)
-            Col = 40
-            FOR Slot = 0 TO 127
-                IF JumpMap(Slot) THEN
-                    IF Col < 220 THEN
-                        PRINT AT Col COLOR 7, <> Slot
-                        ' Advance cursor: 4 chars per number
-                        IF Slot >= 100 THEN
-                            Col = Col + 4
-                        ELSEIF Slot >= 10 THEN
-                            Col = Col + 3
-                        ELSE
-                            Col = Col + 2
-                        END IF
-                    END IF
-                END IF
-            NEXT Slot
-        ELSE
-            IF DamageTaken = 0 THEN
-                PRINT AT 163 COLOR 6, "PERFECT RUN!"
-            ELSE
-                PRINT AT 162 COLOR 5, "SONG COMPLETE!"
-            END IF
-        END IF
-        PRINT AT 183 COLOR 7, "PRESS TO REPLAY"
-    ELSE
-        ' Game over — normal pose
-        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 0 * 8 + 2 + $0800
-        PRINT AT 164 COLOR 2, "GAME OVER!"
-        PRINT AT 183 COLOR 7, "PRESS TO RETRY"
-    END IF
-
-    ' --- Rehearsal mode: hold end screen for 10 seconds (set to 255 = disabled) ---
-    IF CurrentLevel = 255 AND GameOver = 2 THEN
-        FOR Slot = 0 TO 599
-            WAIT
-        NEXT Slot
-    END IF
-
-    ' --- Wait for button release then press ---
-GameOverRelease:
-    WAIT
-    IF CONT.BUTTON THEN GOTO GameOverRelease
-GameOverWait:
-    WAIT
-    IF CONT.BUTTON = 0 THEN GOTO GameOverWait
-    GOTO RestartGame
 
     ' ============================================
     ' Data
@@ -843,6 +813,196 @@ PracticeScalesPhrase:
     VOICE PP,RR1,AX,KK3,TT2,IH,SS,PA2,MM,OR,PA2,SS,KK3,EY,LL,ZZ,PA1,0
 
     SEGMENT 1           ' Melody + obstacle data tables overflow to $A000-$BFFF
+
+    ' ============================================
+    ' SpawnTuba - Spawn Golden Tuba of Immunity
+    ' Called each frame from main loop.
+    ' ============================================
+SpawnTuba: PROCEDURE
+    IF TubaWinEnd = 0 THEN RETURN     ' Feature disabled for this level
+    IF tubasSpawned >= 1 THEN RETURN  ' Already spawned this session
+    IF tubaActive THEN RETURN         ' Already on screen
+    IF SongDone THEN RETURN           ' Song over
+    IF FlowerState THEN RETURN        ' Flower using MOB 5
+    IF BeatCounter < TubaWinStart THEN RETURN
+    IF BeatCounter > TubaWinEnd THEN RETURN
+    IF tubaSpawnTimer > 0 THEN
+        tubaSpawnTimer = tubaSpawnTimer - 1
+        RETURN
+    END IF
+    ' Spawn tuba drifting right-to-left at high Y (player must jump or reach it)
+    tubaActive = 1
+    tubasSpawned = 1
+    tubaX = NOTE_SPAWN_X
+    tubaY = RANDOM(24) + 16
+    tubaDriftX = 0
+    tubaDriftY = 0
+    RETURN
+END
+
+    ' ============================================
+    ' UpdateTuba - Drift, despawn, collect check
+    ' Called each frame from main loop.
+    ' ============================================
+UpdateTuba: PROCEDURE
+    IF tubaActive = 0 THEN RETURN
+    ' Drift left every 3 frames
+    tubaDriftX = tubaDriftX + 1
+    IF tubaDriftX >= 3 THEN
+        tubaDriftX = 0
+        IF tubaX > 0 THEN tubaX = tubaX - 1
+    END IF
+    ' Drift down every 5 frames
+    tubaDriftY = tubaDriftY + 1
+    IF tubaDriftY >= 5 THEN
+        tubaDriftY = 0
+        IF tubaY < 100 THEN tubaY = tubaY + 1
+    END IF
+    ' Despawn if off-screen left
+    IF tubaX < 2 THEN
+        tubaActive = 0
+        SPRITE 5, 0, 0, 0
+        RETURN
+    END IF
+    ' Collection detection (player box [PLAYER_X..PLAYER_X+8] x [PlayerY..PlayerY+16])
+    IF tubaX + 8 > PLAYER_X THEN
+        IF tubaX < PLAYER_X + 8 THEN
+            IF tubaY + 8 > PlayerY THEN
+                IF tubaY < PlayerY + 16 THEN
+                    ' Collected! Grant immunity and start fanfare
+                    tubaActive = 0
+                    SPRITE 5, 0, 0, 0
+                    #immunityTimer = TUBA_IMMTIME
+                    FanfareStep = 1
+                    FanfareTimer = 0
+                    RETURN
+                END IF
+            END IF
+        END IF
+    END IF
+    ' Update sprite (apply sneeze offset for visual consistency)
+    SPRITE 5, tubaX + SneezeX - 3 + SPR_VISIBLE, tubaY + SneezeY - 3, 8 * 8 + 6 + $0800
+    RETURN
+END
+
+    ' ============================================
+    ' FanfareUpdate - C-E-G-C ascending fanfare on PSG Channel 2
+    ' Called each frame from main loop.
+    ' ============================================
+FanfareUpdate: PROCEDURE
+    IF FanfareStep = 0 THEN RETURN
+    IF FanfareTimer > 0 THEN
+        FanfareTimer = FanfareTimer - 1
+        RETURN
+    END IF
+    ' Execute current step
+    IF FanfareStep = 1 THEN
+        SOUND 2, 855, 15    ' C4
+        FanfareTimer = 8
+        FanfareStep = 2
+    ELSEIF FanfareStep = 2 THEN
+        SOUND 2, 679, 15    ' E4
+        FanfareTimer = 8
+        FanfareStep = 3
+    ELSEIF FanfareStep = 3 THEN
+        SOUND 2, 571, 15    ' G4
+        FanfareTimer = 8
+        FanfareStep = 4
+    ELSEIF FanfareStep = 4 THEN
+        SOUND 2, 428, 15    ' C5
+        FanfareTimer = 12
+        FanfareStep = 5
+    ELSE
+        SOUND 2, , 0        ' Silence after fanfare complete
+        FanfareStep = 0
+    END IF
+    RETURN
+END
+
+    ' ============================================
+    ' GameOverScreen - End screen (game over or song complete)
+    ' Called via GOSUB; RETURN leads back to RestartGame.
+    ' ============================================
+GameOverScreen: PROCEDURE
+    SOUND 0, , 0
+    SOUND 1, , 0
+    SOUND 2, , 0
+    #immunityTimer = 0
+    FanfareStep = 0
+    ImmuneFlash = 0
+    ' Hide all sprites except player (MOB 0)
+    FOR Slot = 1 TO 7
+        SPRITE Slot, 0, 0, 0
+    NEXT Slot
+    ' Clear play area (rows 1-6) but keep row 0 (hearts) and row 7 (ground)
+    FOR Col = 20 TO 139
+        PRINT AT Col, 0
+    NEXT Col
+    WAIT
+    ' --- End screen voice feedback ---
+    IF VOICE.AVAILABLE THEN
+        Col = RANDOM(3)
+        IF GameOver = 2 THEN
+            IF Col = 0 THEN VOICE PLAY EncorePhrase
+            IF Col = 1 THEN VOICE PLAY BravoPhrase
+            IF Col = 2 THEN VOICE PLAY CarnegiePhrase
+        ELSE
+            IF Col = 0 THEN VOICE PLAY NeedsPracticePhrase
+            IF Col = 1 THEN VOICE PLAY TechniquePhrase
+            IF Col = 2 THEN VOICE PLAY PracticeScalesPhrase
+        END IF
+    END IF
+    IF GameOver = 2 THEN
+        ' Song complete — celebration pose
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
+        IF CurrentLevel = 255 THEN
+            ' Rehearsal mode: show jump beat map
+            SPRITE 0, 0, 0, 0
+            PRINT AT 22 COLOR 6, "JUMP BEATS:"
+            Col = 40
+            FOR Slot = 0 TO 127
+                IF JumpMap(Slot) THEN
+                    IF Col < 220 THEN
+                        PRINT AT Col COLOR 7, <> Slot
+                        IF Slot >= 100 THEN
+                            Col = Col + 4
+                        ELSEIF Slot >= 10 THEN
+                            Col = Col + 3
+                        ELSE
+                            Col = Col + 2
+                        END IF
+                    END IF
+                END IF
+            NEXT Slot
+        ELSE
+            IF DamageTaken = 0 THEN
+                PRINT AT 163 COLOR 6, "PERFECT RUN!"
+            ELSE
+                PRINT AT 162 COLOR 5, "SONG COMPLETE!"
+            END IF
+        END IF
+        PRINT AT 183 COLOR 7, "PRESS TO REPLAY"
+    ELSE
+        ' Game over — normal pose
+        SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 0 * 8 + 2 + $0800
+        PRINT AT 164 COLOR 2, "GAME OVER!"
+        PRINT AT 183 COLOR 7, "PRESS TO RETRY"
+    END IF
+    ' --- Rehearsal mode: hold end screen for 10 seconds ---
+    IF CurrentLevel = 255 AND GameOver = 2 THEN
+        FOR Slot = 0 TO 599
+            WAIT
+        NEXT Slot
+    END IF
+    ' --- Wait for button release then press ---
+GameOverRelease:
+    WAIT
+    IF CONT.BUTTON THEN GOTO GameOverRelease
+GameOverWait:
+    WAIT
+    IF CONT.BUTTON = 0 THEN GOTO GameOverWait
+    RETURN
+END
 
     ' ============================================
     ' Maple Leaf Rag - A Strain Background Melody
@@ -1091,6 +1251,11 @@ SneezeStartBeat:
 SneezeEndBeat:
     DATA 0, 0, 0, 0, 115        ' Level 5: end at beat 115 (~90% of 128)
 
+TubaWindowStarts:
+    DATA 0, 0, 0, 0, 32         ' Beat 32 = 25% of 128
+TubaWindowEnds:
+    DATA 0, 0, 0, 0, 96         ' Beat 96 = 75% of 128
+
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
     ' ============================================
@@ -1175,3 +1340,13 @@ GramData:
     BITMAP "..X..X.."
     BITMAP "...XX..."
     BITMAP "..X..X.."
+
+    ' Card 8: Golden Tuba of Immunity power-up
+    BITMAP "..XXXX.."
+    BITMAP ".XXXXXX."
+    BITMAP "XXXXXXXX"
+    BITMAP "XX.XX.XX"
+    BITMAP "XX....XX"
+    BITMAP ".XX..XX."
+    BITMAP "..XXXX.."
+    BITMAP "...XX..."
