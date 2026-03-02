@@ -963,17 +963,27 @@ GameOverScreen: PROCEDURE
         PRINT AT Col, 0
     NEXT Col
     WAIT
-    ' --- End screen voice feedback ---
-    IF VOICE.AVAILABLE THEN
-        Col = RANDOM(3)
-        IF GameOver = 2 THEN
-            IF Col = 0 THEN VOICE PLAY EncorePhrase
-            IF Col = 1 THEN VOICE PLAY BravoPhrase
-            IF Col = 2 THEN VOICE PLAY CarnegiePhrase
-        ELSE
-            IF Col = 0 THEN VOICE PLAY NeedsPracticePhrase
-            IF Col = 1 THEN VOICE PLAY TechniquePhrase
-            IF Col = 2 THEN VOICE PLAY PracticeScalesPhrase
+    ' --- End screen subtitle + voice (per-level, deterministic) ---
+    ' Levels 0-1: Encore / Needs Practice
+    ' Levels 2-3: Bravo Bellissimo / Technique Needs Work
+    ' Level  4:   Carnegie Hall / Practice More Scales
+    IF GameOver = 2 THEN
+        IF CurrentLevel <= 1 THEN PRINT AT 26 COLOR 6, "ENCORE!"
+        IF CurrentLevel = 2 OR CurrentLevel = 3 THEN PRINT AT 21 COLOR 6, "BRAVO BELLISSIMO!"
+        IF CurrentLevel >= 4 THEN PRINT AT 23 COLOR 6, "CARNEGIE HALL!"
+        IF VOICE.AVAILABLE THEN
+            IF CurrentLevel <= 1 THEN VOICE PLAY EncorePhrase
+            IF CurrentLevel = 2 OR CurrentLevel = 3 THEN VOICE PLAY BravoPhrase
+            IF CurrentLevel >= 4 THEN VOICE PLAY CarnegiePhrase
+        END IF
+    ELSE
+        IF CurrentLevel <= 1 THEN PRINT AT 23 COLOR 2, "NEEDS PRACTICE"
+        IF CurrentLevel = 2 OR CurrentLevel = 3 THEN PRINT AT 20 COLOR 2, "TECHNIQUE NEEDS WORK"
+        IF CurrentLevel >= 4 THEN PRINT AT 20 COLOR 2, "PRACTICE MORE SCALES"
+        IF VOICE.AVAILABLE THEN
+            IF CurrentLevel <= 1 THEN VOICE PLAY NeedsPracticePhrase
+            IF CurrentLevel = 2 OR CurrentLevel = 3 THEN VOICE PLAY TechniquePhrase
+            IF CurrentLevel >= 4 THEN VOICE PLAY PracticeScalesPhrase
         END IF
     END IF
     IF GameOver = 2 THEN
