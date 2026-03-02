@@ -145,13 +145,13 @@ RestartGame:
     SneezeSpawnTimer = RANDOM(120) + 180
 
     ' --- Tuba/immunity state ---
-    tubaActive = 0
+    tubaState = 0               ' 0=never spawned, 1=active, 2=collected/despawned
     tubaX = 0
     tubaY = 0
     tubaDriftX = 0
     tubaDriftY = 0
+    tubaBobDir = 0              ' Bob direction: 0=going down, 1=going up
     tubaSpawnTimer = RANDOM(90) + 60
-    tubasSpawned = 0
     #immunityTimer = 0
     ImmuneFlash = 0
     FanfareStep = 0
@@ -384,7 +384,7 @@ MainLoop:
 
     ' --- Flower spawn (Stages 2+) ---
     IF CurrentLevel >= 1 THEN
-        IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 AND tubaActive = 0 THEN
+        IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 AND tubaState <> 1 THEN
             IF BeatCounter >= FlowerWinStart AND BeatCounter < FlowerWinEnd THEN
                 IF FlowerSpawnTimer > 0 THEN
                     FlowerSpawnTimer = FlowerSpawnTimer - 1
@@ -820,8 +820,7 @@ PracticeScalesPhrase:
     ' ============================================
 SpawnTuba: PROCEDURE
     IF TubaWinEnd = 0 THEN RETURN     ' Feature disabled for this level
-    IF tubasSpawned >= 1 THEN RETURN  ' Already spawned this session
-    IF tubaActive THEN RETURN         ' Already on screen
+    IF tubaState > 0 THEN RETURN      ' Already spawned or on screen this session
     IF SongDone THEN RETURN           ' Song over
     IF FlowerState THEN RETURN        ' Flower using MOB 5
     IF BeatCounter < TubaWinStart THEN RETURN
@@ -830,13 +829,13 @@ SpawnTuba: PROCEDURE
         tubaSpawnTimer = tubaSpawnTimer - 1
         RETURN
     END IF
-    ' Spawn tuba drifting right-to-left at high Y (player must jump or reach it)
-    tubaActive = 1
-    tubasSpawned = 1
+    ' Spawn: enters from top of screen, drifts left as it falls into bob zone
+    tubaState = 1
     tubaX = NOTE_SPAWN_X
-    tubaY = RANDOM(24) + 16
+    tubaY = 0               ' Starts above screen, falls into bob zone
     tubaDriftX = 0
     tubaDriftY = 0
+    tubaBobDir = 0           ' Initially falling down
     RETURN
 END
 
@@ -845,22 +844,47 @@ END
     ' Called each frame from main loop.
     ' ============================================
 UpdateTuba: PROCEDURE
-    IF tubaActive = 0 THEN RETURN
+    IF tubaState <> 1 THEN RETURN
     ' Drift left every 3 frames
     tubaDriftX = tubaDriftX + 1
     IF tubaDriftX >= 3 THEN
         tubaDriftX = 0
         IF tubaX > 0 THEN tubaX = tubaX - 1
     END IF
-    ' Drift down every 5 frames
+    ' Vertical: fall from top until Y=30 (bob zone entry), then oscillate 30<->50
+    ' Fall phase: move down 1px every 2 frames until tubaY >= 30
+    ' Bob phase:  oscillate 1px every 4 frames between 30 and 50
+    '   Y=30 (top): catchable at jump peak (PlayerY=36, overlap: 30+8=38 > 36)
+    '   Y=50 (bot): catchable while standing (PlayerY=56, overlap: 50+8=58 > 56)
     tubaDriftY = tubaDriftY + 1
-    IF tubaDriftY >= 5 THEN
-        tubaDriftY = 0
-        IF tubaY < 100 THEN tubaY = tubaY + 1
+    IF tubaY < 30 THEN
+        ' Falling into bob zone
+        IF tubaDriftY >= 2 THEN
+            tubaDriftY = 0
+            tubaY = tubaY + 1
+        END IF
+    ELSE
+        ' Bobbing: oscillate between 30 and 50
+        IF tubaDriftY >= 4 THEN
+            tubaDriftY = 0
+            IF tubaBobDir = 0 THEN
+                IF tubaY < 50 THEN
+                    tubaY = tubaY + 1
+                ELSE
+                    tubaBobDir = 1
+                END IF
+            ELSE
+                IF tubaY > 30 THEN
+                    tubaY = tubaY - 1
+                ELSE
+                    tubaBobDir = 0
+                END IF
+            END IF
+        END IF
     END IF
     ' Despawn if off-screen left
     IF tubaX < 2 THEN
-        tubaActive = 0
+        tubaState = 2
         SPRITE 5, 0, 0, 0
         RETURN
     END IF
@@ -870,7 +894,7 @@ UpdateTuba: PROCEDURE
             IF tubaY + 8 > PlayerY THEN
                 IF tubaY < PlayerY + 16 THEN
                     ' Collected! Grant immunity and start fanfare
-                    tubaActive = 0
+                    tubaState = 2
                     SPRITE 5, 0, 0, 0
                     #immunityTimer = TUBA_IMMTIME
                     FanfareStep = 1
@@ -1252,9 +1276,9 @@ SneezeEndBeat:
     DATA 0, 0, 0, 0, 115        ' Level 5: end at beat 115 (~90% of 128)
 
 TubaWindowStarts:
-    DATA 0, 0, 0, 0, 32         ' Beat 32 = 25% of 128
+    DATA 32, 0, 0, 0, 32        ' Level 1 (testing) and Level 5: beat 32 (25%)
 TubaWindowEnds:
-    DATA 0, 0, 0, 0, 96         ' Beat 96 = 75% of 128
+    DATA 96, 0, 0, 0, 96        ' Level 1 (testing) and Level 5: beat 96 (75%)
 
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
