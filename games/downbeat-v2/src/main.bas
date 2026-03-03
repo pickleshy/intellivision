@@ -301,7 +301,7 @@ MainLoop:
     IF SongDone = 0 THEN
         SpawnCountdown = SpawnCountdown - 1
         IF SpawnCountdown = 0 THEN
-            SpawnCountdown = FRAMES_PER_NOTE
+            IF #immunityTimer > 0 THEN SpawnCountdown = 7 ELSE SpawnCountdown = FRAMES_PER_NOTE
 
             ' Layer A: Background melody (always plays)
             #CurPSG = AllMelodyData(#LevelOffset + BeatCounter)
@@ -557,7 +557,7 @@ MainLoop:
     ' 5 sprite slots (MOBs 1-5) are recycled as notes scroll off-screen.
     FOR Slot = 0 TO 3
         IF NoteActive(Slot) THEN
-            NoteFrac(Slot) = NoteFrac(Slot) + SCROLL_FRAC
+            IF #immunityTimer > 0 THEN NoteFrac(Slot) = NoteFrac(Slot) + 220 ELSE NoteFrac(Slot) = NoteFrac(Slot) + SCROLL_FRAC
             IF NoteFrac(Slot) >= 256 THEN
                 NoteFrac(Slot) = NoteFrac(Slot) - 256
                 NoteX(Slot) = NoteX(Slot) - 2
@@ -590,7 +590,7 @@ MainLoop:
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 ' Scroll left with the world
-                PencilFrac(Slot) = PencilFrac(Slot) + SCROLL_FRAC
+                IF #immunityTimer > 0 THEN PencilFrac(Slot) = PencilFrac(Slot) + 220 ELSE PencilFrac(Slot) = PencilFrac(Slot) + SCROLL_FRAC
                 IF PencilFrac(Slot) >= 256 THEN
                     PencilFrac(Slot) = PencilFrac(Slot) - 256
                     IF PencilX(Slot) >= 4 THEN
