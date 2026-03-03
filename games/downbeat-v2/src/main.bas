@@ -531,6 +531,25 @@ MainLoop:
     END IF
     SPRITE 0, PLAYER_X + SneezeX - 3 + SPR_VISIBLE, PlayerY + SneezeY - 3 + SPR_YSIZE, #PlayerCard
 
+    ' --- Immunity countdown text ---
+    ' Fires at exact timer values (once per threshold crossing).
+    ' Placed AFTER sprite card block so ImmuneFlash=60 isn't reset by flash code.
+    IF #immunityTimer = 180 THEN PRINT AT 184 COLOR 6, "MORTAL IN 3"
+    IF #immunityTimer = 120 THEN PRINT AT 184 COLOR 6, "MORTAL IN 2"
+    IF #immunityTimer = 60 THEN PRINT AT 184 COLOR 6, "MORTAL IN 1"
+    IF #immunityTimer = 1 THEN
+        PRINT AT 183 COLOR 2, "YOU ARE MORTAL"
+        ImmuneFlash = 60        ' Repurpose ImmuneFlash as clear-delay timer
+    END IF
+    IF #immunityTimer = 0 AND ImmuneFlash > 0 THEN
+        ImmuneFlash = ImmuneFlash - 1
+        IF ImmuneFlash = 0 THEN
+            FOR Col = 183 TO 196
+                PRINT AT Col, 0
+            NEXT Col
+        END IF
+    END IF
+
     ' --- Scroll obstacles ---
     ' Fixed-point scrolling: each frame adds SCROLL_FRAC (171) to NoteFrac.
     ' When NoteFrac overflows 256, move 2px instead of 1px.
