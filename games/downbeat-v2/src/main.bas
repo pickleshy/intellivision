@@ -26,7 +26,7 @@
     CONST NOTE_VOLUME = 10      ' Background melody volume
     CONST SPAWN_OFFSET = 9      ' Spawn obstacles early to sync with melody
                                 ' 128px / 1.668px/frame / 9 frames = ~8.5 beats
-    CONST TUBA_IMMTIME = 600    ' Immunity duration: 10 seconds at 60fps
+    CONST TUBA_IMMTIME = 300    ' Immunity duration: 5 seconds at 60fps
 
     ' Sprite register flags
     CONST SPR_VISIBLE = $0200
