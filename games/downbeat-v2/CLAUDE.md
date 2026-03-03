@@ -69,7 +69,7 @@ games/downbeat-v2/
 | SCROLL_FRAC | 171 | Fractional scroll per frame (171/256) |
 | NOTE_SPAWN_X | 168 | Note spawn X position (just off right edge) |
 | MAX_HITS | 5 | Total hearts (player starts with 3) |
-| TUBA_IMMTIME | 600 | Immunity duration in frames (10 seconds) |
+| TUBA_IMMTIME | 300 | Immunity duration in frames (5 seconds) |
 
 ## Levels
 

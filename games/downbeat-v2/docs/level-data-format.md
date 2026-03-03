@@ -200,7 +200,7 @@ The Golden Tuba of Immunity — grants 10 seconds of invincibility when collecte
 | `enabled` | bool | Whether the tuba appears in this stage |
 | `max_count` | int | Total tubas per run (always 1) |
 | `spawn_window` | [int, int] | `[first_beat, last_beat]` — only spawns once within this range |
-| `invincibility_frames` | int | Immunity duration in frames (600 = 10 seconds at 60fps) |
+| `invincibility_frames` | int | Immunity duration in frames (300 = 5 seconds at 60fps) |
 
 **Behavior:** Enters from the top of the screen (Y=0), falls to the bob zone (Y=30) at 1px/2 frames, then oscillates between Y=30 (catchable at jump peak) and Y=50 (catchable standing) at 1px/4 frames. Drifts left at 1px/2 frames; spawns at X=RANDOM(60)+100. Shares MOB 5 with flower (mutually exclusive). On collection, plays a C-E-G-C fanfare and flashes the player yellow↔white for the duration.
 
