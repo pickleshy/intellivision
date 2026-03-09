@@ -231,10 +231,10 @@ calls work. GOTO uses relative branch — cannot reliably cross segments.
 | Resource | Used | Available | Headroom |
 |----------|------|-----------|----------|
 | 8-bit variables | 219 | 219 | 0 (at limit!) |
-| 16-bit variables | 9 | 45 | 36 |
+| 16-bit variables | 15 | 45 | 30 |
 | GRAM cards | 9 | 64 | 55 |
 | MOB sprites | 8 | 8 | 0 |
-| ROM Seg 0 | ~6885 words | 8192 | ~1307 |
+| ROM Seg 0 | ~7855 words | 8192 | ~337 |
 | ROM Seg 1 | ~2904 words | 8192 | ~5288 |
 
 **8-bit variable budget is at the absolute limit.** Any new feature requiring new
@@ -284,6 +284,46 @@ Built-in recording workflow for designing obstacle patterns:
 9. **GameOverScreen reconstruction pitfall**: The GameOverScreen PROCEDURE was reconstructed from an old git diff, accidentally reverting per-level phrase changes. When refactoring large blocks into procedures, always compare against the most recent commit, not `git diff HEAD`.
 
 10. **VOICE phrases need a trailing pause before the `0` terminator**: The `0` terminator alone does not stop the final phoneme — the Intellivoice hardware requires an explicit `PA1` (or `PA2`) to end playback. Without it, the last phoneme keeps playing indefinitely. Always end phrases with `...,PA1,0`. Example: `VOICE AW,PA1,0` not `VOICE AW,0`.
+
+11. **`CONT.BUTTON` XORs both PSG ports — left controller inputs bleed into P1's jump.** `CONT.BUTTON` compiles to `($01FE XOR $01FF) AND $E0`. Any input on the left controller (P2) that changes bits 5–7 of `$01FF` will make `CONT.BUTTON` nonzero, indistinguishable from a real P1 button press. This affects keypad presses (PD0L_KP*), disc directions, and action buttons. **Fix for 2P mode:** read `$01FE` directly (right controller only) with inverted polarity, since the port is active-low:
+    ```basic
+    #p1Button = CONT.BUTTON                              ' 1P mode: normal
+    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FE) AND $E0) XOR $E0  ' 2P mode: P1 port only
+    IF #p1Button THEN
+        ' ... jump logic
+    END IF
+    ```
+    The XOR $E0 inverts the active-low bits so the result is nonzero when a button IS pressed (same polarity as CONT.BUTTON).
+
+## 2-Player Mode (POC)
+
+Sabotage-style 2P: P1 plays normally, P2 triggers hazards on demand. Activated from the mode select screen that appears after choosing Level 2–5.
+
+### Controls
+| Player | Action | Key | Mapping |
+|--------|--------|-----|---------|
+| P1 | Jump | Left Shift | Right controller top button (CONT.BUTTON) |
+| P1 | Level select | 1–5 | Right controller keypad (CONT.key) |
+| P2 | Trigger sneeze | A | PD0L_KP1 → CONT1.key = 1 |
+| P2 | Drop pencil | Z | PD0L_KP2 → CONT1.key = 2 |
+
+Keyboard mappings are in `build/downbeat2.kbd` and loaded via `--kbdhackfile` in `build.sh`.
+
+### 2P State Variables (all 16-bit)
+| Variable | Purpose |
+|----------|---------|
+| `#p2Mode` | 0 = 1P, 1 = 2P |
+| `#p2SneezesLeft` | Sneeze uses remaining (starts at 3) |
+| `#p2PencilsLeft` | Pencil uses remaining (starts at 5) |
+| `#p2SneezeCooldown` | Frames until sneeze available (600 = 10s) |
+| `#p2PencilCooldown` | Frames until pencil available (300 = 5s) |
+| `#p1Button` | Computed P1 button state (avoids XOR bleed — see gotcha #11) |
+
+### 2P Behavior
+- In 2P mode, auto-sneeze and auto-pencil spawning are disabled; P2 controls them manually
+- `SneezeActive = 1` is forced on entry so the shake animation always works
+- HUD shows "2P S:X P:X" at top-left (positions 0–9)
+- If P2's uses are exhausted or cooldown is active, button press has no effect
 
 ## Visual Verification via AVI Recording
 

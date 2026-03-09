@@ -55,6 +55,13 @@
     ' 16-bit variable for current PSG period
     #CurPSG = 0
     #PrevPSG = 0
+
+    ' 2-player mode state (all 16-bit — 8-bit budget is full)
+    #p2Mode = 0             ' 0=1 player, 1=2 players
+    #p2SneezesLeft = 0      ' P2 sneeze uses remaining
+    #p2PencilsLeft = 0      ' P2 pencil uses remaining
+    #p2SneezeCooldown = 0   ' Frames until P2 sneeze available again
+    #p2PencilCooldown = 0   ' Frames until P2 pencil available again
     MelodyMute = 0
 
     ' Note arrays (4 slots for MOBs 1-4; MOB 5=flower, MOBs 6-7=pencils)
@@ -218,11 +225,27 @@ LevelRelease:
 LevelSelect:
     WAIT
     IF CONT.key = 1 THEN CurrentLevel = 0 : GOTO LevelConfirm
-    IF CONT.key = 2 THEN CurrentLevel = 1 : GOTO LevelConfirm
-    IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO LevelConfirm
-    IF CONT.key = 4 THEN CurrentLevel = 3 : GOTO LevelConfirm
-    IF CONT.key = 5 THEN CurrentLevel = 4 : GOTO LevelConfirm
+    IF CONT.key = 2 THEN CurrentLevel = 1 : GOTO ModeSelect
+    IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO ModeSelect
+    IF CONT.key = 4 THEN CurrentLevel = 3 : GOTO ModeSelect
+    IF CONT.key = 5 THEN CurrentLevel = 4 : GOTO ModeSelect
     GOTO LevelSelect
+
+ModeSelect:
+    CLS
+    WAIT
+    PRINT AT 25 COLOR 7, "DOWNBEAT!"
+    PRINT AT 85 COLOR 5, "SELECT MODE"
+    PRINT AT 122 COLOR 7, "1 1 PLAYER"
+    PRINT AT 142 COLOR 5, "2 2 PLAYERS"
+ModeRelease:
+    WAIT
+    IF CONT.key < 12 THEN GOTO ModeRelease
+ModeWait:
+    WAIT
+    IF CONT.key = 1 THEN #p2Mode = 0 : GOTO LevelConfirm
+    IF CONT.key = 2 THEN #p2Mode = 1 : GOTO LevelConfirm
+    GOTO ModeWait
 
 LevelConfirm:
     #LevelOffset = LevelOffsets(CurrentLevel)
@@ -236,6 +259,14 @@ LevelConfirm:
     SneezeEnd = SneezeEndBeat(CurrentLevel)
     TubaWinStart = TubaWindowStarts(CurrentLevel)
     TubaWinEnd = TubaWindowEnds(CurrentLevel)
+    ' 2P mode: enable shake animation, disable auto-spawns, init P2 counters
+    IF #p2Mode = 1 THEN
+        SneezeActive = 1        ' Keep shake animation working (auto-spawn gated elsewhere)
+        #p2SneezesLeft = 3
+        #p2PencilsLeft = 5
+        #p2SneezeCooldown = 0
+        #p2PencilCooldown = 0
+    END IF
     CLS
     WAIT
     ' Redraw HUD after CLS — only show hearts the player has
@@ -247,6 +278,7 @@ LevelConfirm:
     FOR Col = 0 TO 19
         PRINT AT 140 + Col, 1 * 8 + 7 + $0800
     NEXT Col
+    IF #p2Mode = 1 THEN GOSUB DrawP2HUD
 
     ' --- Pre-spawn notes for beat positions 0 to SPAWN_OFFSET-1 ---
     ' Normal spawn logic reads SPAWN_OFFSET beats ahead of BeatCounter,
@@ -347,8 +379,8 @@ MainLoop:
         END IF
     END IF
 
-    ' --- Pencil spawn (Stages 2+) ---
-    IF CurrentLevel >= 1 THEN
+    ' --- Pencil spawn (Stages 2+, 1P only — 2P controls pencils manually) ---
+    IF CurrentLevel >= 1 AND #p2Mode = 0 THEN
         IF PencilsSpawned < 2 AND SongDone = 0 THEN
             IF BeatCounter >= PencilWinStart AND BeatCounter < PencilWinEnd THEN
                 IF PencilSpawnTimer > 0 THEN
@@ -419,18 +451,63 @@ MainLoop:
                 SneezeY = 3
             END IF
         ELSE
-            IF SneezesSpawned < SneezeMaxSneezes AND SongDone = 0 THEN
-                IF BeatCounter >= SneezeStart AND BeatCounter <= SneezeEnd THEN
-                    IF SneezeSpawnTimer > 0 THEN
-                        SneezeSpawnTimer = SneezeSpawnTimer - 1
-                    ELSE
-                        SneezeTimer = 180
-                        SneezesSpawned = SneezesSpawned + 1
-                        SneezeSpawnTimer = RANDOM(120) + 360
-                        IF VOICE.AVAILABLE THEN
-                            IF VOICE.PLAYING = 0 THEN VOICE PLAY SneezePhrase
+            IF #p2Mode = 0 THEN     ' 2P mode: P2 triggers sneezes manually
+                IF SneezesSpawned < SneezeMaxSneezes AND SongDone = 0 THEN
+                    IF BeatCounter >= SneezeStart AND BeatCounter <= SneezeEnd THEN
+                        IF SneezeSpawnTimer > 0 THEN
+                            SneezeSpawnTimer = SneezeSpawnTimer - 1
+                        ELSE
+                            SneezeTimer = 180
+                            SneezesSpawned = SneezesSpawned + 1
+                            SneezeSpawnTimer = RANDOM(120) + 360
+                            IF VOICE.AVAILABLE THEN
+                                IF VOICE.PLAYING = 0 THEN VOICE PLAY SneezePhrase
+                            END IF
                         END IF
                     END IF
+                END IF
+            END IF
+        END IF
+    END IF
+
+    ' --- P2 sabotage controls (2P mode only) ---
+    IF #p2Mode = 1 AND GameOver = 0 THEN
+        IF #p2SneezeCooldown > 0 THEN #p2SneezeCooldown = #p2SneezeCooldown - 1
+        IF #p2PencilCooldown > 0 THEN #p2PencilCooldown = #p2PencilCooldown - 1
+
+        ' Numpad 1: trigger sneeze
+        ' Uses CONT1.key (ISR-debounced left controller keypad) to avoid
+        ' CONT.BUTTON's raw PSG XOR bleed that crosses both controllers.
+        IF CONT1.key = 1 THEN
+            IF #p2SneezesLeft > 0 AND #p2SneezeCooldown = 0 THEN
+                SneezeTimer = 180
+                #p2SneezesLeft = #p2SneezesLeft - 1
+                #p2SneezeCooldown = 600
+                IF VOICE.AVAILABLE THEN
+                    IF VOICE.PLAYING = 0 THEN VOICE PLAY SneezePhrase
+                END IF
+                GOSUB DrawP2HUD
+            END IF
+        END IF
+
+        ' Numpad 2: drop pencil (only if a slot is free)
+        IF CONT1.key = 2 THEN
+            IF #p2PencilsLeft > 0 AND #p2PencilCooldown = 0 THEN
+                FreeSlot = 255
+                FOR Slot = 0 TO 1
+                    IF PencilState(Slot) = 0 THEN
+                        IF FreeSlot = 255 THEN FreeSlot = Slot
+                    END IF
+                NEXT Slot
+                IF FreeSlot < 255 THEN
+                    PencilState(FreeSlot) = 1
+                    PencilX(FreeSlot) = RANDOM(60) + 100
+                    PencilY(FreeSlot) = 0
+                    PencilFrac(FreeSlot) = 0
+                    PencilCleared(FreeSlot) = 0
+                    #p2PencilsLeft = #p2PencilsLeft - 1
+                    #p2PencilCooldown = 300
+                    GOSUB DrawP2HUD
                 END IF
             END IF
         END IF
@@ -447,7 +524,10 @@ MainLoop:
     ' --- Input: jump + peak float ---
     ' First press starts jump. Second press near peak (frames 15-20)
     ' triggers float: snap to peak height, hang 10 frames, then descend.
-    IF CONT.BUTTON THEN
+    ' In 2P mode, read P1's port ($01FE) directly to avoid XOR bleed from P2's keys.
+    #p1Button = CONT.BUTTON
+    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FE) AND $E0) XOR $E0
+    IF #p1Button THEN
         IF ButtonReleased THEN
             IF JumpActive = 0 THEN
                 JumpActive = 1
@@ -830,6 +910,19 @@ TechniquePhrase:
     VOICE TT2,EH,KK3,NN1,IY,KK3,PA2,NN1,IY,DD1,ZZ,PA2,WW,ER2,KK3,PA1,0
 PracticeScalesPhrase:
     VOICE PP,RR1,AX,KK3,TT2,IH,SS,PA2,MM,OR,PA2,SS,KK3,EY,LL,ZZ,PA1,0
+
+    ' ============================================
+    ' DrawP2HUD - Print 2P mode indicator + remaining uses
+    ' "2P S:X P:X" at top-left of HUD (positions 0-9, row 0)
+    ' Called at level start and after each successful P2 action.
+    ' ============================================
+DrawP2HUD: PROCEDURE
+    PRINT AT 0 COLOR 5, "2P S:"
+    PRINT AT 5 COLOR 7, <> #p2SneezesLeft
+    PRINT AT 6 COLOR 5, " P:"
+    PRINT AT 9 COLOR 7, <> #p2PencilsLeft
+    RETURN
+END
 
     SEGMENT 1           ' Melody + obstacle data tables overflow to $A000-$BFFF
 
