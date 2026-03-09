@@ -526,7 +526,7 @@ MainLoop:
     ' triggers float: snap to peak height, hang 10 frames, then descend.
     ' In 2P mode, read P1's port ($01FE) directly to avoid XOR bleed from P2's keys.
     #p1Button = CONT.BUTTON
-    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FE) AND $E0) XOR $E0
+    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FF) AND $E0) XOR $E0
     IF #p1Button THEN
         IF ButtonReleased THEN
             IF JumpActive = 0 THEN

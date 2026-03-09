@@ -285,15 +285,20 @@ Built-in recording workflow for designing obstacle patterns:
 
 10. **VOICE phrases need a trailing pause before the `0` terminator**: The `0` terminator alone does not stop the final phoneme — the Intellivoice hardware requires an explicit `PA1` (or `PA2`) to end playback. Without it, the last phoneme keeps playing indefinitely. Always end phrases with `...,PA1,0`. Example: `VOICE AW,PA1,0` not `VOICE AW,0`.
 
-11. **`CONT.BUTTON` XORs both PSG ports — left controller inputs bleed into P1's jump.** `CONT.BUTTON` compiles to `($01FE XOR $01FF) AND $E0`. Any input on the left controller (P2) that changes bits 5–7 of `$01FF` will make `CONT.BUTTON` nonzero, indistinguishable from a real P1 button press. This affects keypad presses (PD0L_KP*), disc directions, and action buttons. **Fix for 2P mode:** read `$01FE` directly (right controller only) with inverted polarity, since the port is active-low:
+11. **`CONT.BUTTON` XORs both PSG ports — left controller inputs bleed into P1's jump.** `CONT.BUTTON` compiles to `($01FE XOR $01FF) AND $E0`. Any input on the left controller (P2) that changes bits 5–7 of either port will make `CONT.BUTTON` nonzero, indistinguishable from a real P1 button press. **Fix for 2P mode:** read P1's port directly with active-low inversion:
     ```basic
     #p1Button = CONT.BUTTON                              ' 1P mode: normal
-    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FE) AND $E0) XOR $E0  ' 2P mode: P1 port only
+    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FF) AND $E0) XOR $E0  ' 2P mode: P1 port only
     IF #p1Button THEN
         ' ... jump logic
     END IF
     ```
-    The XOR $E0 inverts the active-low bits so the result is nonzero when a button IS pressed (same polarity as CONT.BUTTON).
+    The XOR $E0 inverts the active-low bits so the result is nonzero when a button IS pressed.
+
+    **WARNING — jzIntv and real hardware have OPPOSITE port assignments:**
+    - Real Intellivision: P1 (right controller) → `$01FF`, P2 (left controller) → `$01FE`
+    - jzIntv emulator: P1 → `$01FE`, P2 → `$01FF`
+    - Code targets real hardware (`$01FF`). In jzIntv, 2P mode shows the original bleed — acceptable, real hardware takes priority.
 
 ## 2-Player Mode (POC)
 
