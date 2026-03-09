@@ -476,9 +476,9 @@ MainLoop:
         IF #p2PencilCooldown > 0 THEN #p2PencilCooldown = #p2PencilCooldown - 1
 
         ' Numpad 1: trigger sneeze
-        ' Uses CONT1.key (ISR-debounced left controller keypad) to avoid
-        ' CONT.BUTTON's raw PSG XOR bleed that crosses both controllers.
-        IF CONT1.key = 1 THEN
+        ' PEEK($0111) reads _cnt2_key directly (ISR-debounced P2 keypad on real hardware).
+        ' CONT1.key reads _cnt1_key = P1's controller on real hardware — wrong controller!
+        IF PEEK($0111) = 1 THEN
             IF #p2SneezesLeft > 0 AND #p2SneezeCooldown = 0 THEN
                 SneezeTimer = 180
                 #p2SneezesLeft = #p2SneezesLeft - 1
@@ -491,7 +491,7 @@ MainLoop:
         END IF
 
         ' Numpad 2: drop pencil (only if a slot is free)
-        IF CONT1.key = 2 THEN
+        IF PEEK($0111) = 2 THEN
             IF #p2PencilsLeft > 0 AND #p2PencilCooldown = 0 THEN
                 FreeSlot = 255
                 FOR Slot = 0 TO 1
@@ -524,9 +524,9 @@ MainLoop:
     ' --- Input: jump + peak float ---
     ' First press starts jump. Second press near peak (frames 15-20)
     ' triggers float: snap to peak height, hang 10 frames, then descend.
-    ' In 2P mode, read P1's port ($01FE) directly to avoid XOR bleed from P2's keys.
+    ' CONT.BUTTON XORs both PSG ports ($01FE XOR $01FF), canceling keypad scan state.
+    ' This isolates action buttons only — works correctly on real hardware.
     #p1Button = CONT.BUTTON
-    IF #p2Mode = 1 THEN #p1Button = (PEEK($01FF) AND $E0) XOR $E0
     IF #p1Button THEN
         IF ButtonReleased THEN
             IF JumpActive = 0 THEN
