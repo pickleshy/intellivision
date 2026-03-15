@@ -1292,15 +1292,15 @@ AllObstacleData:
     DATA 0,0,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1   ' pos 96-111: beat 99,105,111
     DATA 1,1,0,0, 0,0,0,0, 0,1,1,0, 0,0,0,1   ' pos 112-127: beat 112,113,121,122,127
 
-    ' === Level 5: A Warrior's Legacy — Stage 1 (18 obstacles) ===
+    ' === Level 5: A Warrior's Legacy — Stage 1a (7 obstacles, easy) ===
     DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0   ' pos 0-15
     DATA 1,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 16-31: beat 16,28
-    DATA 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0   ' pos 32-47: beat 32,36,40,44
+    DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0   ' pos 32-47
     DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 48-63: beat 60
-    DATA 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 64-79: beat 68,76
-    DATA 0,0,0,0, 0,0,0,0, 1,0,1,0, 1,0,0,0   ' pos 80-95: beat 88,90,92
-    DATA 0,0,0,0, 0,0,0,0, 1,0,1,0, 1,0,0,0   ' pos 96-111: beat 104,106,108
-    DATA 0,0,0,0, 1,0,0,0, 1,0,0,1, 0,0,0,0   ' pos 112-127: beat 116,120,123
+    DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0   ' pos 64-79
+    DATA 0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0   ' pos 80-95: beat 88
+    DATA 0,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0   ' pos 96-111: beat 104
+    DATA 0,0,0,0, 1,0,0,0, 0,0,0,1, 0,0,0,0   ' pos 112-127: beat 116,123
 
     ' ============================================
     ' Note Color Palette (5 cycling colors)
@@ -1336,9 +1336,9 @@ SneezeEndBeat:
     DATA 0, 0, 0, 0, 115, 0     ' Level 5: end at beat 115 (~90% of 128)
 
 TubaWindowStarts:
-    DATA 32, 0, 0, 0, 32, 0     ' Level 1 (testing) and Level 5 (D Strain): beat 32 (25%)
+    DATA 32, 0, 0, 0, 32, 40    ' Level 1, Level 5 (D Strain): beat 32; Level 6 (Warriors): beat 40
 TubaWindowEnds:
-    DATA 96, 0, 0, 0, 96, 0     ' Level 1 (testing) and Level 5 (D Strain): beat 96 (75%)
+    DATA 96, 0, 0, 0, 96, 128   ' Level 1, Level 5 (D Strain): beat 96; Level 6 (Warriors): beat 128
 
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
