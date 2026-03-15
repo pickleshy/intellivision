@@ -73,19 +73,21 @@ games/downbeat-v2/
 
 ## Levels
 
-5 levels selectable at startup (keypad 1-5):
+6 levels selectable at startup (keypad 1-6):
 
 | Level | Key | Song | Hazards | Special |
 |-------|-----|------|---------|---------|
-| 0 | 1 | Maple Leaf Rag A Strain | Notes only | Tuba (testing) |
+| 0 | 1 | Maple Leaf Rag — Full Chain | 5-stage run using stageIndices 0–4 | Tuba on stages 0+4 |
 | 1 | 2 | B Strain | Notes + pencils + flowers | — |
 | 2 | 3 | A-to-C Strain | Notes + pencils + flowers | — |
 | 3 | 4 | C-to-D Strain (hard) | Notes + pencils + flowers | — |
 | 4 | 5 | D Strain (hardest) | Notes + pencils + flowers + sneezes | Tuba |
+| 5 | 6 | A Warrior's Legacy Stage 1a | Notes + flowers | Tuba |
 
-Each level has per-stage DATA tables for obstacle patterns, hazard spawn windows,
-and feature enable flags (`PencilWindowStarts/Ends`, `FlowerWindowStarts/Ends`,
-`SneezeEnabled`, `TubaWindowStarts/Ends`).
+Each level's hazard config is indexed by `#stageIndex` (not `CurrentLevel`).
+Config tables: `LevelOffsets`, `LevelFirstStage`, `LevelStageCount`,
+`PencilWindowStarts/Ends`, `FlowerWindowStarts/Ends`, `SneezeEnabled`,
+`TubaWindowStarts/Ends`.
 
 ## Audio System (3 PSG Channels)
 
@@ -174,6 +176,38 @@ IF #immunityTimer = 0 THEN
 END IF
 ```
 
+## Multi-Stage Progression
+
+Multiple music stages can be chained into one continuous level run. Hearts and damage carry over between stages; dying ends the entire run. Golden Tuba immunity expires at each stage boundary.
+
+### Variables
+| Variable | Type | Purpose |
+|----------|------|---------|
+| `#currentStage` | 16-bit | 0-based stage index within current level run |
+| `#totalStages` | 16-bit | Total stages for current level (from `LevelStageCount`) |
+| `#stageIndex` | 16-bit | Absolute data-table index = `LevelFirstStage(level) + #currentStage` |
+
+### Stage Data Model
+All per-stage config tables are indexed by `#stageIndex`, not `CurrentLevel`. This allows Level 0 to chain 5 existing stage data blocks while levels 1–5 remain single-stage (where `LevelFirstStage(n) = n`).
+
+```
+LevelFirstStage:  DATA 0, 1, 2, 3, 4, 5   ' stageIndex for level's first stage
+LevelStageCount:  DATA 5, 1, 1, 1, 1, 1   ' Level 0 = 5 stages, others = 1
+```
+
+### Stage Transition Flow
+```
+GameOver=2 detected in MainLoop
+  → IF more stages remain: GOSUB StageComplete → GOSUB AdvanceStageReset → GOTO MainLoop
+  → IF last stage (or GameOver=1): GOSUB GameOverScreen → GOTO RestartGame
+```
+
+**StageComplete** (Seg 1): silences sounds, hides hazards, celebration pose, shows "STAGE X COMPLETE!" with HUD hearts visible, waits for button.
+
+**AdvanceStageReset** (Seg 1): advances `#currentStage` / `#stageIndex`, reloads hazard config from new stageIndex, resets all gameplay state except `HitCount` and `DamageTaken`, redraws screen, pre-spawns notes for new stage.
+
+**"PERFECT RUN!"** requires no damage taken across all stages (DamageTaken is never reset between stages).
+
 ## Collision Detection
 
 Notes use crossing-point detection (not hardware COL registers):
@@ -221,7 +255,7 @@ The game uses OPTION MAP 2 to access two ROM segments:
 | Segment | Range | Content |
 |---------|-------|---------|
 | Seg 0 | $5000-$6FFF | Main game code, graphics data, voice phrases |
-| Seg 1 | $A000-$BFFF | Melody/obstacle DATA tables, SpawnTuba, UpdateTuba, FanfareUpdate, GameOverScreen |
+| Seg 1 | $A000-$BFFF | Melody/obstacle DATA tables, SpawnTuba, UpdateTuba, FanfareUpdate, GameOverScreen, StageComplete, AdvanceStageReset |
 
 **Key:** GOSUB compiles to JSR (absolute, full 64K range) — cross-segment PROCEDURE
 calls work. GOTO uses relative branch — cannot reliably cross segments.
@@ -231,11 +265,11 @@ calls work. GOTO uses relative branch — cannot reliably cross segments.
 | Resource | Used | Available | Headroom |
 |----------|------|-----------|----------|
 | 8-bit variables | 219 | 219 | 0 (at limit!) |
-| 16-bit variables | 9 | 45 | 36 |
+| 16-bit variables | 12 | 45 | 33 |
 | GRAM cards | 9 | 64 | 55 |
 | MOB sprites | 8 | 8 | 0 |
-| ROM Seg 0 | ~6885 words | 8192 | ~1307 |
-| ROM Seg 1 | ~2904 words | 8192 | ~5288 |
+| ROM Seg 0 | ~7353 words | 8192 | ~839 |
+| ROM Seg 1 | ~4024 words | 8192 | ~4168 |
 
 **8-bit variable budget is at the absolute limit.** Any new feature requiring new
 variables must either reuse/merge existing ones or use 16-bit variables instead.

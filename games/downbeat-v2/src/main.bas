@@ -57,6 +57,11 @@
     #PrevPSG = 0
     MelodyMute = 0
 
+    ' Multi-stage progression
+    #currentStage = 0   ' 0-based stage index within current level run
+    #totalStages = 1    ' Total stages for current level
+    #stageIndex = 0     ' Absolute stageIndex = LevelFirstStage(level) + #currentStage
+
     ' Note arrays (4 slots for MOBs 1-4; MOB 5=flower, MOBs 6-7=pencils)
     DIM NoteActive(4)
     DIM NoteX(4)
@@ -227,17 +232,20 @@ LevelSelect:
     GOTO LevelSelect
 
 LevelConfirm:
-    #LevelOffset = LevelOffsets(CurrentLevel)
-    PencilWinStart = PencilWindowStarts(CurrentLevel)
-    PencilWinEnd = PencilWindowEnds(CurrentLevel)
-    FlowerWinStart = FlowerWindowStarts(CurrentLevel)
-    FlowerWinEnd = FlowerWindowEnds(CurrentLevel)
-    SneezeActive = SneezeEnabled(CurrentLevel)
-    SneezeMaxSneezes = SneezeMaxCount(CurrentLevel)
-    SneezeStart = SneezeStartBeat(CurrentLevel)
-    SneezeEnd = SneezeEndBeat(CurrentLevel)
-    TubaWinStart = TubaWindowStarts(CurrentLevel)
-    TubaWinEnd = TubaWindowEnds(CurrentLevel)
+    #currentStage = 0
+    #totalStages = LevelStageCount(CurrentLevel)
+    #stageIndex = LevelFirstStage(CurrentLevel)
+    #LevelOffset = LevelOffsets(#stageIndex)
+    PencilWinStart = PencilWindowStarts(#stageIndex)
+    PencilWinEnd = PencilWindowEnds(#stageIndex)
+    FlowerWinStart = FlowerWindowStarts(#stageIndex)
+    FlowerWinEnd = FlowerWindowEnds(#stageIndex)
+    SneezeActive = SneezeEnabled(#stageIndex)
+    SneezeMaxSneezes = SneezeMaxCount(#stageIndex)
+    SneezeStart = SneezeStartBeat(#stageIndex)
+    SneezeEnd = SneezeEndBeat(#stageIndex)
+    TubaWinStart = TubaWindowStarts(#stageIndex)
+    TubaWinEnd = TubaWindowEnds(#stageIndex)
     CLS
     WAIT
     ' Redraw HUD after CLS — only show hearts the player has
@@ -285,7 +293,15 @@ LevelConfirm:
     ' ==========================================
 MainLoop:
     WAIT
-    IF GameOver THEN GOSUB GameOverScreen : GOTO RestartGame
+    IF GameOver THEN
+        IF GameOver = 2 AND #currentStage + 1 < #totalStages THEN
+            GOSUB StageComplete
+            GOSUB AdvanceStageReset
+            GOTO MainLoop
+        ELSE
+            GOSUB GameOverScreen : GOTO RestartGame
+        END IF
+    END IF
 
     ' --- Retrigger melody note after 1-frame mute ---
     ' AY-3-8914 doesn't restart waveform on same period write.
@@ -350,7 +366,7 @@ MainLoop:
     END IF
 
     ' --- Pencil spawn (Stages 2+) ---
-    IF CurrentLevel >= 1 THEN
+    IF #stageIndex >= 1 THEN
         IF PencilsSpawned < 2 AND SongDone = 0 THEN
             IF BeatCounter >= PencilWinStart AND BeatCounter < PencilWinEnd THEN
                 IF PencilSpawnTimer > 0 THEN
@@ -385,7 +401,7 @@ MainLoop:
     END IF
 
     ' --- Flower spawn (Stages 2+) ---
-    IF CurrentLevel >= 1 THEN
+    IF #stageIndex >= 1 THEN
         IF FlowerState = 0 AND FlowersSpawned < 2 AND SongDone = 0 AND tubaState <> 1 THEN
             IF BeatCounter >= FlowerWinStart AND BeatCounter < FlowerWinEnd THEN
                 IF FlowerSpawnTimer > 0 THEN
@@ -588,7 +604,7 @@ MainLoop:
     ' --- Update pencils (Level 2 only) ---
     ' Pencils fall through the ground and off-screen. They only hurt
     ' the player by landing on them mid-fall — no grounded obstacles.
-    IF CurrentLevel >= 1 THEN
+    IF #stageIndex >= 1 THEN
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 ' Scroll left with the world
@@ -625,7 +641,7 @@ MainLoop:
     END IF
 
     ' --- Update flower (Stages 2+) ---
-    IF CurrentLevel >= 1 THEN
+    IF #stageIndex >= 1 THEN
         IF FlowerState = 1 THEN
             ' Slow diagonal drift: ~0.5px left per frame, ~1px down every 3 frames
             FlowerDriftY = FlowerDriftY + 1
@@ -735,7 +751,7 @@ MainLoop:
 
     ' --- Pencil collision (Stages 2+) ---
     ' Pencils hurt the player by falling on them (overlap check while falling).
-    IF CurrentLevel >= 1 THEN
+    IF #stageIndex >= 1 THEN
         FOR Slot = 0 TO 1
             IF PencilState(Slot) = 1 THEN
                 IF PencilCleared(Slot) = 0 THEN
@@ -791,7 +807,7 @@ MainLoop:
         FOR Slot = 0 TO 3
             IF NoteActive(Slot) THEN ActiveCount = ActiveCount + 1
         NEXT Slot
-        IF CurrentLevel >= 1 THEN
+        IF #stageIndex >= 1 THEN
             FOR Slot = 0 TO 1
                 IF PencilState(Slot) THEN ActiveCount = ActiveCount + 1
             NEXT Slot
@@ -1060,6 +1076,163 @@ GameOverWait:
 END
 
     ' ============================================
+    ' StageComplete - Show "STAGE X COMPLETE!" and wait for button.
+    ' Called via GOSUB when GameOver=2 and more stages remain.
+    ' After returning, caller invokes AdvanceStageReset then GOTO MainLoop.
+    ' ============================================
+StageComplete: PROCEDURE
+    SOUND 0, , 0
+    SOUND 1, , 0
+    SOUND 2, , 0
+    #immunityTimer = 0
+    FanfareStep = 0
+    ImmuneFlash = 0
+    ' Hide hazard sprites; keep player (MOB 0)
+    FOR Slot = 1 TO 7
+        SPRITE Slot, 0, 0, 0
+    NEXT Slot
+    ' Celebration pose
+    SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 4 * 8 + 2 + $0800
+    ' Clear play area rows 1-6; keep HUD (row 0) and ground (row 7)
+    FOR Col = 20 TO 139
+        PRINT AT Col, 0
+    NEXT Col
+    WAIT
+    ' "STAGE X COMPLETE!" — use #stageIndex as a temp for 1-based display number
+    PRINT AT 21 COLOR 6, "STAGE "
+    #stageIndex = #currentStage + 1
+    PRINT AT 27 COLOR 7, <> #stageIndex
+    PRINT AT 28 COLOR 6, " COMPLETE!"
+    PRINT AT 183 COLOR 7, "PRESS BUTTON"
+StageCompleteRelease:
+    WAIT
+    IF CONT.BUTTON THEN GOTO StageCompleteRelease
+StageCompleteWait:
+    WAIT
+    IF CONT.BUTTON = 0 THEN GOTO StageCompleteWait
+    RETURN
+END
+
+    ' ============================================
+    ' AdvanceStageReset - Advance stage counters, reload config,
+    ' reset gameplay state (not hearts/damage), redraw screen,
+    ' pre-spawn notes for new stage.
+    ' ============================================
+AdvanceStageReset: PROCEDURE
+    ' Advance stage
+    #currentStage = #currentStage + 1
+    #stageIndex = LevelFirstStage(CurrentLevel) + #currentStage
+
+    ' Reload hazard config for new stage
+    #LevelOffset = LevelOffsets(#stageIndex)
+    PencilWinStart = PencilWindowStarts(#stageIndex)
+    PencilWinEnd = PencilWindowEnds(#stageIndex)
+    FlowerWinStart = FlowerWindowStarts(#stageIndex)
+    FlowerWinEnd = FlowerWindowEnds(#stageIndex)
+    SneezeActive = SneezeEnabled(#stageIndex)
+    SneezeMaxSneezes = SneezeMaxCount(#stageIndex)
+    SneezeStart = SneezeStartBeat(#stageIndex)
+    SneezeEnd = SneezeEndBeat(#stageIndex)
+    TubaWinStart = TubaWindowStarts(#stageIndex)
+    TubaWinEnd = TubaWindowEnds(#stageIndex)
+
+    ' Reset gameplay state (HitCount and DamageTaken carry over)
+    GameOver = 0
+    PlayerY = GROUND_Y
+    JumpActive = 0
+    JumpFrame = 0
+    FloatUsed = 0
+    FloatActive = 0
+    FloatTimer = 0
+    SfxTimer = 0
+    HurtTimer = 0
+    ButtonReleased = 1
+    BeatCounter = 0
+    SpawnCountdown = FRAMES_PER_NOTE
+    SongDone = 0
+    SongEndTimer = 0
+    #CurPSG = 0
+    #PrevPSG = 0
+    MelodyMute = 0
+    SneezeTimer = 0
+    SneezesSpawned = 0
+    SneezeX = 3
+    SneezeY = 3
+    SneezeSpawnTimer = RANDOM(120) + 180
+    tubaState = 0
+    tubaX = 0
+    tubaY = 0
+    tubaDriftX = 0
+    tubaDriftY = 0
+    tubaBobDir = 0
+    tubaSpawnTimer = RANDOM(90) + 60
+
+    ' Reset note slots
+    SPRITE 0, PLAYER_X + SPR_VISIBLE, GROUND_Y + SPR_YSIZE, 0 * 8 + 7 + $0800
+    FOR Slot = 0 TO 3
+        NoteActive(Slot) = 0
+        NoteCleared(Slot) = 0
+        NoteWobble(Slot) = 0
+        #NotePitch(Slot) = 0
+        NoteColor(Slot) = 0
+        SPRITE Slot + 1, 0, 0, 0
+    NEXT Slot
+
+    ' Reset pencil slots
+    PencilSpawnTimer = RANDOM(120) + 150
+    PencilsSpawned = 0
+    FOR Slot = 0 TO 1
+        PencilState(Slot) = 0
+        PencilCleared(Slot) = 0
+        SPRITE Slot + 6, 0, 0, 0
+    NEXT Slot
+
+    ' Reset flower
+    FlowerState = 0
+    FlowerSpawnTimer = RANDOM(120) + 60
+    FlowersSpawned = 0
+    SPRITE 5, 0, 0, 0
+
+    ' Redraw screen
+    CLS
+    WAIT
+    FOR Col = 0 TO MAX_HITS - 1
+        IF Col < MAX_HITS - HitCount THEN
+            PRINT AT HeartPositions(Col), 3 * 8 + 4 + $0800 + $1000
+        END IF
+    NEXT Col
+    FOR Col = 0 TO 19
+        PRINT AT 140 + Col, 1 * 8 + 7 + $0800
+    NEXT Col
+
+    ' Pre-spawn notes for beat positions 0 to SPAWN_OFFSET-1
+    FOR Col = 0 TO SPAWN_OFFSET - 1
+        IF AllObstacleData(#LevelOffset + Col) = 1 THEN
+            HurtTimer = NOTE_SPAWN_X - (SPAWN_OFFSET - Col) * 15
+            IF HurtTimer > PLAYER_X THEN
+                FreeSlot = 255
+                FOR Slot = 0 TO 3
+                    IF NoteActive(Slot) = 0 THEN
+                        IF FreeSlot = 255 THEN FreeSlot = Slot
+                    END IF
+                NEXT Slot
+                IF FreeSlot < 255 THEN
+                    NoteActive(FreeSlot) = 1
+                    NoteX(FreeSlot) = HurtTimer
+                    NoteFrac(FreeSlot) = 0
+                    NoteCleared(FreeSlot) = 0
+                    NoteWobble(FreeSlot) = 0
+                    #NotePitch(FreeSlot) = AllMelodyData(#LevelOffset + Col)
+                    NoteColor(FreeSlot) = 1
+                END IF
+            END IF
+        END IF
+    NEXT Col
+    HurtTimer = 0
+    RETURN
+END
+
+    ' ============================================
     ' Maple Leaf Rag - A Strain Background Melody
     ' 128 entries on the 16th-note grid at 100 BPM.
     ' 16 bars in 2/4 time = complete A strain.
@@ -1313,7 +1486,13 @@ HeartPositions:
 LevelOffsets:
     DATA 0, 128, 256, 384, 512, 640
 
-    ' Per-stage hazard spawn windows (indexed by CurrentLevel)
+LevelFirstStage:
+    DATA 0, 1, 2, 3, 4, 5   ' Absolute stageIndex where each level's data begins
+
+LevelStageCount:
+    DATA 5, 1, 1, 1, 1, 1   ' Level 0 = 5-stage chain; all others = 1 stage
+
+    ' Per-stage hazard spawn windows (indexed by #stageIndex)
     ' Stage 0: no hazards (window [0,0] = never spawns)
     ' Stages 1-2: pencils [20,108], flowers [55,95]
     ' Stage 3: pencils [20,108], flowers [30,126]
