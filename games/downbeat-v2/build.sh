@@ -65,7 +65,6 @@ if [ "$1" = "run" ] || [ "$1" = "voice" ]; then
     arch -x86_64 $JZINTV \
         --execimg="$EXEC_ROM" \
         --gromimg="$GROM_ROM" \
-        --kbdhackfile="$GAME_DIR/build/downbeat2.kbd" \
         $VOICE_FLAG \
         -z3 \
         "$ROM"
