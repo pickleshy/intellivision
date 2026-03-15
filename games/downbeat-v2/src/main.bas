@@ -206,6 +206,7 @@ RestartGame:
     PRINT AT 142 COLOR 3, "3 A TO C STRAIN"
     PRINT AT 162 COLOR 3, "4 C TO D HARD"
     PRINT AT 182 COLOR 2, "5 D STRAIN HARDEST"
+    PRINT AT 202 COLOR 5, "6 WARRIORS LEGACY"
 
     ' Let ISR settle on cold boot, then drain any held key
     FOR Slot = 0 TO 29
@@ -222,6 +223,7 @@ LevelSelect:
     IF CONT.key = 3 THEN CurrentLevel = 2 : GOTO LevelConfirm
     IF CONT.key = 4 THEN CurrentLevel = 3 : GOTO LevelConfirm
     IF CONT.key = 5 THEN CurrentLevel = 4 : GOTO LevelConfirm
+    IF CONT.key = 6 THEN CurrentLevel = 5 : GOTO LevelConfirm
     GOTO LevelSelect
 
 LevelConfirm:
@@ -987,22 +989,22 @@ GameOverScreen: PROCEDURE
     ' Levels 2-3: Bravo Bellissimo / Technique Needs Work
     ' Level  4:   Carnegie Hall / Practice More Scales
     IF GameOver = 2 THEN
-        IF CurrentLevel <= 1 THEN PRINT AT 26 COLOR 6, "ENCORE!"
+        IF CurrentLevel <= 1 OR CurrentLevel = 5 THEN PRINT AT 26 COLOR 6, "ENCORE!"
         IF CurrentLevel = 2 OR CurrentLevel = 3 THEN PRINT AT 21 COLOR 6, "BRAVO BELLISSIMO!"
-        IF CurrentLevel >= 4 THEN PRINT AT 23 COLOR 6, "CARNEGIE HALL!"
+        IF CurrentLevel = 4 THEN PRINT AT 23 COLOR 6, "CARNEGIE HALL!"
         IF VOICE.AVAILABLE THEN
-            IF CurrentLevel <= 1 THEN VOICE PLAY EncorePhrase
+            IF CurrentLevel <= 1 OR CurrentLevel = 5 THEN VOICE PLAY EncorePhrase
             IF CurrentLevel = 2 OR CurrentLevel = 3 THEN VOICE PLAY BravoPhrase
-            IF CurrentLevel >= 4 THEN VOICE PLAY CarnegiePhrase
+            IF CurrentLevel = 4 THEN VOICE PLAY CarnegiePhrase
         END IF
     ELSE
-        IF CurrentLevel <= 1 THEN PRINT AT 23 COLOR 2, "NEEDS PRACTICE"
+        IF CurrentLevel <= 1 OR CurrentLevel = 5 THEN PRINT AT 23 COLOR 2, "NEEDS PRACTICE"
         IF CurrentLevel = 2 OR CurrentLevel = 3 THEN PRINT AT 20 COLOR 2, "TECHNIQUE NEEDS WORK"
-        IF CurrentLevel >= 4 THEN PRINT AT 20 COLOR 2, "PRACTICE MORE SCALES"
+        IF CurrentLevel = 4 THEN PRINT AT 20 COLOR 2, "PRACTICE MORE SCALES"
         IF VOICE.AVAILABLE THEN
-            IF CurrentLevel <= 1 THEN VOICE PLAY NeedsPracticePhrase
+            IF CurrentLevel <= 1 OR CurrentLevel = 5 THEN VOICE PLAY NeedsPracticePhrase
             IF CurrentLevel = 2 OR CurrentLevel = 3 THEN VOICE PLAY TechniquePhrase
-            IF CurrentLevel >= 4 THEN VOICE PLAY PracticeScalesPhrase
+            IF CurrentLevel = 4 THEN VOICE PLAY PracticeScalesPhrase
         END IF
     END IF
     IF GameOver = 2 THEN
@@ -1207,6 +1209,24 @@ AllMelodyData:
     DATA    0,  539,    0,  480,  428,  539,    0,  480   ' pos 112-119
     DATA  807,  719,  539,    0,  360,    0,  269,    0   ' pos 120-127
 
+    ' === Level 5: A Warrior's Legacy — Stage 1 (Soon Hee Newbold, 92 BPM) ===
+    DATA 1524,    0, 1524,    0,    0,    0,    0,    0   ' pos 0-7
+    DATA 1524,    0,    0,    0, 1524,    0, 1524, 1524   ' pos 8-15
+    DATA  254,    0, 1524,    0,    0,    0,    0,    0   ' pos 16-23
+    DATA 1524,    0,    0,    0,  285,    0, 1524, 1524   ' pos 24-31
+    DATA  214,    0, 1524,    0,  339,    0,    0,    0   ' pos 32-39
+    DATA 1524,    0,    0,    0,  381,    0, 1524, 1524   ' pos 40-47
+    DATA 1524,    0, 1524,    0,    0,    0,    0,    0   ' pos 48-55
+    DATA  508,    0,    0,    0,  480,    0, 1524, 1524   ' pos 56-63
+    DATA 1524,    0,    0,    0,  428,    0,    0,    0   ' pos 64-71
+    DATA  571,    0,    0,    0,  508,    0,    0,    0   ' pos 72-79
+    DATA    0,    0,  508,    0,  508,    0,  508,    0   ' pos 80-87
+    DATA  508,  508,  508,  508,  480,    0,    0,    0   ' pos 88-95
+    DATA    0,    0,  480,    0,  480,    0,  480,    0   ' pos 96-103
+    DATA  480,  480,  480,  480,  571,    0,    0,    0   ' pos 104-111
+    DATA    0,    0,  571,    0,  571,    0,  571,    0   ' pos 112-119
+    DATA  571,    0,  480,    0,  571,    0,    0,    0   ' pos 120-127
+
     ' ============================================
     ' Obstacle Map
     ' 128 entries (one per 16th-note position).
@@ -1272,6 +1292,16 @@ AllObstacleData:
     DATA 0,0,0,1, 0,0,0,0, 0,1,0,0, 0,0,0,1   ' pos 96-111: beat 99,105,111
     DATA 1,1,0,0, 0,0,0,0, 0,1,1,0, 0,0,0,1   ' pos 112-127: beat 112,113,121,122,127
 
+    ' === Level 5: A Warrior's Legacy — Stage 1 (18 obstacles) ===
+    DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0   ' pos 0-15
+    DATA 1,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 16-31: beat 16,28
+    DATA 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0   ' pos 32-47: beat 32,36,40,44
+    DATA 0,0,0,0, 0,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 48-63: beat 60
+    DATA 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0   ' pos 64-79: beat 68,76
+    DATA 0,0,0,0, 0,0,0,0, 1,0,1,0, 1,0,0,0   ' pos 80-95: beat 88,90,92
+    DATA 0,0,0,0, 0,0,0,0, 1,0,1,0, 1,0,0,0   ' pos 96-111: beat 104,106,108
+    DATA 0,0,0,0, 1,0,0,0, 1,0,0,1, 0,0,0,0   ' pos 112-127: beat 116,120,123
+
     ' ============================================
     ' Note Color Palette (5 cycling colors)
     ' ============================================
@@ -1281,33 +1311,34 @@ HeartPositions:
 
 
 LevelOffsets:
-    DATA 0, 128, 256, 384, 512
+    DATA 0, 128, 256, 384, 512, 640
 
     ' Per-stage hazard spawn windows (indexed by CurrentLevel)
     ' Stage 0: no hazards (window [0,0] = never spawns)
     ' Stages 1-2: pencils [20,108], flowers [55,95]
     ' Stage 3: pencils [20,108], flowers [30,126]
+    ' Stage 5: no pencils, flowers [35,128]
 PencilWindowStarts:
-    DATA 0, 20, 20, 20, 20
+    DATA 0, 20, 20, 20, 20, 0
 PencilWindowEnds:
-    DATA 0, 108, 108, 108, 117
+    DATA 0, 108, 108, 108, 117, 0
 FlowerWindowStarts:
-    DATA 0, 55, 55, 30, 30
+    DATA 0, 55, 55, 30, 30, 35
 FlowerWindowEnds:
-    DATA 0, 95, 95, 126, 126
+    DATA 0, 95, 95, 126, 126, 128
 SneezeEnabled:
-    DATA 0, 0, 0, 0, 1          ' Level 5 only
+    DATA 0, 0, 0, 0, 1, 0       ' Level 5 (D Strain) only
 SneezeMaxCount:
-    DATA 0, 0, 0, 0, 2          ' Level 5: up to 2 sneezes
+    DATA 0, 0, 0, 0, 2, 0       ' Level 5: up to 2 sneezes
 SneezeStartBeat:
-    DATA 0, 0, 0, 0, 12         ' Level 5: start at beat 12 (~10% of 128)
+    DATA 0, 0, 0, 0, 12, 0      ' Level 5: start at beat 12 (~10% of 128)
 SneezeEndBeat:
-    DATA 0, 0, 0, 0, 115        ' Level 5: end at beat 115 (~90% of 128)
+    DATA 0, 0, 0, 0, 115, 0     ' Level 5: end at beat 115 (~90% of 128)
 
 TubaWindowStarts:
-    DATA 32, 0, 0, 0, 32        ' Level 1 (testing) and Level 5: beat 32 (25%)
+    DATA 32, 0, 0, 0, 32, 0     ' Level 1 (testing) and Level 5 (D Strain): beat 32 (25%)
 TubaWindowEnds:
-    DATA 96, 0, 0, 0, 96        ' Level 1 (testing) and Level 5: beat 96 (75%)
+    DATA 96, 0, 0, 0, 96, 0     ' Level 1 (testing) and Level 5 (D Strain): beat 96 (75%)
 
     ' ============================================
     ' Graphics Data (GRAM cards 0-5, contiguous)
